@@ -1,0 +1,1194 @@
+<!doctype html>
+<html lang="ko" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#131A23">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>콘티 — 코드 차트 이조기</title>
+<style>
+:root{
+  --ink:#131A23; --raise:#1B242F; --line:#2B3744; --paper:#ECE7DC;
+  --dim:#8D9AA8; --brass:#D6A354; --ribbon:#A32E3E; --mint:#7FC8A9;
+  --ui:'Pretendard Variable',Pretendard,-apple-system,BlinkMacSystemFont,'Segoe UI','Apple SD Gothic Neo','Noto Sans KR',sans-serif;
+  --mono:ui-monospace,SFMono-Regular,'SF Mono','JetBrains Mono',Menlo,Consolas,'D2Coding',monospace;
+}
+html[data-theme="light"]{
+  --ink:#FBFAF7; --raise:#FFFFFF; --line:#DFD9CC; --paper:#1A1F26;
+  --dim:#6B7683; --brass:#9A6B15; --ribbon:#A32E3E; --mint:#2F7D5B;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%}
+body{background:var(--ink);color:var(--paper);font-family:var(--ui);display:flex;flex-direction:column;min-height:100%}
+button,input,textarea{font-family:inherit}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
+.scroll::-webkit-scrollbar{width:0;height:0}
+
+header{position:sticky;top:0;z-index:30;background:var(--ink);border-bottom:1px solid var(--line);padding:10px 14px 12px}
+.row{display:flex;align-items:center;gap:10px}
+.eyebrow{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--dim);font-weight:600}
+#title{background:none;border:none;color:var(--paper);font-size:17px;font-weight:700;flex:1;min-width:0;outline:none;padding:0}
+.btn{background:none;color:var(--paper);border:1px solid var(--line);border-radius:999px;padding:7px 13px;font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background .15s,color .15s,border-color .15s}
+.btn.on{background:var(--brass);color:var(--ink);border-color:var(--brass)}
+.btn:disabled{opacity:.4;cursor:default}
+.btn.sm{padding:3px 9px;font-size:11px}
+.btn.step{padding:6px 12px;font-size:16px;line-height:1}
+
+#rail{flex:1;display:flex;gap:2px;overflow-x:auto;padding:2px 0 6px}
+.key{flex:1 0 auto;min-width:38px;padding:7px 4px 6px;border:none;border-bottom:2px solid transparent;background:none;color:var(--dim);font-family:var(--mono);font-size:13px;font-weight:500;cursor:pointer;border-radius:6px;transition:background .15s,color .15s}
+.key.orig{border-bottom-color:var(--ribbon)}
+.key.on{background:var(--brass);color:var(--ink);font-weight:700}
+#meta{display:flex;align-items:center;gap:8px;margin-top:4px;font-size:11.5px;color:var(--dim);flex-wrap:wrap}
+#meta b{font-size:13px}
+
+main{flex:1;padding:18px 14px 176px;font-family:var(--mono);line-height:1.5}
+.section{break-inside:avoid;margin:18px 0 6px;padding-bottom:3px;border-bottom:1px solid var(--line);font-family:var(--ui);font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--ribbon)}
+.section:first-child{margin-top:0}
+.lineblk{break-inside:avoid;margin-bottom:2px;display:flex;flex-wrap:wrap}
+.pair{display:inline-block;vertical-align:bottom}
+.ch{display:block;color:var(--brass);font-weight:700;padding-right:8px;white-space:pre;line-height:1.35;cursor:pointer}
+.ch.plain{cursor:default}
+.ly{display:block;white-space:pre-wrap}
+.capo{break-inside:avoid;margin-bottom:14px;padding:8px 12px;border:1px dashed var(--mint);border-radius:8px;font-size:12px;font-family:var(--ui);color:var(--mint)}
+
+nav{border-top:1px solid var(--line);padding:9px 12px 10px;display:flex;gap:7px;overflow-x:auto}
+
+#scrim{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.5);display:none;align-items:flex-end}
+#scrim.open{display:flex}
+#sheet{width:100%;max-height:86vh;overflow-y:auto;background:var(--raise);border-top:2px solid var(--brass);border-radius:14px 14px 0 0;padding:16px 16px calc(24px + env(safe-area-inset-bottom))}
+.sheethead{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.note{font-size:12.5px;color:var(--dim);line-height:1.7;margin:0 0 12px}
+.field{background:var(--ink);color:var(--paper);border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-size:13px;width:100%;outline:none}
+textarea.field{font-family:var(--mono);min-height:220px;line-height:1.5;resize:vertical}
+.btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.callout{padding:10px 12px;border-radius:8px;font-size:12.5px;line-height:1.6;margin-bottom:12px}
+.callout.err{border:1px solid var(--ribbon);color:var(--ribbon)}
+.callout.ok{border:1px dashed var(--mint);color:var(--mint)}
+.callout.work{color:var(--brass);display:flex;align-items:center;gap:9px}
+.spin{width:13px;height:13px;border:2px solid var(--brass);border-top-color:transparent;border-radius:50%;animation:spin .9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#preview{width:100%;border-radius:10px;border:1px solid var(--line);display:block;background:#fff}
+.drop{border:1px dashed var(--line);border-radius:10px;padding:28px 16px;text-align:center;font-size:12.5px;color:var(--dim);line-height:1.7}
+.rowlist{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--line)}
+.rowlist button.load{flex:1;text-align:left;background:none;border:none;color:var(--paper);font-size:14px;font-weight:600;cursor:pointer;padding:0}
+.rowlist small{display:block;font-size:11px;color:var(--dim);font-weight:400;margin-top:2px}
+
+footer{position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--raise);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+#transport{display:flex;align-items:center;gap:8px;padding:8px 12px 6px}
+#play{width:44px;height:36px;font-size:15px;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+.tempo{display:flex;align-items:center;gap:2px;border:1px solid var(--line);border-radius:999px;padding:2px 4px}
+.tempo button{background:none;border:none;color:var(--paper);font-size:15px;width:26px;height:28px;cursor:pointer}
+.tempo input{font-family:var(--mono);font-size:14px;width:46px;text-align:center;font-weight:700;background:none;border:none;color:var(--paper);outline:none;padding:2px 0;-moz-appearance:textfield}
+.tempo input::-webkit-outer-spin-button,.tempo input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.tempo input:focus{color:var(--brass)}
+.tempo .unit{font-size:10px;color:var(--dim);padding-right:4px;letter-spacing:.08em}
+#instbtn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.ch.now{background:var(--brass);color:var(--ink);border-radius:4px;padding-left:3px;margin-left:-3px}
+.opts{display:flex;gap:7px;flex-wrap:wrap;margin:6px 0 16px}
+.lbl{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);font-weight:600;display:block;margin-bottom:6px}
+.vh{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;clip:rect(0 0 0 0)}
+label.btn{display:inline-flex;align-items:center}
+.rawfile{display:block;width:100%;margin:10px 0 4px;font-size:12.5px;color:var(--paper);
+  background:var(--ink);border:1px solid var(--line);border-radius:8px;padding:9px}
+.rawfile::-webkit-file-upload-button{background:var(--line);color:var(--paper);border:0;
+  border-radius:6px;padding:6px 10px;margin-right:10px;font-family:var(--ui);font-size:12px}
+#camwrap{display:none;margin-top:12px}
+#cam{width:100%;border-radius:10px;border:1px solid var(--line);background:#000;display:block}
+#toast{position:fixed;bottom:132px;left:50%;transform:translateX(-50%);z-index:50;background:var(--brass);color:var(--ink);padding:9px 16px;border-radius:999px;font-size:12.5px;font-weight:600;max-width:90vw;text-align:center;display:none}
+#toast.show{display:block}
+
+@media print{
+  header,footer,#scrim,#toast,.noprint{display:none!important}
+  body{background:#fff!important;color:#000!important}
+  main{padding:0!important}
+  .ch{color:#000!important;font-weight:700}
+  .section{color:#000!important;border-color:#000!important}
+}
+@media (prefers-reduced-motion:reduce){.spin{animation:none}}
+</style>
+</head>
+<body>
+
+<header class="noprint">
+  <div class="row" style="align-items:baseline;margin-bottom:9px">
+    <span class="eyebrow" style="color:var(--ribbon)">콘티</span>
+    <input id="title" value="예시 곡" aria-label="곡 제목">
+    <button class="btn" id="theme">밝게</button>
+  </div>
+  <div class="row">
+    <button class="btn step" id="down" aria-label="반음 내리기">−</button>
+    <div id="rail" class="scroll"></div>
+    <button class="btn step" id="up" aria-label="반음 올리기">+</button>
+  </div>
+  <div id="meta"></div>
+</header>
+
+<main id="chart"></main>
+
+<footer class="noprint">
+<div id="transport">
+  <button class="btn on" id="play" aria-label="재생">&#9654;</button>
+  <div class="tempo"><button id="bpmd" aria-label="느리게">−</button><input id="bpm" type="number" inputmode="numeric" pattern="[0-9]*" min="30" max="300" value="84" aria-label="빠르기 BPM"><span class="unit">BPM</span><button id="bpmu" aria-label="빠르게">+</button></div>
+  <button class="btn" id="instbtn">피아노</button>
+  <button class="btn" id="loopbtn">반복</button>
+</div>
+<nav class="scroll">
+  <button class="btn" data-panel="scan">사진</button>
+  <button class="btn" data-panel="input">직접 입력</button>
+  <button class="btn" id="b-number">넘버</button>
+  <button class="btn" id="b-capo">카포</button>
+  <button class="btn" id="b-flat">♭ 우선</button>
+  <button class="btn" id="b-font">글자 17</button>
+  <button class="btn" id="b-col">2단</button>
+  <button class="btn" id="b-save">저장</button>
+  <button class="btn" data-panel="library">콘티</button>
+  <button class="btn" data-panel="export">내보내기</button>
+</nav>
+</footer>
+
+<div id="scrim"><div id="sheet"></div></div>
+<div id="toast" role="status"></div>
+
+<script>
+/* ============ 배포 설정 ============
+   SCAN_ENDPOINT 를 비워두면: 사진 인식에 사용자 각자의 API 키가 필요하다(개인용).
+   여기에 배포한 주소를 넣으면: 사용자는 키 없이 그냥 쓴다(공개용). worker.js 참고.
+   예) const SCAN_ENDPOINT = "https://konti-scan.내계정.workers.dev";
+*/
+const SCAN_ENDPOINT = "";
+/* file:// 나 content:// 로 열면 브라우저가 외부 호출을 막는다(CORS). 미리 알려준다. */
+const LOCAL_FILE = !/^https?:$/.test(location.protocol);
+/* Claude 앱처럼 iframe 안에서 실행 중이면 키 없이도 인식이 통한다. */
+let IN_FRAME=false; try{IN_FRAME=window.self!==window.top;}catch(e){IN_FRAME=true;}
+
+/* ============ 음악 이론 ============ */
+const PCM={C:0,D:2,E:4,F:5,G:7,A:9,B:11}, ACC={'#':1,'♯':1,'b':-1,'♭':-1,'':0};
+const SHARP=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const FLAT =['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
+const PREF=['sharp','flat','sharp','flat','sharp','flat','flat','sharp','flat','sharp','flat','sharp'];
+const DEG={0:'1',1:'b2',2:'2',3:'b3',4:'3',5:'4',6:'#4',7:'5',8:'b6',9:'6',10:'b7',11:'7'};
+const SHAPES=[7,0,2,9,4];
+const CHORD_RE=/^([A-G])([#♯b♭]?)([^/\s]*?)(?:\/([A-G])([#♯b♭]?))?$/;
+const PASS=/^(\||\|\||:\||\|:|-|—|%|x\d+|\(?\d+x\)?|N\.?C\.?|\/+)$/i;
+const mod=n=>((n%12)+12)%12;
+const nm=(pc,p)=>(p==='flat'?FLAT:SHARP)[mod(pc)];
+
+function parseChord(t){
+  if(!t)return null;
+  const m=t.match(CHORD_RE); if(!m)return null;
+  const[,l,a,sfx='',bl,ba]=m;
+  if(/[가-힣ㄱ-ㅎㅏ-ㅣ]/.test(sfx))return null;
+  if(sfx.length>9)return null;
+  return{root:mod(PCM[l]+(ACC[a]||0)),suffix:sfx,bass:bl?mod(PCM[bl]+(ACC[ba]||0)):null};
+}
+const showChord=(c,s,p)=>nm(c.root+s,p)+c.suffix+(c.bass===null?'':'/'+nm(c.bass+s,p));
+const showNum=(c,k)=>DEG[mod(c.root-k)]+c.suffix+(c.bass===null?'':'/'+DEG[mod(c.bass-k)]);
+
+/* ============ 차트 파싱 ============ */
+function isSection(l){
+  const t=l.trim(); if(!t)return false;
+  if(/^[[<(].{1,24}[\]>)]$/.test(t)&&!parseChord(t.slice(1,-1)))return true;
+  return /^(intro|verse|pre|prechorus|pre-chorus|chorus|bridge|tag|ending|outro|interlude|간주|후렴|절|브릿지|전주|후주)\s*\d*\s*[:)\].]?$/i.test(t);
+}
+function isChordLine(l){
+  const t=l.trim().split(/\s+/).filter(Boolean); if(!t.length)return false;
+  let n=0; for(const x of t){ if(PASS.test(x))continue; if(!parseChord(x))return false; n++; }
+  return n>0;
+}
+const MEL_RE=/^\s*[♪♫]\s*\S/;
+const NOTE_RE=/^(?:(r)|([A-G])([#♯b♭]?)(-?\d))(?::([\d.]+))?$/i;
+function parseMelody(line){
+  const out=[];
+  for(const t of line.trim().replace(/^[♪♫]\s*/,'').split(/\s+/)){
+    const m=t.match(NOTE_RE); if(!m)continue;
+    const beats=m[5]?parseFloat(m[5]):1;
+    if(!isFinite(beats)||beats<=0)continue;
+    if(m[1]){out.push({rest:true,beats});continue;}
+    const midi=(parseInt(m[4],10)+1)*12+PCM[m[2].toUpperCase()]+(ACC[m[3]]||0);
+    if(midi>=12&&midi<=108)out.push({midi,beats});
+  }
+  return out;
+}
+function melLine(notes,semis,p){
+  return '♪ '+notes.map(n=>n.rest?('r:'+n.beats)
+    :(nm(n.midi+semis,p)+(Math.floor((n.midi+semis)/12)-1)+':'+n.beats)).join(' ');
+}
+
+function parseChart(raw){
+  const lines=raw.replace(/\r\n?/g,'\n').split('\n'), out=[];
+  const inline=/\[[A-G][#♯b♭]?[^\]]{0,8}\]/.test(raw)&&/\][^\s[]/.test(raw);
+  for(let i=0;i<lines.length;i++){
+    const line=lines[i];
+    if(MEL_RE.test(line)){const nts=parseMelody(line); if(nts.length){out.push({k:'mel',notes:nts});continue;}}
+    if(isSection(line)){out.push({k:'sec',text:line.trim().replace(/^[[<(]|[\]>)]$/g,'').trim()});continue;}
+    if(!line.trim()){out.push({k:'blank'});continue;}
+    if(inline&&line.includes('[')){
+      const pairs=[],re=/\[([^\]]+)\]/g; let last=0,m,lead='';
+      while((m=re.exec(line))!==null){
+        const before=line.slice(last,m.index);
+        if(!pairs.length&&before)lead=before; else if(pairs.length)pairs[pairs.length-1].text+=before;
+        pairs.push({chord:parseChord(m[1]),raw:m[1],text:''}); last=re.lastIndex;
+      }
+      if(pairs.length){
+        pairs[pairs.length-1].text+=line.slice(last);
+        if(lead)pairs.unshift({chord:null,raw:'',text:lead});
+        out.push({k:'pairs',pairs}); continue;
+      }
+    }
+    if(isChordLine(line)){
+      const pos=[],re=/\S+/g; let m;
+      while((m=re.exec(line))!==null)pos.push({col:m.index,raw:m[0]});
+      const nx=lines[i+1];
+      const ly=(nx!==undefined&&nx.trim()&&!isChordLine(nx)&&!isSection(nx))?nx:null;
+      if(ly!==null)i++;
+      const pairs=[];
+      if(pos.length&&pos[0].col>0)pairs.push({chord:null,raw:'',text:ly?ly.slice(0,pos[0].col):''});
+      pos.forEach((p,j)=>{
+        const end=j+1<pos.length?pos[j+1].col:undefined;
+        pairs.push({chord:parseChord(p.raw),raw:p.raw,text:ly?ly.slice(p.col,end):''});
+      });
+      out.push({k:'pairs',pairs}); continue;
+    }
+    out.push({k:'pairs',pairs:[{chord:null,raw:'',text:line}]});
+  }
+  return out;
+}
+function detectKey(bl){
+  for(const b of bl){ if(b.k!=='pairs')continue;
+    for(const p of b.pairs) if(p.chord) return{pc:p.chord.root,minor:/^m(?!aj)/.test(p.chord.suffix)}; }
+  return{pc:0,minor:false};
+}
+
+/* ============ 오디오 엔진 ============ */
+const QUAL=[[/^(m7b5|ø)/,[0,3,6,10]],[/^(dim7|°7)/,[0,3,6,9]],[/^(dim|°)/,[0,3,6]],
+ [/^(aug|\+)/,[0,4,8]],[/^maj7|^M7|^Δ/,[0,4,7,11]],[/^m(?:in)?7/,[0,3,7,10]],
+ [/^m(?:in)?(?!aj)/,[0,3,7]],[/^sus2/,[0,2,7]],[/^sus4?/,[0,5,7]],[/^7/,[0,4,7,10]],[/^6/,[0,4,7,9]]];
+
+const INSTRUMENTS={
+  piano :{label:'피아노',      partials:[[1,.55],[2,.20],[3,.09],[4,.04]], a:.004,d:.55,sus:.28,r:.35, spread:0},
+  ep    :{label:'일렉피아노',  partials:[[1,.60],[2,.10],[4,.15],[7,.04]], a:.006,d:.85,sus:.30,r:.40, spread:0},
+  organ :{label:'오르간',      partials:[[1,.42],[2,.24],[3,.15],[4,.10],[6,.06]], a:.02,d:.08,sus:.90,r:.08, spread:0},
+  pad   :{label:'스트링 패드', partials:[[1,.34],[1.006,.30],[2,.10]], a:.45,d:.4,sus:.85,r:.65, spread:0, lp:true},
+  guitar:{label:'어쿠스틱 기타', pluck:true, spread:.020},
+  bass  :{label:'베이스만',    partials:[[1,.85],[2,.10]], a:.006,d:.5,sus:.25,r:.3, spread:0, bassOnly:true}
+};
+
+let actx=null, master=null;
+function AC(){
+  if(!actx){
+    const A=window.AudioContext||window.webkitAudioContext; if(!A)return null;
+    actx=new A(); master=actx.createGain(); master.gain.value=.9; master.connect(actx.destination);
+  }
+  if(actx.state==='suspended')actx.resume();
+  return actx;
+}
+const mtof=m=>440*Math.pow(2,(m-69)/12);
+
+const ksCache={};
+function pluckBuf(ctx,freq){
+  const k=Math.round(freq*4); if(ksCache[k])return ksCache[k];
+  const sr=ctx.sampleRate,len=Math.floor(sr*2.4),N=Math.max(2,Math.round(sr/freq));
+  const buf=ctx.createBuffer(1,len,sr),d=buf.getChannelData(0);
+  const ring=new Float32Array(N);
+  for(let i=0;i<N;i++)ring[i]=Math.random()*2-1;
+  let p=0,last=0;
+  for(let i=0;i<len;i++){
+    const cur=ring[p], v=(cur+last)*.5*.9965;
+    d[i]=v*Math.exp(-i/(sr*1.6));
+    ring[p]=v; last=cur; p=(p+1)%N;
+  }
+  ksCache[k]=buf; return buf;
+}
+
+function voice(ctx,inst,midi,t,dur,vel){
+  const I=INSTRUMENTS[inst]||INSTRUMENTS.piano, f=mtof(midi);
+  if(I.pluck){
+    const src=ctx.createBufferSource(); src.buffer=pluckBuf(ctx,f);
+    const g=ctx.createGain();
+    g.gain.setValueAtTime(vel*1.1,t);
+    g.gain.setTargetAtTime(.0001,t+Math.max(.25,dur*.85),.14);
+    src.connect(g); g.connect(master);
+    src.start(t); src.stop(t+Math.min(2.4,dur+.7));
+    return;
+  }
+  const g=ctx.createGain(), peak=Math.max(.0002,vel);
+  g.gain.setValueAtTime(.0001,t);
+  g.gain.exponentialRampToValueAtTime(peak,t+I.a);
+  g.gain.exponentialRampToValueAtTime(Math.max(.0002,peak*I.sus),t+I.a+I.d);
+  g.gain.setTargetAtTime(.0001,t+dur,I.r/3);
+  let out=g;
+  if(I.lp){
+    const lp=ctx.createBiquadFilter(); lp.type='lowpass';
+    lp.frequency.setValueAtTime(600,t);
+    lp.frequency.linearRampToValueAtTime(2400,t+Math.min(1.2,dur));
+    g.connect(lp); out=lp;
+  }
+  out.connect(master);
+  for(const[mult,amp] of I.partials){
+    const o=ctx.createOscillator(), og=ctx.createGain();
+    o.type=(inst==='organ'||inst==='ep')?'sine':(mult===1?'triangle':'sine');
+    o.frequency.value=f*mult;
+    og.gain.value=amp;
+    o.connect(og); og.connect(g);
+    o.start(t); o.stop(t+dur+I.r+.15);
+  }
+}
+
+function chordVoicing(chord,semis){
+  let iv=[0,4,7]; for(const[re,x] of QUAL) if(re.test(chord.suffix)){iv=x;break;}
+  const rp=mod(chord.root+semis);
+  const bassPc=mod((chord.bass===null?chord.root:chord.bass)+semis);
+  return {bass:36+bassPc, upper:iv.map(i=>60+rp+i)};
+}
+/* 연주 패턴: 한 코드가 차지하는 b박을 어떻게 쪼개 칠 것인가
+   반환 [{t:박 오프셋, n:[미디음], d:박 길이, g:세기}] */
+const PATTERNS={
+  block:{label:'블록 코드',build:(v,b)=>[{t:0,n:[v.bass].concat(v.upper),d:b,g:.26}]},
+
+  arp:{label:'아르페지오',build:(v,b)=>{
+    const u=v.upper, top=u[u.length-1];
+    const seq=[v.bass,u[0],u[1]||u[0],top,u[1]||u[0],u[0]];
+    const n=Math.max(2,Math.round(b*2)),step=b/n,out=[];
+    for(let i=0;i<n;i++)out.push({t:i*step,n:[seq[i%seq.length]],d:b-i*step+.4,g:.30});
+    return out;}},
+
+  alberti:{label:'알베르티',build:(v,b)=>{
+    const u=v.upper, hi=u[u.length-1], mid=u[1]||u[0];
+    const seq=[v.bass,hi,mid,hi];
+    const n=Math.max(2,Math.round(b*2)),step=b/n,out=[];
+    for(let i=0;i<n;i++)out.push({t:i*step,n:[seq[i%4]],d:step*2.2,g:.29});
+    return out;}},
+
+  eight:{label:'8비트',build:(v,b)=>{
+    const n=Math.max(2,Math.round(b*2)),step=b/n,out=[];
+    for(let i=0;i<n;i++){
+      const t=i*step;
+      if(i%2===0)out.push({t,n:[v.bass],d:step*1.7,g:.32});
+      out.push({t,n:v.upper,d:step*.95,g:i%2?.13:.19});
+    }
+    return out;}},
+
+  waltz:{label:'왈츠',build:(v,b)=>{
+    const beats=Math.max(2,Math.round(b)),out=[{t:0,n:[v.bass],d:1,g:.33}];
+    for(let i=1;i<beats;i++)out.push({t:i,n:v.upper,d:.9,g:.19});
+    return out;}},
+
+  shuffle:{label:'셔플',build:(v,b)=>{
+    const n=Math.max(1,Math.round(b)),out=[];
+    for(let i=0;i<n;i++){
+      out.push({t:i,n:i%2===0?[v.bass]:v.upper,d:.62,g:.30});
+      out.push({t:i+2/3,n:v.upper,d:.34,g:.16});
+    }
+    return out;}},
+
+  bossa:{label:'보사노바',build:(v,b)=>{
+    const out=[],n=Math.max(2,Math.round(b));
+    for(let i=0;i<n;i+=2){
+      out.push({t:i,n:[v.bass],d:1.4,g:.32});
+      out.push({t:i+1.5,n:[v.bass],d:1,g:.27});
+    }
+    [0,.75,1.5,2.5,3.25].forEach(t=>out.push({t,n:v.upper,d:.5,g:.17}));
+    return out;}},
+
+  ballad:{label:'발라드',build:(v,b)=>{
+    const u=v.upper,out=[{t:0,n:[v.bass],d:b,g:.30}];
+    const rest=Math.max(1,Math.round((b-.5)*2)),step=(b-.5)/rest;
+    for(let i=0;i<rest;i++)out.push({t:.5+i*step,n:[u[i%u.length]],d:b-(.5+i*step)+.5,g:.24});
+    return out;}}
+};
+
+const GENRES={
+  hymn   :{label:'찬송가',    inst:'organ', mel:'organ', pat:'block',   bpm:76,  beats:4},
+  ballad :{label:'CCM 발라드',inst:'piano', mel:'ep',    pat:'ballad',  bpm:68,  beats:4},
+  modern :{label:'모던 워십', inst:'pad',   mel:'ep',    pat:'arp',     bpm:72,  beats:4},
+  acou   :{label:'어쿠스틱',  inst:'guitar',mel:'piano', pat:'arp',     bpm:84,  beats:4},
+  gospel :{label:'가스펠',    inst:'ep',    mel:'ep',    pat:'shuffle', bpm:96,  beats:4},
+  band   :{label:'밴드 8비트',inst:'piano', mel:'ep',    pat:'eight',   bpm:100, beats:4},
+  bossa  :{label:'보사노바',  inst:'guitar',mel:'piano', pat:'bossa',   bpm:124, beats:4},
+  waltz  :{label:'왈츠',      inst:'piano', mel:'piano', pat:'waltz',   bpm:108, beats:3},
+  classic:{label:'클래식',    inst:'piano', mel:'piano', pat:'alberti', bpm:88,  beats:4}
+};
+function applyGenre(k){
+  const g=GENRES[k]; if(!g)return;
+  P.genre=k; P.inst=g.inst; P.melInst=g.mel; P.pattern=g.pat; P.beats=g.beats;
+  setBpm(g.bpm);
+  renderToolbar();
+  if(P.playing)startPlay();
+}
+
+function strike(ctx,chord,semis,inst,t,dur,beats,spb){
+  const I=INSTRUMENTS[inst]||INSTRUMENTS.piano;
+  const v=chordVoicing(chord,semis);
+  if(I.bassOnly){voice(ctx,inst,v.bass,t,dur,.34);return;}
+  const pat=PATTERNS[P.pattern]||PATTERNS.block;
+  for(const e of pat.build(v,beats)){
+    if(e.t>=beats||e.t<0)continue;
+    e.n.forEach((m,i)=>voice(ctx,inst,m,t+e.t*spb+i*(I.spread||0),Math.max(.14,e.d*spb),e.g));
+  }
+}
+function click(ctx,t,strong){
+  const o=ctx.createOscillator(),g=ctx.createGain();
+  o.type='square'; o.frequency.value=strong?1600:1050;
+  g.gain.setValueAtTime(.0001,t);
+  g.gain.exponentialRampToValueAtTime(strong?.16:.09,t+.001);
+  g.gain.exponentialRampToValueAtTime(.0001,t+.045);
+  o.connect(g); g.connect(master); o.start(t); o.stop(t+.06);
+}
+function tapChord(chord,semis){
+  const ctx=AC(); if(!ctx||!chord)return;
+  const I=INSTRUMENTS[P.inst]||INSTRUMENTS.piano, v=chordVoicing(chord,semis), t=ctx.currentTime+.01;
+  voice(ctx,P.inst,v.bass,t,1.1,.34);
+  if(!I.bassOnly)v.upper.forEach((m,i)=>voice(ctx,P.inst,m,t+i*(I.spread||0),1.1,.26));
+}
+
+/* ---- 시퀀서 ---- */
+const P={playing:false,bpm:84,genre:'',inst:'piano',melInst:'ep',pattern:'block',beats:4,loop:true,click:false,melody:true,
+         evs:[],total:0,k:0,cursorT:0,lastAt:0,timer:null,marks:[],cur:-1};
+
+function buildTimeline(){
+  const evs=[], hasBar=/\|/.test(S.raw);
+  let beat=0;
+  for(const b of blocks){
+    if(b.k!=='pairs')continue;
+    let bar=[];
+    const flush=()=>{ if(!bar.length)return;
+      const per=P.beats/bar.length;
+      bar.forEach(x=>{evs.push({type:'c',chord:x.chord,idx:x.idx,beats:per,at:beat});beat+=per;});
+      bar=[]; };
+    for(const pr of b.pairs){
+      if(pr.chord){ bar.push(pr); if(!hasBar)flush(); }
+      else if(hasBar&&/\|/.test(pr.raw||''))flush();
+    }
+    flush();
+  }
+  const chordEnd=beat;
+  let mb=0, hasMel=false;
+  for(const b of blocks){
+    if(b.k!=='mel')continue;
+    hasMel=true;
+    for(const n of b.notes){
+      if(!n.rest)evs.push({type:'m',midi:n.midi,beats:n.beats,at:mb});
+      mb+=n.beats;
+    }
+  }
+  const total=Math.max(chordEnd,mb,1);
+  if(P.click)for(let t=0;t<total;t+=1)
+    evs.push({type:'k',at:t,strong:Math.round(t)%P.beats===0});
+  evs.sort((a,b)=>a.at-b.at||(a.type==='k'?-1:1));
+  return {evs,total,hasMel};
+}
+function hasMelody(){return blocks.some(b=>b.k==='mel');}
+function schedule(){
+  const ctx=AC(); if(!ctx)return;
+  const now=ctx.currentTime;
+  for(let guard=0;guard<400;guard++){
+    const spb=60/P.bpm;
+    if(P.k>=P.evs.length){
+      if(!P.loop){
+        const endT=P.cursorT+(P.total-P.lastAt)*spb;
+        if(endT<now+.2){setTimeout(stopPlay,Math.max(0,(endT-now)*1000)+300);return;}
+        return;
+      }
+      P.cursorT+=(P.total-P.lastAt)*spb; P.lastAt=0; P.k=0;
+    }
+    const ev=P.evs[P.k], t=P.cursorT+(ev.at-P.lastAt)*spb;
+    if(t>now+.25)return;
+    if(ev.type==='c'){
+      strike(ctx,ev.chord,S.semis,P.inst,t,ev.beats*spb*.96,ev.beats,spb);
+      P.marks.push({t,idx:ev.idx});
+    }else if(ev.type==='m'){
+      if(P.melody)voice(ctx,P.melInst,ev.midi+S.semis,t,ev.beats*spb*.92,.34);
+    }else{
+      click(ctx,t,ev.strong);
+    }
+    P.cursorT=t; P.lastAt=ev.at; P.k++;
+  }
+}
+function frame(){
+  if(!P.playing)return;
+  const ctx=actx; if(ctx){
+    const now=ctx.currentTime;
+    while(P.marks.length>1&&P.marks[1].t<=now)P.marks.shift();
+    if(P.marks.length&&P.marks[0].t<=now&&P.marks[0].idx!==P.cur)mark(P.marks[0].idx);
+  }
+  requestAnimationFrame(frame);
+}
+function mark(idx){
+  P.cur=idx;
+  document.querySelectorAll('.ch.now').forEach(e=>e.classList.remove('now'));
+  const el=document.querySelector('.ch[data-idx="'+idx+'"]');
+  if(!el)return;
+  el.classList.add('now');
+  const r=el.getBoundingClientRect();
+  if(r.top<70||r.bottom>window.innerHeight-190)el.scrollIntoView({block:'center',behavior:'smooth'});
+}
+function startPlay(){
+  const ctx=AC(); if(!ctx){toast('이 브라우저에서는 소리를 낼 수 없습니다.');return;}
+  const tl=buildTimeline();
+  if(!tl.evs.length){toast('재생할 내용이 없습니다.');return;}
+  P.evs=tl.evs; P.total=tl.total;
+  P.playing=true; P.k=0; P.lastAt=0; P.marks=[]; P.cur=-1;
+  P.cursorT=ctx.currentTime+.25;
+  clearInterval(P.timer);
+  P.timer=setInterval(schedule,25);
+  schedule(); requestAnimationFrame(frame);
+  $('play').innerHTML='&#10073;&#10073;';
+}
+function stopPlay(){
+  P.playing=false; clearInterval(P.timer); P.timer=null; P.marks=[]; P.cur=-1;
+  document.querySelectorAll('.ch.now').forEach(e=>e.classList.remove('now'));
+  $('play').innerHTML='&#9654;';
+}
+function togglePlay(){ P.playing?stopPlay():startPlay(); }
+
+/* ============ 상태 ============ */
+const SAMPLE=`[Verse 1]
+G              D/F#         Em
+아침이 열리는 이 자리에서
+C              G/B          Am7    D
+나의 마음을 드립니다
+
+[Chorus]
+G       D       Em7     C
+주가 나의 노래 되시니
+G       D/F#    C       D    G
+내 입술이 잠잠할 수 없네`;
+
+const S={raw:SAMPLE,semis:0,flat:null,num:false,capo:false,font:17,col:false,photo:null};
+let blocks=[], origKey={pc:0,minor:false};
+function reparse(){
+  blocks=parseChart(S.raw); origKey=detectKey(blocks);
+  let n=0;
+  for(const b of blocks) if(b.k==='pairs') for(const p of b.pairs) if(p.chord)p.idx=n++;
+}
+reparse();
+
+const K='konti:songs';
+const load=()=>{try{return JSON.parse(localStorage.getItem(K)||'[]')}catch(e){return[]}};
+const save=v=>{try{localStorage.setItem(K,JSON.stringify(v));return true}catch(e){return false}};
+const getKey=()=>{try{return localStorage.getItem('konti:apikey')||''}catch(e){return''}};
+
+const $=id=>document.getElementById(id);
+const esc=s=>s.replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+
+function targetPc(){return mod(origKey.pc+S.semis)}
+function pref(){return S.flat||PREF[targetPc()]}
+function origLabel(){return nm(origKey.pc,PREF[origKey.pc])+(origKey.minor?'m':'')}
+function targetLabel(){return nm(targetPc(),pref())+(origKey.minor?'m':'')}
+function capoInfo(){
+  for(let n=1;n<=7;n++){const sh=mod(targetPc()-n); if(SHAPES.includes(sh))return{fret:n,shape:sh};}
+  return null;
+}
+function chordSemis(){const c=capoInfo(); return (S.capo&&c)?S.semis-c.fret:S.semis;}
+
+let toastT;
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),2400);}
+
+/* ============ 렌더 ============ */
+function renderRail(){
+  const r=$('rail'),tp=targetPc(),p=pref();
+  r.innerHTML='';
+  for(let pc=0;pc<12;pc++){
+    const b=document.createElement('button');
+    b.className='key'+(pc===tp?' on':'')+(pc===origKey.pc?' orig':'');
+    b.textContent=nm(pc,p);
+    b.setAttribute('aria-label',nm(pc,p)+' 키로 바꾸기');
+    b.onclick=()=>{let d=pc-tp; if(d>6)d-=12; if(d<-6)d+=12; S.semis=Math.max(-12,Math.min(12,S.semis+d)); renderAll();};
+    r.appendChild(b);
+  }
+}
+function renderMeta(){
+  const m=$('meta');
+  m.innerHTML='<span>원키 <b style="color:var(--ribbon)">'+esc(origLabel())+'</b></span>'
+   +'<span>→</span><span>연주키 <b style="color:var(--brass)">'+(S.num?'넘버':esc(targetLabel()))+'</b></span>'
+   +'<span style="color:var(--line)">·</span>'
+   +'<span>'+(S.semis===0?'원키 그대로':(S.semis>0?'+':'')+S.semis+'반음')+'</span>';
+  if(S.semis!==0){
+    const b=document.createElement('button');b.className='btn sm';b.textContent='되돌리기';
+    b.onclick=()=>{S.semis=0;renderAll()};m.appendChild(b);
+  }
+}
+function renderChart(){
+  const el=$('chart'),sm=chordSemis(),p=pref(),ci=capoInfo();
+  el.style.fontSize=S.font+'px';
+  el.style.columnCount=S.col?2:1; el.style.columnGap='28px';
+  el.innerHTML='';
+  if(S.capo&&ci){
+    const d=document.createElement('div');d.className='capo';
+    d.innerHTML='카포 <b>'+ci.fret+'</b>프렛 · '+nm(ci.shape,PREF[ci.shape])+' 폼으로 잡으면 실제로는 '+esc(targetLabel())+'로 들립니다';
+    el.appendChild(d);
+  }
+  for(const b of blocks){
+    if(b.k==='blank'){const d=document.createElement('div');d.style.height=(S.font*.9)+'px';el.appendChild(d);continue;}
+    if(b.k==='sec'){const d=document.createElement('div');d.className='section';d.textContent=b.text;el.appendChild(d);continue;}
+    if(b.k==='mel')continue;
+    const row=document.createElement('div');row.className='lineblk';
+    for(const pr of b.pairs){
+      const label=pr.chord?(S.num?showNum(pr.chord,origKey.pc):showChord(pr.chord,sm,p)):pr.raw;
+      const wrap=document.createElement('span');wrap.className='pair';
+      const ch=document.createElement('span');
+      ch.className='ch'+(pr.chord?'':' plain');
+      ch.style.fontSize=(S.font*.88)+'px';
+      ch.style.minHeight=(S.font*1.2)+'px';
+      ch.textContent=label;
+      if(pr.chord){
+        ch.dataset.idx=pr.idx;
+        if(pr.idx===P.cur)ch.classList.add('now');
+        ch.onclick=()=>tapChord(pr.chord,sm);
+        ch.setAttribute('role','button');ch.tabIndex=0;
+        ch.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();tapChord(pr.chord,sm)}};}
+      const ly=document.createElement('span');ly.className='ly';ly.textContent=pr.text;
+      wrap.appendChild(ch);wrap.appendChild(ly);row.appendChild(wrap);
+    }
+    el.appendChild(row);
+  }
+}
+function renderToolbar(){
+  const ib=$('instbtn');
+  if(ib)ib.textContent=(hasMelody()&&P.melody?'♪ ':'')+INSTRUMENTS[P.inst].label;
+  $('b-number').classList.toggle('on',S.num);
+  $('b-capo').classList.toggle('on',S.capo);
+  $('b-capo').disabled=!capoInfo();
+  $('b-flat').classList.toggle('on',S.flat==='flat');
+  $('b-col').classList.toggle('on',S.col);
+  $('b-font').textContent='글자 '+S.font;
+}
+function renderAll(){renderRail();renderMeta();renderChart();renderToolbar();}
+
+/* ============ 내보내기 ============ */
+const PAGE_W=1240, RATIO=1.41428;
+const CMONO="ui-monospace,Menlo,Consolas,'Apple SD Gothic Neo','Malgun Gothic',monospace";
+const CSANS="'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif";
+
+function subtitle(){
+  const ci=capoInfo();
+  return '원키 '+origLabel()+' → 연주키 '+(S.num?'넘버':targetLabel())+((S.capo&&ci)?'  ·  카포 '+ci.fret:'');
+}
+function chartCanvas(){
+  const M=78,W=PAGE_W,maxW=W-M*2,CH=27,LY=27,LINE=74,GAP=14,sm=chordSemis(),p=pref();
+  const probe=document.createElement('canvas').getContext('2d');
+  const cf='700 '+CH+'px '+CMONO, lf=LY+'px '+CMONO;
+  const ops=[]; let y=M;
+  ops.push({t:'title',x:M,y:y+40,s:$('title').value.trim()||'제목 없음'}); y+=62;
+  ops.push({t:'sub',x:M,y:y+18,s:subtitle()}); y+=54;
+  for(const b of blocks){
+    if(b.k==='blank'){y+=LINE*.42;continue;}
+    if(b.k==='sec'){y+=26;ops.push({t:'sec',x:M,y:y+18,s:b.text.toUpperCase()});y+=30;ops.push({t:'rule',x:M,y,w:maxW});y+=20;continue;}
+    if(b.k==='mel')continue;
+    let x=M;
+    for(const pr of b.pairs){
+      const label=pr.chord?(S.num?showNum(pr.chord,origKey.pc):showChord(pr.chord,sm,p)):pr.raw;
+      probe.font=cf; const cw=label?probe.measureText(label).width+GAP:0;
+      probe.font=lf; const tw=probe.measureText(pr.text).width;
+      const w=Math.max(cw,tw);
+      if(x>M&&x+w>M+maxW){x=M;y+=LINE;}
+      if(label)ops.push({t:'ch',x,y:y+CH,s:label});
+      if(pr.text)ops.push({t:'ly',x,y:y+CH+LY+6,s:pr.text});
+      x+=w;
+    }
+    y+=LINE;
+  }
+  const H=Math.max(Math.ceil(y+M),Math.ceil(PAGE_W*RATIO));
+  const cv=document.createElement('canvas');cv.width=W;cv.height=H;
+  const c=cv.getContext('2d');
+  c.fillStyle='#fff';c.fillRect(0,0,W,H);c.textBaseline='alphabetic';
+  for(const o of ops){
+    if(o.t==='title'){c.font='700 46px '+CSANS;c.fillStyle='#111';c.fillText(o.s,o.x,o.y);}
+    else if(o.t==='sub'){c.font='500 24px '+CSANS;c.fillStyle='#6B7683';c.fillText(o.s,o.x,o.y);}
+    else if(o.t==='sec'){c.font='700 20px '+CSANS;c.fillStyle='#A32E3E';c.fillText(o.s,o.x,o.y);}
+    else if(o.t==='rule'){c.fillStyle='#D8D2C6';c.fillRect(o.x,o.y,o.w,1);}
+    else if(o.t==='ch'){c.font=cf;c.fillStyle='#000';c.fillText(o.s,o.x,o.y);}
+    else {c.font=lf;c.fillStyle='#222';c.fillText(o.s,o.x,o.y);}
+  }
+  return cv;
+}
+function b64bytes(b){const s=atob(b),u=new Uint8Array(s.length);for(let i=0;i<s.length;i++)u[i]=s.charCodeAt(i);return u;}
+function buildPdf(pages){
+  const enc=new TextEncoder(),parts=[],off=[];let len=0;
+  const push=u=>{parts.push(u);len+=u.length};
+  const str=s=>push(enc.encode(s));
+  const mark=n=>{off[n]=len};
+  const W=595.28,H=841.89,N=pages.length;
+  str('%PDF-1.4\n');
+  mark(1);str('1 0 obj\n<</Type/Catalog/Pages 2 0 R>>\nendobj\n');
+  mark(2);str('2 0 obj\n<</Type/Pages/Kids['+pages.map((_,i)=>(3+i*3)+' 0 R').join(' ')+']/Count '+N+'>>\nendobj\n');
+  pages.forEach((p,i)=>{
+    const pg=3+i*3,ct=4+i*3,im=5+i*3;
+    mark(pg);str(pg+' 0 obj\n<</Type/Page/Parent 2 0 R/MediaBox[0 0 '+W+' '+H+']/Resources<</XObject<</I0 '+im+' 0 R>>>>/Contents '+ct+' 0 R>>\nendobj\n');
+    const co='q '+W+' 0 0 '+H+' 0 0 cm /I0 Do Q';
+    mark(ct);str(ct+' 0 obj\n<</Length '+co.length+'>>\nstream\n'+co+'\nendstream\nendobj\n');
+    mark(im);str(im+' 0 obj\n<</Type/XObject/Subtype/Image/Width '+p.w+'/Height '+p.h+'/ColorSpace/DeviceRGB/BitsPerComponent 8/Filter/DCTDecode/Length '+p.bytes.length+'>>\nstream\n');
+    push(p.bytes);str('\nendstream\nendobj\n');
+  });
+  const xp=len,total=3+N*3;
+  let x='xref\n0 '+total+'\n0000000000 65535 f \n';
+  for(let n=1;n<total;n++)x+=String(off[n]||0).padStart(10,'0')+' 00000 n \n';
+  str(x);str('trailer\n<</Size '+total+'/Root 1 0 R>>\nstartxref\n'+xp+'\n%%EOF\n');
+  const out=new Uint8Array(len);let o=0;
+  for(const p of parts){out.set(p,o);o+=p.length}
+  return out;
+}
+function pdfBytes(cv){
+  const ph=Math.round(cv.width*RATIO),n=Math.max(1,Math.ceil(cv.height/ph)),pages=[];
+  for(let i=0;i<n;i++){
+    const s=document.createElement('canvas');s.width=cv.width;s.height=ph;
+    const c=s.getContext('2d');c.fillStyle='#fff';c.fillRect(0,0,s.width,s.height);
+    c.drawImage(cv,0,i*ph,cv.width,ph,0,0,cv.width,ph);
+    pages.push({bytes:b64bytes(s.toDataURL('image/jpeg',.92).split(',')[1]),w:s.width,h:s.height});
+  }
+  return buildPdf(pages);
+}
+function baseName(){return ($('title').value.trim()||'chart').replace(/[\\/:*?"<>|]/g,'')+'_'+(S.num?'NNS':targetLabel());}
+function saveBlob(blob,name){
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);a.download=name;a.rel='noopener';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+}
+function chartText(){
+  const sm=chordSemis(),p=pref(),out=[];
+  out.push($('title').value.trim()||'제목 없음');out.push(subtitle());out.push('');
+  for(const b of blocks){
+    if(b.k==='blank')out.push('');
+    else if(b.k==='sec')out.push('['+b.text+']');
+    else if(b.k==='mel')out.push(melLine(b.notes,S.semis,p));
+    else{
+      let cl='',ly='';
+      for(const pr of b.pairs){
+        const ch=pr.chord?(S.num?showNum(pr.chord,origKey.pc):showChord(pr.chord,sm,p)):pr.raw;
+        const w=Math.max(ch.length+1,pr.text.length);
+        cl+=ch.padEnd(w,' ');ly+=pr.text.padEnd(w,' ');
+      }
+      if(cl.trim())out.push(cl.replace(/\s+$/,''));
+      if(ly.trim())out.push(ly.replace(/\s+$/,''));
+    }
+  }
+  return out.join('\n');
+}
+
+/* ============ 사진 → 차트 ============ */
+const PROMPT=`이 이미지는 찬양 악보입니다. 아래 형식의 순수 텍스트로만 답하세요.
+
+1. 제목이 보이면 첫 줄에 TITLE: 제목
+2. 구간 이름이 있으면 [Verse 1] [Chorus] 처럼 대괄호로 씁니다.
+3. 코드 심볼을 가사 바로 윗줄에, 해당 가사 글자 위치에 공백으로 맞춰 씁니다.
+   슬래시 코드(F/A), 텐션(Gm7, Csus4, Bbmaj7)은 그대로 유지합니다.
+4. 오선보에 음표가 있으면 그 코드/가사 줄 바로 앞에 멜로디 줄을 넣습니다.
+   형식 예: ♪ Bb4:1 C5:0.5 D5:0.5 r:1
+   - 음이름 + 옥타브 숫자. 가온다는 C4.
+   - 임시표는 # 또는 b 를 음이름 바로 뒤에.
+   - 조표를 반드시 반영해 실제로 소리나는 음을 씁니다. (♭이 2개면 B와 E는 Bb, Eb)
+   - 콜론 뒤는 박수. 4분음표 1, 8분음표 0.5, 16분음표 0.25, 2분음표 2, 점4분음표 1.5, 온음표 4.
+   - 쉼표는 r:박수 로 씁니다.
+5. 가사가 1절 2절로 두 줄이면 1절을 코드에 맞춰 쓰고, 바로 다음 줄에 2) 로 시작해 2절을 씁니다.
+6. 확실하지 않은 코드는 추측하지 말고 ? 로 남깁니다.
+7. 설명, 인사말, 코드블록 표시를 붙이지 말고 결과만 출력합니다.`;
+
+async function onPickFile(e){
+  const f=e.target.files&&e.target.files[0]; if(!f)return;
+  try{
+    const url=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f)});
+    const img=await new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=url});
+    const sc=Math.min(1,1600/Math.max(img.width,img.height));
+    const cv=document.createElement('canvas');
+    cv.width=Math.round(img.width*sc);cv.height=Math.round(img.height*sc);
+    const c=cv.getContext('2d');
+    c.filter='grayscale(1) contrast(1.25) brightness(1.05)';
+    c.drawImage(img,0,0,cv.width,cv.height);
+    const out=cv.toDataURL('image/jpeg',.9);
+    S.photo={url:out,b64:out.split(',')[1]};
+    openPanel('scan');
+  }catch(err){toast('이미지를 열지 못했습니다.')}
+}
+let camStream=null;
+function closeCam(){
+  if(camStream){camStream.getTracks().forEach(t=>t.stop());camStream=null;}
+  const w=$('camwrap'); if(w)w.style.display='none';
+}
+async function openCam(){
+  const box=$('scanstate');
+  try{
+    if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw new Error('unsupported');
+    camStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920}}});
+    const w=$('camwrap'); w.style.display='block';
+    const v=$('cam'); v.srcObject=camStream; v.setAttribute('playsinline',''); v.muted=true; await v.play();
+    if(box){box.className='';box.textContent='';}
+  }catch(e){
+    closeCam();
+    if(box){box.className='callout err';box.textContent='이 환경에서는 카메라를 쓸 수 없습니다. 파일 선택이나 붙여넣기를 써 주세요.';}
+  }
+}
+function shoot(){
+  const v=$('cam'); if(!v||!v.videoWidth){toast('아직 화면이 준비되지 않았습니다.');return;}
+  const sc=Math.min(1,1600/Math.max(v.videoWidth,v.videoHeight));
+  const cv=document.createElement('canvas');
+  cv.width=Math.round(v.videoWidth*sc); cv.height=Math.round(v.videoHeight*sc);
+  const c=cv.getContext('2d');
+  c.filter='grayscale(1) contrast(1.25) brightness(1.05)';
+  c.drawImage(v,0,0,cv.width,cv.height);
+  const out=cv.toDataURL('image/jpeg',.9);
+  closeCam();
+  S.photo={url:out,b64:out.split(',')[1]};
+  openPanel('scan');
+}
+
+/* ============ OCR: API 키 없이 코드와 가사 읽기 ============
+   Tesseract.js 는 "글자"를 읽는다. 오선보의 음표는 못 읽는다.
+   그래서 코드 심볼과 가사까지만 가져오고 멜로디는 포기한다. */
+let tessWorker=null;
+function loadScript(src){
+  return new Promise((res,rej)=>{
+    const el=document.createElement('script');
+    el.src=src; el.onload=()=>res(); el.onerror=()=>rej(new Error('스크립트를 불러오지 못했습니다'));
+    document.head.appendChild(el);
+  });
+}
+/* 흔한 오인식 교정 */
+function fixChordToken(t){
+  let x=t.replace(/[♭]/g,'b').replace(/[♯]/g,'#').replace(/[·•,.]$/,'').trim();
+  x=x.replace(/^([A-G])[|1lI](?=[A-G])/,'$1/');      // F|A → F/A
+  x=x.replace(/([A-G][#b]?)[|lI]([A-G][#b]?)$/,'$1/$2');
+  x=x.replace(/^([A-G])[oO0](?![a-z])/,'$1');
+  x=x.replace(/^([A-G][#b]?)rn/,'$1m');               // rn → m
+  x=x.replace(/[^A-Ga-g#b\/0-9msuadijMΔ°+()\-]/g,'');
+  if(/^[A-G]/.test(x))x=x[0].toUpperCase()+x.slice(1);
+  return x;
+}
+function wordsFrom(data){
+  if(data.words&&data.words.length)return data.words;
+  const out=[];
+  const walk=n=>{ if(!n)return;
+    if(Array.isArray(n)){n.forEach(walk);return;}
+    if(n.text!==undefined&&n.bbox&&!n.words&&!n.lines&&!n.paragraphs){out.push(n);return;}
+    ['blocks','paragraphs','lines','words'].forEach(k=>{if(n[k])walk(n[k])});
+  };
+  walk(data.blocks||data);
+  return out;
+}
+/* 낱말들을 y 로 줄 묶고, x 로 칸을 맞춰 텍스트 차트로 복원 */
+function wordsToChart(words){
+  const ws=words.filter(w=>w.text&&w.text.trim()&&(w.confidence===undefined||w.confidence>45))
+    .map(w=>({t:w.text.trim(),x0:w.bbox.x0,x1:w.bbox.x1,yc:(w.bbox.y0+w.bbox.y1)/2,h:w.bbox.y1-w.bbox.y0}));
+  if(!ws.length)return '';
+  const medH=ws.map(w=>w.h).sort((a,b)=>a-b)[Math.floor(ws.length/2)]||20;
+  ws.sort((a,b)=>a.yc-b.yc);
+  const lines=[];
+  for(const w of ws){
+    const L=lines[lines.length-1];
+    if(L&&Math.abs(w.yc-L.yc)<medH*0.62){L.items.push(w);L.yc=(L.yc*(L.items.length-1)+w.yc)/L.items.length;}
+    else lines.push({yc:w.yc,items:[w]});
+  }
+  const charW=Math.max(6,medH*0.55);
+  const minX=Math.min(...ws.map(w=>w.x0));
+  const out=[];
+  for(const L of lines){
+    L.items.sort((a,b)=>a.x0-b.x0);
+    const toks=L.items.map(w=>({raw:w.t,fixed:fixChordToken(w.t),col:Math.round((w.x0-minX)/charW)}));
+    const chordish=toks.filter(t=>parseChord(t.fixed)).length;
+    const isChord=toks.length>0&&chordish/toks.length>=0.6&&!toks.some(t=>/[가-힣]/.test(t.raw));
+    let line='';
+    for(const t of toks){
+      const text=isChord?t.fixed:t.raw;
+      if(!text)continue;
+      const col=isChord?t.col:Math.round((t.col));
+      while(line.length<col)line+=' ';
+      if(line.length&&line[line.length-1]!==' ')line+=' ';
+      line+=text;
+    }
+    if(line.trim())out.push(line.replace(/\s+$/,''));
+  }
+  return out.join('\n');
+}
+async function runOCR(){
+  if(!S.photo)return;
+  const box=$('scanstate');
+  const say=m=>{box.className='callout work';box.innerHTML='<span class="spin"></span> '+m;};
+  say('OCR 준비 중… 처음 한 번은 한글 인식 데이터를 내려받느라 30초쯤 걸립니다.');
+  try{
+    if(!window.Tesseract)await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js');
+    if(!tessWorker){
+      tessWorker=await Tesseract.createWorker(['kor','eng'],1,{
+        logger:m=>{ if(m.status&&m.progress!==undefined)say(m.status+' '+Math.round(m.progress*100)+'%'); }
+      });
+    }
+    say('글자를 읽는 중…');
+    const res=await tessWorker.recognize(S.photo.url,{},{blocks:true,text:true});
+    const txt=wordsToChart(wordsFrom(res.data));
+    if(!txt.trim())throw new Error('읽어낸 글자가 없습니다');
+    S.raw=txt; S.semis=0; stopPlay(); reparse(); renderAll();
+    box.className='callout ok';
+    box.innerHTML='<b>OCR로 옮겼습니다.</b> 키 없이 읽은 것이라 오타가 많습니다. '
+      +'원본 사진과 비교하며 <b>직접 입력</b>에서 고쳐 주세요. 멜로디(음표)는 읽지 못합니다.';
+  }catch(err){
+    box.className='callout err';
+    box.textContent='OCR 실패: '+(err.message||'알 수 없는 오류')+' — 인터넷 연결을 확인하거나 “직접 입력”에 옮겨 주세요.';
+  }
+}
+
+/* 붙여넣기로도 사진을 받는다 */
+document.addEventListener('paste',ev=>{
+  const it=[...(ev.clipboardData&&ev.clipboardData.items||[])].find(i=>i.type.startsWith('image/'));
+  if(!it)return;
+  const f=it.getAsFile(); if(!f)return;
+  onPickFile({target:{files:[f]}});
+});
+
+async function runScan(){
+  const hosted=!!SCAN_ENDPOINT;
+  const key=hosted?'':getKey();
+  if(!S.photo)return;
+  if(!hosted&&!key&&!IN_FRAME){
+    const b=$('scanstate');
+    b.className='callout err';
+    b.innerHTML='<b>API 키를 먼저 넣어 주세요.</b><br>'
+      +'platform.claude.com → 가입 → API keys → Create Key 로 발급받아 위 칸에 붙여넣으면 됩니다. '
+      +'키는 이 기기에만 저장됩니다.<br><br>'
+      +'키 없이 쓰려면 사진을 보며 <b>직접 입력</b>에 옮기세요. 이조·재생·PDF는 키 없이 전부 됩니다.';
+    return;
+  }
+  const box=$('scanstate');
+  box.className='callout work';
+  box.innerHTML='<span class="spin"></span> 코드와 가사를 읽고 있습니다. 10~20초 걸립니다.';
+  try{
+    const r = hosted
+      ? await fetch(SCAN_ENDPOINT,{method:'POST',headers:{'content-type':'application/json'},
+          body:JSON.stringify({data:S.photo.b64,prompt:PROMPT})})
+      : await fetch('https://api.anthropic.com/v1/messages',{
+          method:'POST',
+          headers:key
+            ? {'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'}
+            : {'content-type':'application/json'},
+          body:JSON.stringify({model:'claude-sonnet-5',max_tokens:4000,messages:[{role:'user',content:[
+            {type:'image',source:{type:'base64',media_type:'image/jpeg',data:S.photo.b64}},
+            {type:'text',text:PROMPT}]}]})
+        });
+    if(!r.ok){
+      if(r.status===429) throw new Error('오늘 변환 횟수를 다 썼습니다. 내일 다시 시도하거나 아래에 직접 옮겨 주세요.');
+      if(r.status===401||r.status===403) throw new Error(key
+        ? '키가 거부되었습니다. 키를 확인해 주세요.'
+        : '키 없이는 이 환경에서 인식할 수 없습니다. Claude 앱 안에서 열면 키 없이 테스트됩니다.');
+      throw new Error('서버 응답 '+r.status);
+    }
+    const d=await r.json();
+    let txt=(d.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n').trim();
+    txt=txt.replace(/^```[a-z]*\n?/i,'').replace(/```$/,'').trim();
+    const tm=txt.match(/^TITLE:\s*(.+)$/m);
+    if(tm){$('title').value=tm[1].trim();txt=txt.replace(/^TITLE:\s*.+$/m,'').trim();}
+    if(!txt)throw new Error('읽어낸 내용이 없습니다.');
+    S.raw=txt;S.semis=0;reparse();if(P.playing)startPlay();renderAll();
+    box.className='callout ok';
+    box.textContent='옮겼습니다. 원본 사진과 비교해 틀린 코드가 없는지 확인하세요. 수정은 “직접 입력”에서 합니다.';
+  }catch(err){
+    box.className='callout err';
+    const net=/failed to fetch|networkerror|load failed/i.test(err.message||'');
+    box.innerHTML = (net&&LOCAL_FILE)
+      ? '<b>내려받은 파일로 열어서 막혔습니다.</b> 브라우저가 저장된 파일에서 외부 호출을 차단합니다(CORS). '
+        +'키를 넣어도 이 방식으로는 안 됩니다. 아래 세 가지 중 하나를 쓰세요.<br><br>'
+        +'1. <b>Claude 앱 안에서 이 앱을 열기</b> — 지금 바로 되고 키도 필요 없습니다.<br>'
+        +'2. GitHub Pages 등 <b>https 주소로 올린 뒤</b> 키를 넣기.<br>'
+        +'3. 사진을 보면서 <b>직접 입력</b>에 옮기기 — 인터넷 없이 됩니다.'
+      : net
+        ? '인터넷 연결을 확인해 주세요. 계속 안 되면 “직접 입력”에 옮겨 주세요.'
+        : ((err.message||'변환 실패')+' — 확인 후 다시 시도하거나 “직접 입력”에 옮겨 주세요.');
+  }
+}
+
+/* ============ 패널 ============ */
+function openPanel(name){
+  const s=$('sheet'),titles={scan:'사진에서 가져오기',input:'직접 입력',library:'저장된 콘티',export:'내보내기'};
+  s.innerHTML='<div class="sheethead"><span class="eyebrow">'+titles[name]+'</span><button class="btn" id="close">닫기</button></div>';
+  const body=document.createElement('div');s.appendChild(body);
+  $('close').onclick=closePanel;
+
+  if(name==='scan'){
+    const hosted=!!SCAN_ENDPOINT;
+    body.innerHTML=
+      '<p class="note">코드 차트는 물론 <b>오선보</b>도 읽습니다. 오선보면 멜로디까지 가져와 함께 재생합니다. 반듯하게, 그림자 없이, 한 페이지씩 찍을수록 잘 됩니다.</p>'
+      +(hosted
+        ? '<p class="note">인터넷만 연결되어 있으면 바로 됩니다. 하루 사용 횟수에 제한이 있습니다.</p>'
+        : LOCAL_FILE
+        ? '<div class="callout err"><b>이 방식으로는 사진 인식이 안 됩니다.</b><br>'
+          +'내려받은 파일을 직접 열면 브라우저가 외부 호출을 막습니다(CORS). 키를 넣어도 마찬가지입니다.<br><br>'
+          +'· <b>Claude 앱 안에서 열면</b> 키 없이 바로 됩니다.<br>'
+          +'· https 주소로 올리면 키를 넣어 쓸 수 있습니다.<br>'
+          +'· 지금 당장은 <b>직접 입력</b>에 사진을 보며 옮기세요. 이조·재생·PDF는 여기서도 전부 됩니다.</div>'
+        : (IN_FRAME
+            ? '<p class="note"><b>키를 비워둔 채 그냥 눌러 보세요.</b> 이 환경에서는 키 없이 동작합니다.</p>'
+            : '<p class="note"><b>사진 인식에는 본인 Anthropic API 키가 필요합니다.</b> platform.claude.com → API keys → Create Key 로 발급받아 아래에 붙여넣으세요. 키는 이 기기에만 저장되며 다른 곳으로 전송되지 않습니다.</p>')
+          +'<input class="field" id="apikey" type="password" placeholder="sk-ant-... (본인 API 키)" value="'+esc(getKey())+'">')
+      +'<div class="btns"><label class="btn on" for="file">사진 고르기</label>'
+      +'<button class="btn" id="camopen">카메라로 찍기</button>'
+      +(S.photo?'<button class="btn" id="go">코드 차트로 바꾸기</button>'
+        +'<button class="btn" id="ocr">OCR로 읽기 (키 없이)</button>'
+        +'<button class="btn" id="clr">사진 비우기</button>':'')
+      +'</div><div id="scanstate"></div>'
+      +'<input type="file" id="file" class="vh" accept="image/*">'
+      +'<div id="camwrap"><video id="cam" playsinline muted></video>'
+      +'<div class="btns"><button class="btn on" id="shoot">촬영</button>'
+      +'<button class="btn" id="camclose">취소</button></div></div>'
+      +'<p class="note" style="margin:12px 0 0">위 버튼이 반응하지 않으면 아래를 직접 눌러 주세요. 사진을 복사해서 붙여넣어도 됩니다.</p>'
+      +'<input type="file" id="file2" class="rawfile" accept="image/*">'
+      +(S.photo?'<img id="preview" src="'+S.photo.url+'" alt="올린 악보 사진" style="margin-top:12px">':'<div class="drop" style="margin-top:12px">아직 사진이 없습니다.<br>인쇄된 코드 차트가 손글씨보다 훨씬 잘 읽힙니다.</div>');
+    if($('apikey'))$('apikey').onchange=e=>{try{localStorage.setItem('konti:apikey',e.target.value.trim())}catch(err){}};
+    ['file','file2'].forEach(id=>{ const el=$(id); if(el)el.onchange=onPickFile; });
+    if($('ocr'))$('ocr').onclick=runOCR;
+    if($('camopen'))$('camopen').onclick=openCam;
+    if($('shoot'))$('shoot').onclick=shoot;
+    if($('camclose'))$('camclose').onclick=closeCam;
+    if(S.photo){$('go').onclick=runScan;$('clr').onclick=()=>{S.photo=null;openPanel('scan')};}
+  }
+
+  if(name==='input'){
+    body.innerHTML='<p class="note">코드가 가사 위에 있는 형식과 <code>[G]가사</code> 형식을 모두 읽습니다. 첫 코드를 원키로 잡습니다.</p>'
+      +(S.photo?'<img id="preview" src="'+S.photo.url+'" style="max-height:220px;object-fit:contain;margin-bottom:10px" alt="올린 악보 사진">':'')
+      +'<textarea class="field" id="ta" spellcheck="false"></textarea>'
+      +'<div class="btns"><button class="btn" id="ex">예시 다시 넣기</button><button class="btn" id="cl">비우기</button></div>';
+    const ta=$('ta');ta.value=S.raw;
+    ta.oninput=()=>{S.raw=ta.value;S.semis=0;reparse();if(P.playing)startPlay();renderAll();};
+    $('ex').onclick=()=>{ta.value=SAMPLE;ta.oninput();$('title').value='예시 곡'};
+    $('cl').onclick=()=>{ta.value='';ta.oninput()};
+  }
+
+  if(name==='library'){
+    const list=load();
+    if(!list.length){body.innerHTML='<p class="note">아직 저장한 곡이 없습니다. 차트를 띄운 뒤 <b>저장</b>을 누르면 이번 주 콘티가 쌓입니다.</p>';}
+    else list.forEach(song=>{
+      const d=document.createElement('div');d.className='rowlist';
+      const b=document.createElement('button');b.className='load';
+      b.innerHTML=esc(song.title)+'<small>'+song.at+' · '+(song.semis?(song.semis>0?'+':'')+song.semis+'반음':'원키')+'</small>';
+      b.onclick=()=>{$('title').value=song.title;S.raw=song.raw;S.semis=song.semis||0;
+        reparse();if(P.playing)startPlay();renderAll();closePanel();};
+      const del=document.createElement('button');del.className='btn sm';del.style.color='var(--ribbon)';del.textContent='지우기';
+      del.onclick=()=>{save(load().filter(x=>x.id!==song.id));openPanel('library')};
+      d.appendChild(b);d.appendChild(del);body.appendChild(d);
+    });
+  }
+
+  if(name==='play'){
+    const opt=(id,cur,items)=>items.map(([v,l])=>
+      '<button class="btn '+(v===cur?'on':'')+'" data-'+id+'="'+v+'">'+l+'</button>').join('');
+    body.innerHTML=
+      '<span class="lbl">악기</span><div class="opts" id="insts">'
+      +opt('inst',P.inst,Object.keys(INSTRUMENTS).map(k=>[k,INSTRUMENTS[k].label]))+'</div>'
+      +(hasMelody()
+        ? '<span class="lbl">멜로디</span><div class="opts">'
+          +'<button class="btn '+(P.melody?'on':'')+'" id="mel">'+(P.melody?'켬':'끔')+'</button>'
+          +opt('minst',P.melInst,Object.keys(INSTRUMENTS).filter(k=>k!=='bass').map(k=>[k,INSTRUMENTS[k].label]))
+          +'</div>'
+        : '')
+      +'<span class="lbl">장르</span><div class="opts">'
+      +opt('genre',P.genre,Object.keys(GENRES).map(k=>[k,GENRES[k].label]))+'</div>'
+      +'<span class="lbl">반주 패턴</span><div class="opts">'
+      +opt('pat',P.pattern,Object.keys(PATTERNS).map(k=>[k,PATTERNS[k].label]))+'</div>'
+      +'<span class="lbl">마디당 박</span><div class="opts" id="beats">'
+      +opt('beats',P.beats,[[2,'2박'],[3,'3박'],[4,'4박'],[6,'6박']])+'</div>'
+      +'<span class="lbl">빠르기 (BPM)</span>'
+      +'<input class="field" id="bpmr" type="range" min="30" max="300" step="1" value="'+P.bpm+'">'
+      +'<div class="opts" style="margin-top:10px">'
+      +'<button class="btn '+(P.click?'on':'')+'" id="clk">메트로놈</button>'
+      +'<button class="btn '+(P.loop?'on':'')+'" id="lp">반복</button></div>'
+      +'<p class="note" style="margin-top:14px">'
+      +(hasMelody()
+        ? '이 곡에는 <b>멜로디가 들어 있습니다.</b> 오선보에서 읽어온 것이라 <b>틀릴 수 있으니</b> 원본과 비교해 확인하세요. '
+        : '이 차트에는 멜로디가 없습니다. 오선보 사진을 넣으면 멜로디까지 읽어옵니다. ')
+      +'코드 하나를 한 마디로 잡되 차트에 <code>|</code>가 있으면 그 마디 안에서 나눕니다. '
+      +'반주 패턴은 코드 구성음을 어떻게 쪼개 칠지를 정합니다.</p>';
+    body.querySelectorAll('[data-inst]').forEach(b=>b.onclick=()=>{
+      P.genre='';P.inst=b.dataset.inst; $('instbtn').textContent=INSTRUMENTS[P.inst].label;
+      if(P.playing)startPlay(); openPanel('play');
+    });
+    body.querySelectorAll('[data-genre]').forEach(b=>b.onclick=()=>{
+      applyGenre(b.dataset.genre); openPanel('play');
+    });
+    if($('mel'))$('mel').onclick=()=>{P.melody=!P.melody;openPanel('play')};
+    body.querySelectorAll('[data-minst]').forEach(b=>b.onclick=()=>{
+      P.melInst=b.dataset.minst; openPanel('play');
+    });
+    body.querySelectorAll('[data-pat]').forEach(b=>b.onclick=()=>{
+      P.genre='';P.pattern=b.dataset.pat; openPanel('play');
+    });
+    body.querySelectorAll('[data-beats]').forEach(b=>b.onclick=()=>{
+      P.beats=parseInt(b.dataset.beats,10); if(P.playing)startPlay(); openPanel('play');
+    });
+    $('bpmr').oninput=e=>setBpm(parseInt(e.target.value,10),true);
+    $('clk').onclick=()=>{P.click=!P.click;openPanel('play')};
+    $('lp').onclick=()=>{P.loop=!P.loop;$('loopbtn').classList.toggle('on',P.loop);openPanel('play')};
+  }
+
+  if(name==='export'){
+    body.innerHTML='<p class="note">지금 보이는 키 그대로 내보냅니다. PDF는 A4 세로, 넘치면 자동으로 여러 장이 됩니다.</p>'
+      +'<div class="btns"><button class="btn on" id="pdf">PDF 내려받기</button>'
+      +'<button class="btn" id="png">이미지(PNG)</button>'
+      +'<button class="btn" id="prt">인쇄</button>'
+      +'<button class="btn" id="txt">TXT</button>'
+      +'<button class="btn" id="cho">ChordPro</button>'
+      +'<button class="btn" id="cpy">복사</button></div>'
+      +'<p class="note" style="margin-top:14px">파일 이름: <code>'+esc(baseName())+'</code><br>'
+      +'다운로드가 막히면 <b>복사</b>나 <b>인쇄</b>를 쓰세요.</p>';
+    $('pdf').onclick=()=>{try{saveBlob(new Blob([pdfBytes(chartCanvas())],{type:'application/pdf'}),baseName()+'.pdf');toast('PDF 내려받기 시작')}catch(e){toast('PDF 생성 실패')}};
+    $('png').onclick=()=>{try{chartCanvas().toBlob(b=>{saveBlob(b,baseName()+'.png');toast('PNG 내려받기 시작')},'image/png')}catch(e){toast('이미지 생성 실패')}};
+    $('prt').onclick=()=>{closePanel();setTimeout(()=>window.print(),150)};
+    $('txt').onclick=()=>{saveBlob(new Blob([chartText()],{type:'text/plain;charset=utf-8'}),baseName()+'.txt');toast('TXT 내려받기 시작')};
+    $('cho').onclick=()=>{saveBlob(new Blob([chartText()],{type:'text/plain;charset=utf-8'}),baseName()+'.cho');toast('ChordPro 내려받기 시작')};
+    $('cpy').onclick=async()=>{try{await navigator.clipboard.writeText(chartText());toast('클립보드에 복사했어요')}catch(e){toast('복사가 막혀 있어요. 내려받기를 써 주세요.')}};
+  }
+
+  $('scrim').classList.add('open');
+}
+function closePanel(){closeCam();$('scrim').classList.remove('open')}
+$('scrim').onclick=e=>{if(e.target===$('scrim'))closePanel()};
+
+/* ============ 배선 ============ */
+document.querySelectorAll('nav [data-panel]').forEach(b=>b.onclick=()=>openPanel(b.dataset.panel));
+$('up').onclick=()=>{S.semis=Math.min(12,S.semis+1);renderAll()};
+$('down').onclick=()=>{S.semis=Math.max(-12,S.semis-1);renderAll()};
+$('b-number').onclick=()=>{S.num=!S.num;renderAll()};
+$('b-capo').onclick=()=>{S.capo=!S.capo;renderAll()};
+$('b-flat').onclick=()=>{S.flat=S.flat==='flat'?null:'flat';renderAll()};
+$('b-font').onclick=()=>{S.font=S.font>=26?14:S.font+3;renderAll()};
+$('b-col').onclick=()=>{S.col=!S.col;renderAll()};
+$('b-save').onclick=()=>{
+  const t=$('title').value.trim()||'제목 없음';
+  const list=load().filter(s=>s.title!==t);
+  list.unshift({id:'s'+Date.now(),title:t,raw:S.raw,semis:S.semis,at:new Date().toISOString().slice(0,10)});
+  toast(save(list.slice(0,40))?'콘티에 “'+t+'” 저장':'저장에 실패했어요.');
+};
+$('theme').onclick=()=>{
+  const d=document.documentElement.getAttribute('data-theme')==='dark';
+  document.documentElement.setAttribute('data-theme',d?'light':'dark');
+  $('theme').textContent=d?'어둡게':'밝게';
+};
+$('play').onclick=togglePlay;
+$('instbtn').onclick=()=>openPanel('play');
+$('instbtn').textContent=INSTRUMENTS[P.inst].label;
+$('loopbtn').classList.toggle('on',P.loop);
+$('loopbtn').onclick=()=>{P.loop=!P.loop;$('loopbtn').classList.toggle('on',P.loop)};
+function setBpm(v,skipSlider){
+  v=Math.round(Number(v));
+  if(!isFinite(v))v=P.bpm;
+  P.bpm=Math.max(30,Math.min(300,v));
+  $('bpm').value=P.bpm;
+  if(!skipSlider&&$('bpmr'))$('bpmr').value=P.bpm;
+}
+$('bpmd').onclick=()=>setBpm(P.bpm-4);
+$('bpmu').onclick=()=>setBpm(P.bpm+4);
+$('bpm').onfocus=e=>e.target.select();
+$('bpm').oninput=e=>{
+  const v=parseInt(e.target.value,10);
+  if(v>=30&&v<=300){P.bpm=v;if($('bpmr'))$('bpmr').value=v;}
+};
+$('bpm').onchange=e=>setBpm(e.target.value);
+$('bpm').onkeydown=e=>{
+  if(e.key==='Enter'){e.preventDefault();setBpm(e.target.value);e.target.blur();}
+  if(e.key==='ArrowUp'){e.preventDefault();setBpm(P.bpm+1);}
+  if(e.key==='ArrowDown'){e.preventDefault();setBpm(P.bpm-1);}
+};
+$('bpm').value=P.bpm;
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')return;
+  if(e.code==='Space'){e.preventDefault();togglePlay();}
+});
+renderAll();
+</script>
+</body>
+</html>
