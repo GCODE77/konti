@@ -219,7 +219,8 @@ function parseChart(raw){
   const inline=/\[[A-G][#♯b♭]?[^\]]{0,8}\]/.test(raw)&&/\][^\s[]/.test(raw);
   for(let i=0;i<lines.length;i++){
     const line=lines[i];
-    if(MEL_RE.test(line)){const nts=parseMelody(line); if(nts.length){out.push({k:'mel',notes:nts});continue;}}
+    if(MEL_RE.test(line)){const nts=parseMelody(line); if(nts.length){out.push({k:'mel',notes:nts});continue;} continue;}
+    if(/^[\s:.0-9]*(?:[A-G][#♯b♭]?-?\d|r):[\d.]/.test(line.trim())){continue;} // 잘린 멜로디 조각은 버린다
     if(isSection(line)){out.push({k:'sec',text:line.trim().replace(/^[[<(]|[\]>)]$/g,'').trim()});continue;}
     if(!line.trim()){out.push({k:'blank'});continue;}
     if(inline&&line.includes('[')){
@@ -239,7 +240,7 @@ function parseChart(raw){
       const pos=[],re=/\S+/g; let m;
       while((m=re.exec(line))!==null)pos.push({col:m.index,raw:m[0]});
       const nx=lines[i+1];
-      const ly=(nx!==undefined&&nx.trim()&&!isChordLine(nx)&&!isSection(nx))?nx:null;
+      const ly=(nx!==undefined&&nx.trim()&&!isChordLine(nx)&&!isSection(nx)&&!MEL_RE.test(nx))?nx:null;
       if(ly!==null)i++;
       const pairs=[];
       if(pos.length&&pos[0].col>0)pairs.push({chord:null,raw:'',text:ly?ly.slice(0,pos[0].col):''});
@@ -774,18 +775,25 @@ function chartText(){
 /* ============ 사진 → 차트 ============ */
 const PROMPT=`이 이미지는 찬양 악보입니다. 아래 형식의 순수 텍스트로만 답하세요.
 
-1. 제목이 보이면 첫 줄에 TITLE: 제목
-2. 구간 이름이 있으면 [Verse 1] [Chorus] 처럼 대괄호로 씁니다.
-3. 코드 심볼을 가사 바로 윗줄에, 해당 가사 글자 위치에 공백으로 맞춰 씁니다.
-   슬래시 코드(F/A), 텐션(Gm7, Csus4, Bbmaj7)은 그대로 유지합니다.
-4. 오선보에 음표가 있으면 그 코드/가사 줄 바로 앞에 멜로디 줄을 넣습니다.
-   형식 예: ♪ Bb4:1 C5:0.5 D5:0.5 r:1
+출력 순서를 반드시 지키세요. 악보의 각 단(줄)마다 아래 네 줄을 이 순서로 반복합니다.
+
+  ♪ (멜로디)
+  (코드 줄)
+  (1절 가사)
+  2) (2절 가사)
+
+규칙:
+1. 제목이 보이면 맨 첫 줄에 TITLE: 제목
+2. 구간 이름이 보이면 [Verse 1] [Chorus] 처럼 대괄호로 한 줄 씁니다.
+3. 코드 심볼은 가사 글자 위치에 맞춰 공백으로 정렬합니다. 슬래시 코드(F/A)와 텐션(Gm7, Bbmaj7)은 그대로 둡니다.
+4. 멜로디 줄은 반드시 ♪ 로 시작하고 한 단을 한 줄에 모두 적습니다. 중간에 줄을 바꾸지 마세요.
+   예: ♪ Bb4:1 C5:0.5 D5:0.5 r:1
    - 음이름 + 옥타브 숫자. 가온다는 C4.
    - 임시표는 # 또는 b 를 음이름 바로 뒤에.
-   - 조표를 반드시 반영해 실제로 소리나는 음을 씁니다. (♭이 2개면 B와 E는 Bb, Eb)
+   - 조표를 반영해 실제로 소리나는 음을 씁니다. ♭이 2개면 B와 E는 Bb, Eb 입니다.
    - 콜론 뒤는 박수. 4분음표 1, 8분음표 0.5, 16분음표 0.25, 2분음표 2, 점4분음표 1.5, 온음표 4.
-   - 쉼표는 r:박수 로 씁니다.
-5. 가사가 1절 2절로 두 줄이면 1절을 코드에 맞춰 쓰고, 바로 다음 줄에 2) 로 시작해 2절을 씁니다.
+   - 쉼표는 r:박수.
+5. 2절 가사가 없으면 그 줄은 생략합니다.
 6. 확실하지 않은 코드는 추측하지 말고 ? 로 남깁니다.
 7. 설명, 인사말, 코드블록 표시를 붙이지 말고 결과만 출력합니다.`;
 
