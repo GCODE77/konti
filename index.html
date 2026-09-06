@@ -216,7 +216,7 @@ window.onerror=function(msg,src,ln){
    예) const SCAN_ENDPOINT = "https://konti-scan.내계정.workers.dev";
 */
 const SCAN_ENDPOINT = "";
-const APP_VER = "30";
+const APP_VER = "31";
 /* file:// 나 content:// 로 열면 브라우저가 외부 호출을 막는다(CORS). 미리 알려준다. */
 const LOCAL_FILE = !/^https?:$/.test(location.protocol);
 /* Claude 앱처럼 iframe 안에서 실행 중이면 키 없이도 인식이 통한다. */
@@ -1727,14 +1727,15 @@ function openPanel(name){
       +'<div class="btns"><button class="btn lg on wide" id="v-save">이 곡 저장</button>'
       +'<button class="btn wide" id="v-diag">멜로디 진단</button></div>';
     const up=()=>{renderAll();openPanel('view')};
-    $('v-minus').onclick=()=>{setFont(S.font-2);openPanel('view')};
-    $('v-plus').onclick=()=>{setFont(S.font+2);openPanel('view')};
-    $('v-num').onclick=()=>{S.num=!S.num;up()};
-    $('v-capo').onclick=()=>{if(!capoInfo()){toast('이 키에는 쓸 만한 카포 자리가 없습니다.');return;}S.capo=!S.capo;up()};
-    $('v-flat').onclick=()=>{S.flat=S.flat==='flat'?null:'flat';up()};
-    $('v-col').onclick=()=>{S.col=!S.col;up()};
-    $('v-save').onclick=()=>{saveSong();closePanel()};
-    $('v-diag').onclick=()=>openPanel('diag');
+    const on=(id,fn)=>{const el=$(id); if(el)el.onclick=fn;};
+    on('v-minus',()=>{setFont(S.font-2);openPanel('view')});
+    on('v-plus',()=>{setFont(S.font+2);openPanel('view')});
+    on('v-num',()=>{S.num=!S.num;up()});
+    on('v-capo',()=>{if(!capoInfo()){toast('이 키에는 쓸 만한 카포 자리가 없습니다.');return;}S.capo=!S.capo;up()});
+    on('v-flat',()=>{S.flat=S.flat==='flat'?null:'flat';up()});
+    on('v-col',()=>{S.col=!S.col;up()});
+    on('v-save',()=>{saveSong();closePanel()});
+    on('v-diag',()=>openPanel('diag'));
   }
 
   if(name==='diag'){
@@ -1890,14 +1891,14 @@ $('b-verse').onclick=()=>{const mv=maxVerse(); if(mv<2)return; S.verse=S.verse>=
 function setFont(v){S.font=Math.max(12,Math.min(44,v));renderAll();}
 
 
-if($('b-save'))$('b-save').onclick=()=>{
+function saveSong(){
   const t=$('title').value.trim()||'제목 없음';
   const list=load().filter(s=>s.title!==t);
   const st=new Date();
   list.unshift({id:'s'+Date.now(),title:t,raw:S.raw,semis:S.semis,
     at:st.toISOString().slice(0,10)+' '+st.toTimeString().slice(0,5)});
-  toast(save(list.slice(0,40))?'콘티에 “'+t+'” 저장':'저장에 실패했어요.');
-};
+  toast(save(list.slice(0,40))?'콘티에 “'+t+'” 저장했습니다':'저장에 실패했어요.');
+}
 $('theme').onclick=()=>{
   const d=document.documentElement.getAttribute('data-theme')==='dark';
   document.documentElement.setAttribute('data-theme',d?'light':'dark');
