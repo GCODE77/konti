@@ -187,7 +187,7 @@ body.focus #focusout{display:block}
    예) const SCAN_ENDPOINT = "https://konti-scan.내계정.workers.dev";
 */
 const SCAN_ENDPOINT = "";
-const APP_VER = "23";
+const APP_VER = "24";
 /* file:// 나 content:// 로 열면 브라우저가 외부 호출을 막는다(CORS). 미리 알려준다. */
 const LOCAL_FILE = !/^https?:$/.test(location.protocol);
 /* Claude 앱처럼 iframe 안에서 실행 중이면 키 없이도 인식이 통한다. */
@@ -505,8 +505,27 @@ function tapChord(chord,semis){
   });
 }
 
+const GENRES={
+  hymn   :{label:'찬송가',    insts:['organ'],            mel:'flute',  pat:'block',   bpm:76,  beats:4},
+  ballad :{label:'CCM 발라드',insts:['piano','strings'],  mel:'flute',  pat:'ballad',  bpm:68,  beats:4},
+  modern :{label:'모던 워십', insts:['pad','ep'],         mel:'ep',     pat:'arp',     bpm:72,  beats:4},
+  acou   :{label:'어쿠스틱',  insts:['guitar','strings'], mel:'flute',  pat:'arp',     bpm:84,  beats:4},
+  gospel :{label:'가스펠',    insts:['ep','organ'],       mel:'brass',  pat:'shuffle', bpm:96,  beats:4},
+  band   :{label:'밴드 8비트',insts:['piano','bass'],     mel:'brass',  pat:'eight',   bpm:100, beats:4},
+  orch   :{label:'관현악',    insts:['strings','cello','brass','flute'], mel:'flute', pat:'block', bpm:72, beats:4},
+  bossa  :{label:'보사노바',  insts:['guitar','flute'],   mel:'flute',  pat:'bossa',   bpm:124, beats:4},
+  waltz  :{label:'왈츠',      insts:['piano','strings'],  mel:'flute',  pat:'waltz',   bpm:108, beats:3},
+  classic:{label:'클래식',    insts:['piano','cello'],    mel:'strings',pat:'alberti', bpm:88,  beats:4}
+};
+function applyGenre(k){
+  const g=GENRES[k]; if(!g)return;
+  P.genre=k; P.insts=g.insts.slice(); P.melInst=g.mel; P.pattern=g.pat; P.beats=g.beats;
+  setBpm(g.bpm); renderToolbar();
+  if(P.playing)startPlay();
+}
+
 /* ---- 시퀀서 ---- */
-const P={playing:false,bpm:84,genre:'',inst:'piano',melInst:'ep',pattern:'block',beats:4,loop:true,click:false,melody:true,accomp:true,readMel:true,melOct:0,melFit:true,
+const P={playing:false,bpm:84,genre:'',insts:['piano'],melInst:'ep',pattern:'block',beats:4,loop:true,click:false,melody:true,accomp:true,readMel:true,melOct:0,melFit:true,
          evs:[],total:0,k:0,cursorT:0,lastAt:0,t0:0,timer:null,marks:[],vmarks:[],vnext:1,cur:-1};
 
 function buildTimeline(){
@@ -604,7 +623,7 @@ function schedule(){
     const ev=P.evs[P.k], t=P.cursorT+(ev.at-P.lastAt)*spb;
     if(t>now+.25)return;
     if(ev.type==='c'){
-      if(P.accomp!==false)strike(ctx,ev.chord,S.semis,P.inst,t,ev.beats*spb*.96,ev.beats,spb);
+      if(P.accomp!==false)strike(ctx,ev.chord,S.semis,instList(),t,ev.beats*spb*.96,ev.beats,spb);
       P.marks.push({t,idx:ev.idx});
     }else if(ev.type==='m'){
       if(P.melody)voice(ctx,P.melInst,ev.midi+S.semis+(P.melOct||0)*12,t,ev.beats*spb*.92,P.accomp===false?.6:.46,0);
@@ -799,7 +818,11 @@ function renderTime(elapsed){
 function renderToolbar(){
   renderTime(P.playing&&actx?actx.currentTime-P.t0:0);
   const ib=$('instbtn');
-  if(ib)ib.textContent=(hasMelody()&&P.melody?'♪ ':'')+INSTRUMENTS[P.inst].label;
+  if(ib){
+    const L=instList();
+    ib.textContent=(hasMelody()&&P.melody?'♪ ':'')
+      +(L.length>1?INSTRUMENTS[L[0]].label+' 외 '+(L.length-1):INSTRUMENTS[L[0]].label);
+  }
   $('b-number').classList.toggle('on',S.num);
   $('b-capo').classList.toggle('on',S.capo);
   $('b-capo').disabled=!capoInfo();
@@ -821,7 +844,7 @@ function saveLast(){
     setLS('konti:last',JSON.stringify({
       t:$('title').value, raw:S.raw, semis:S.semis, verse:S.verse, flat:S.flat,
       num:S.num, capo:S.capo, font:S.font, col:S.col,
-      bpm:P.bpm, inst:P.inst, melInst:P.melInst, pattern:P.pattern,
+      bpm:P.bpm, insts:P.insts, melInst:P.melInst, pattern:P.pattern,
       beats:P.beats, genre:P.genre, loop:P.loop, click:P.click, melody:P.melody,
       at:Date.now()
     }));
@@ -835,7 +858,10 @@ function restoreLast(){
   S.semis=r.semis||0; S.verse=r.verse||1; S.flat=r.flat||null;
   S.num=!!r.num; S.capo=!!r.capo; S.font=r.font||20; S.col=!!r.col;
   if(r.bpm)P.bpm=r.bpm;
-  if(r.inst)P.inst=r.inst; if(r.melInst)P.melInst=r.melInst;
+  if(Array.isArray(r.insts)&&r.insts.length)P.insts=r.insts.filter(k=>INSTRUMENTS[k]);
+  else if(r.inst&&INSTRUMENTS[r.inst])P.insts=[r.inst];
+  if(!P.insts||!P.insts.length)P.insts=['piano'];
+  if(r.melInst)P.melInst=r.melInst;
   if(r.pattern)P.pattern=r.pattern; if(r.beats)P.beats=r.beats;
   P.genre=r.genre||''; P.loop=r.loop!==false; P.click=!!r.click; P.melody=r.melody!==false;
   if(r.t)$('title').value=r.t;
@@ -1302,7 +1328,13 @@ async function geminiScan(gkey,prompt,b64,say){
     }
     const msg=(d&&d.error&&d.error.message)||('서버 응답 '+r.status);
     if(r.status===403) throw new Error('키가 거부되었습니다: '+msg);
-    if(r.status===429) throw new Error('무료 한도에 걸렸습니다. 1분쯤 뒤 다시 시도해 주세요');
+    if(r.status===429){
+      if(!P._retried){ P._retried=true;
+        for(let w=25;w>0;w--){ if(say)say('무료 한도에 걸렸습니다. '+w+'초 뒤 자동으로 다시 시도합니다…'); await new Promise(z=>setTimeout(z,1000)); }
+        return await geminiScan(gkey,prompt,b64,say);
+      }
+      throw new Error('무료 한도에 걸렸습니다. 1분쯤 뒤 다시 시도해 주세요');
+    }
     lastErr=msg;
   }
   throw new Error(lastErr||'인식 실패');
@@ -1323,7 +1355,7 @@ async function runScan(){
   box.className='callout work';
   const N=S.photos.length;
   const say=m=>{box.className='callout work';box.innerHTML='<span class="spin"></span> '+m;};
-  LAST_TRUNCATED=false;
+  LAST_TRUNCATED=false; P._retried=false;
   try{
     const pages=[];
     for(let i=0;i<N;i++){
@@ -1514,7 +1546,9 @@ function openPanel(name){
       '<button class="btn '+(v===cur?'on':'')+'" data-'+id+'="'+v+'">'+l+'</button>').join('');
     body.innerHTML=
       '<span class="lbl">악기</span><div class="opts" id="insts">'
-      +opt('inst',P.inst,Object.keys(INSTRUMENTS).map(k=>[k,INSTRUMENTS[k].label]))+'</div>'
+      +Object.keys(INSTRUMENTS).map(k=>
+        '<button class="btn '+(instList().indexOf(k)>=0?'on':'')+'" data-inst="'+k+'">'+INSTRUMENTS[k].label+'</button>').join('')
+      +'</div><p class="note" style="margin:-6px 0 14px">여러 개를 골라 함께 울릴 수 있습니다. 현악+플루트, 피아노+첼로처럼 겹쳐 보세요.</p>'
       +(hasMelody()
         ? '<span class="lbl">멜로디</span><div class="opts">'
           +'<button class="btn '+(P.melody?'on':'')+'" id="mel">'+(P.melody?'켬':'끔')+'</button>'
@@ -1557,7 +1591,9 @@ function openPanel(name){
       +'절이 여러 개면 <b>1절을 끝까지 친 뒤 2절로 넘어갑니다.</b> 화면 가사도 따라 바뀝니다. '
       +'<b>반복</b>을 끄면 마지막 절에서 멈추고, 켜면 처음으로 돌아갑니다.</p>';
     body.querySelectorAll('[data-inst]').forEach(b=>b.onclick=()=>{
-      P.genre='';P.inst=b.dataset.inst; $('instbtn').textContent=INSTRUMENTS[P.inst].label;
+      const k=b.dataset.inst, cur=instList().slice(), at=cur.indexOf(k);
+      if(at>=0){ if(cur.length>1)cur.splice(at,1); } else cur.push(k);
+      P.genre=''; P.insts=cur; renderToolbar();
       if(P.playing)startPlay(); openPanel('play');
     });
     body.querySelectorAll('[data-mix]').forEach(b=>b.onclick=()=>{
@@ -1635,7 +1671,6 @@ $('theme').onclick=()=>{
 };
 $('play').onclick=togglePlay;
 $('instbtn').onclick=()=>openPanel('play');
-$('instbtn').textContent=INSTRUMENTS[P.inst].label;
 $('loopbtn').classList.toggle('on',P.loop);
 $('loopbtn').onclick=()=>{P.loop=!P.loop;$('loopbtn').classList.toggle('on',P.loop)};
 function setBpm(v,skipSlider){
