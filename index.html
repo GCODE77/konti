@@ -129,6 +129,13 @@ body.focus main{padding:14px 12px 96px}
 body.focus #transport{padding:7px 12px calc(7px + env(safe-area-inset-bottom))}
 #focusout{position:fixed;top:calc(10px + env(safe-area-inset-top));right:12px;z-index:35;display:none}
 body.focus #focusout{display:block}
+#errbar{position:fixed;left:0;right:0;top:0;z-index:60;background:var(--ribbon);color:#fff;
+  padding:calc(10px + env(safe-area-inset-top)) 14px 10px;font-size:12.5px;line-height:1.6;display:none}
+#errbar b{display:block;font-size:13px;margin-bottom:3px}
+.fontset{display:flex;align-items:center;gap:0;border:1px solid var(--line);border-radius:999px;overflow:hidden;flex:0 0 auto}
+.fontset button{background:none;border:none;color:var(--paper);font-family:var(--ui);
+  font-size:16px;font-weight:800;padding:10px 15px;cursor:pointer}
+.fontset span{font-family:var(--mono);font-size:12.5px;color:var(--dim);min-width:26px;text-align:center}
 #toast{position:fixed;bottom:132px;left:50%;transform:translateX(-50%);z-index:50;background:var(--brass);color:var(--ink);padding:9px 16px;border-radius:999px;font-size:12.5px;font-weight:600;max-width:90vw;text-align:center;display:none}
 #toast.show{display:block}
 
@@ -177,7 +184,9 @@ body.focus #focusout{display:block}
   <button class="btn" id="b-number">넘버</button>
   <button class="btn" id="b-capo">카포</button>
   <button class="btn" id="b-flat">♭ 우선</button>
-  <button class="btn" id="b-font">글자 17</button>
+  <div class="fontset"><button id="f-minus" aria-label="글자 작게">가−</button>
+  <span id="f-size">20</span>
+  <button id="f-plus" aria-label="글자 크게">가＋</button></div>
   <button class="btn" id="b-col">2단</button>
   <button class="btn" id="b-save">저장</button>
   <button class="btn" data-panel="library">콘티</button>
@@ -187,17 +196,27 @@ body.focus #focusout{display:block}
 </footer>
 
 <button class="btn" id="focusout">나가기</button>
+<div id="errbar"></div>
 <div id="scrim"><div id="sheet"></div></div>
 <div id="toast" role="status"></div>
 
 <script>
+window.onerror=function(msg,src,ln){
+  try{
+    var e=document.getElementById('errbar');
+    if(e){e.style.display='block';
+      e.innerHTML='<b>문제가 생겼습니다'+(typeof APP_VER!=='undefined'?' (v'+APP_VER+')':'')+'</b>'
+        +String(msg)+' · '+ln+'행<br>주소 끝에 <b>?v=새숫자</b>를 붙여 새로고침하면 대부분 해결됩니다.';}
+  }catch(x){}
+  return false;
+};
 /* ============ 배포 설정 ============
    SCAN_ENDPOINT 를 비워두면: 사진 인식에 사용자 각자의 API 키가 필요하다(개인용).
    여기에 배포한 주소를 넣으면: 사용자는 키 없이 그냥 쓴다(공개용). worker.js 참고.
    예) const SCAN_ENDPOINT = "https://konti-scan.내계정.workers.dev";
 */
 const SCAN_ENDPOINT = "";
-const APP_VER = "25";
+const APP_VER = "26";
 /* file:// 나 content:// 로 열면 브라우저가 외부 호출을 막는다(CORS). 미리 알려준다. */
 const LOCAL_FILE = !/^https?:$/.test(location.protocol);
 /* Claude 앱처럼 iframe 안에서 실행 중이면 키 없이도 인식이 통한다. */
@@ -709,7 +728,7 @@ G       D       Em7     C
 G       D/F#    C       D    G
 내 입술이 잠잠할 수 없네`;
 
-const S={raw:SAMPLE,semis:0,flat:null,num:false,capo:false,font:24,col:false,photos:[],verse:1};
+const S={raw:SAMPLE,semis:0,flat:null,num:false,capo:false,font:20,col:false,photos:[],verse:1};
 let blocks=[], origKey={pc:0,minor:false};
 function reparse(){
   blocks=parseChart(S.raw); origKey=detectKey(blocks);
@@ -838,7 +857,7 @@ function renderToolbar(){
   $('b-capo').disabled=!capoInfo();
   $('b-flat').classList.toggle('on',S.flat==='flat');
   $('b-col').classList.toggle('on',S.col);
-  $('b-font').textContent='글자 '+S.font;
+  if($('f-size'))$('f-size').textContent=S.font;
   const mb=$('b-melonly');
   if(mb){ mb.classList.toggle('on',P.accomp===false); mb.disabled=!hasMelody(); }
   const mv=maxVerse(), vb=$('b-verse');
@@ -1692,7 +1711,9 @@ $('b-verse').onclick=()=>{const mv=maxVerse(); if(mv<2)return; S.verse=S.verse>=
 $('b-number').onclick=()=>{S.num=!S.num;renderAll()};
 $('b-capo').onclick=()=>{S.capo=!S.capo;renderAll()};
 $('b-flat').onclick=()=>{S.flat=S.flat==='flat'?null:'flat';renderAll()};
-$('b-font').onclick=()=>{const L=[18,22,26,30,36];S.font=L[(L.indexOf(S.font)+1)%L.length]||24;renderAll()};
+function setFont(v){S.font=Math.max(12,Math.min(44,v));renderAll();}
+$('f-minus').onclick=()=>setFont(S.font-2);
+$('f-plus').onclick=()=>setFont(S.font+2);
 $('b-col').onclick=()=>{S.col=!S.col;renderAll()};
 $('b-save').onclick=()=>{
   const t=$('title').value.trim()||'제목 없음';
