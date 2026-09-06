@@ -216,7 +216,7 @@ window.onerror=function(msg,src,ln){
    예) const SCAN_ENDPOINT = "https://konti-scan.내계정.workers.dev";
 */
 const SCAN_ENDPOINT = "";
-const APP_VER = "26";
+const APP_VER = "27";
 /* file:// 나 content:// 로 열면 브라우저가 외부 호출을 막는다(CORS). 미리 알려준다. */
 const LOCAL_FILE = !/^https?:$/.test(location.protocol);
 /* Claude 앱처럼 iframe 안에서 실행 중이면 키 없이도 인식이 통한다. */
@@ -377,6 +377,58 @@ const QUAL=[[/^(m7b5|ø)/,[0,3,6,10]],[/^(dim7|°7)/,[0,3,6,9]],[/^(dim|°)/,[0,
  [/^(aug|\+)/,[0,4,8]],[/^maj7|^M7|^Δ/,[0,4,7,11]],[/^m(?:in)?7/,[0,3,7,10]],
  [/^m(?:in)?(?!aj)/,[0,3,7]],[/^sus2/,[0,2,7]],[/^sus4?/,[0,5,7]],[/^7/,[0,4,7,10]],[/^6/,[0,4,7,9]]];
 
+let actx=null, master=null, wet=null, dry=null;
+const mtof=m=>440*Math.pow(2,(m-69)/12);
+
+function makeIR(ctx,sec,decay){
+  const len=Math.max(1,Math.floor(ctx.sampleRate*sec));
+  const buf=ctx.createBuffer(2,len,ctx.sampleRate);
+  for(let ch=0;ch<2;ch++){
+    const d=buf.getChannelData(ch);
+    for(let i=0;i<len;i++){
+      const t=i/len;
+      d[i]=(Math.random()*2-1)*Math.pow(1-t,decay)*(1-t*0.15);
+    }
+  }
+  return buf;
+}
+function AC(){
+  if(!actx){
+    const A=window.AudioContext||window.webkitAudioContext; if(!A)return null;
+    actx=new A();
+    const comp=actx.createDynamicsCompressor();
+    comp.threshold.value=-16; comp.knee.value=22; comp.ratio.value=3.4;
+    comp.attack.value=.006; comp.release.value=.26;
+    comp.connect(actx.destination);
+    master=actx.createGain(); master.gain.value=.85;
+    dry=actx.createGain(); dry.gain.value=.82;
+    wet=actx.createGain(); wet.gain.value=.30;
+    const rev=actx.createConvolver();
+    try{ rev.buffer=makeIR(actx,2.6,2.4); }catch(e){}
+    const damp=actx.createBiquadFilter();
+    damp.type='lowpass'; damp.frequency.value=3600;
+    master.connect(dry); dry.connect(comp);
+    master.connect(wet); wet.connect(rev); rev.connect(damp); damp.connect(comp);
+  }
+  if(actx.state==='suspended')actx.resume();
+  return actx;
+}
+const ksCache={};
+function pluckBuf(ctx,freq){
+  const k=Math.round(freq*4); if(ksCache[k])return ksCache[k];
+  const sr=ctx.sampleRate,len=Math.floor(sr*2.4),N=Math.max(2,Math.round(sr/freq));
+  const buf=ctx.createBuffer(1,len,sr),d=buf.getChannelData(0);
+  const ring=new Float32Array(N);
+  for(let i=0;i<N;i++)ring[i]=Math.random()*2-1;
+  let p=0,last=0;
+  for(let i=0;i<len;i++){
+    const cur=ring[p], v=(cur+last)*.5*.9965;
+    d[i]=v*Math.exp(-i/(sr*1.6));
+    ring[p]=v; last=cur; p=(p+1)%N;
+  }
+  ksCache[k]=buf; return buf;
+}
+
 const INSTRUMENTS={
   piano  :{label:'피아노',    partials:[[1,.52],[2,.20],[3,.09],[4,.05],[6,.02]], a:.004,d:.6,sus:.26,r:.35, wave:'triangle', spread:0, rev:.30},
   ep     :{label:'일렉피아노', partials:[[1,.58],[2,.10],[4,.16],[7,.05]],        a:.006,d:.9,sus:.28,r:.40, wave:'sine',     spread:0, rev:.34, trem:[5.4,.12]},
@@ -474,6 +526,63 @@ function voice(ctx,inst,midi,t,dur,vel,pan){
     }
   }
 }
+
+/* 연주 패턴: 한 코드가 차지하는 b박을 어떻게 쪼개 칠 것인가
+   반환 [{t:박 오프셋, n:[미디음], d:박 길이, g:세기}] */
+const PATTERNS={
+  block:{label:'블록 코드',build:(v,b)=>[{t:0,n:[v.bass].concat(v.upper),d:b,g:.26}]},
+
+  arp:{label:'아르페지오',build:(v,b)=>{
+    const u=v.upper, top=u[u.length-1];
+    const seq=[v.bass,u[0],u[1]||u[0],top,u[1]||u[0],u[0]];
+    const n=Math.max(2,Math.round(b*2)),step=b/n,out=[];
+    for(let i=0;i<n;i++)out.push({t:i*step,n:[seq[i%seq.length]],d:b-i*step+.4,g:.30});
+    return out;}},
+
+  alberti:{label:'알베르티',build:(v,b)=>{
+    const u=v.upper, hi=u[u.length-1], mid=u[1]||u[0];
+    const seq=[v.bass,hi,mid,hi];
+    const n=Math.max(2,Math.round(b*2)),step=b/n,out=[];
+    for(let i=0;i<n;i++)out.push({t:i*step,n:[seq[i%4]],d:step*2.2,g:.29});
+    return out;}},
+
+  eight:{label:'8비트',build:(v,b)=>{
+    const n=Math.max(2,Math.round(b*2)),step=b/n,out=[];
+    for(let i=0;i<n;i++){
+      const t=i*step;
+      if(i%2===0)out.push({t,n:[v.bass],d:step*1.7,g:.32});
+      out.push({t,n:v.upper,d:step*.95,g:i%2?.13:.19});
+    }
+    return out;}},
+
+  waltz:{label:'왈츠',build:(v,b)=>{
+    const beats=Math.max(2,Math.round(b)),out=[{t:0,n:[v.bass],d:1,g:.33}];
+    for(let i=1;i<beats;i++)out.push({t:i,n:v.upper,d:.9,g:.19});
+    return out;}},
+
+  shuffle:{label:'셔플',build:(v,b)=>{
+    const n=Math.max(1,Math.round(b)),out=[];
+    for(let i=0;i<n;i++){
+      out.push({t:i,n:i%2===0?[v.bass]:v.upper,d:.62,g:.30});
+      out.push({t:i+2/3,n:v.upper,d:.34,g:.16});
+    }
+    return out;}},
+
+  bossa:{label:'보사노바',build:(v,b)=>{
+    const out=[],n=Math.max(2,Math.round(b));
+    for(let i=0;i<n;i+=2){
+      out.push({t:i,n:[v.bass],d:1.4,g:.32});
+      out.push({t:i+1.5,n:[v.bass],d:1,g:.27});
+    }
+    [0,.75,1.5,2.5,3.25].forEach(t=>out.push({t,n:v.upper,d:.5,g:.17}));
+    return out;}},
+
+  ballad:{label:'발라드',build:(v,b)=>{
+    const u=v.upper,out=[{t:0,n:[v.bass],d:b,g:.30}];
+    const rest=Math.max(1,Math.round((b-.5)*2)),step=(b-.5)/rest;
+    for(let i=0;i<rest;i++)out.push({t:.5+i*step,n:[u[i%u.length]],d:b-(.5+i*step)+.5,g:.24});
+    return out;}}
+};
 
 function chordVoicing(chord,semis){
   let iv=[0,4,7]; for(const[re,x] of QUAL) if(re.test(chord.suffix)){iv=x;break;}
