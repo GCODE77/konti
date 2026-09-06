@@ -137,6 +137,7 @@ label.btn{display:inline-flex;align-items:center}
 <nav class="scroll">
   <button class="btn" data-panel="scan">사진</button>
   <button class="btn" data-panel="input">직접 입력</button>
+  <button class="btn" id="b-verse">1절</button>
   <button class="btn" id="b-number">넘버</button>
   <button class="btn" id="b-capo">카포</button>
   <button class="btn" id="b-flat">♭ 우선</button>
@@ -238,6 +239,12 @@ function parseChart(raw){
         out.push({k:'pairs',pairs}); continue;
       }
     }
+    const vm=line.match(/^\s*([2-9])\)\s*(.*)$/);
+    if(vm){
+      let prev=null;
+      for(let k=out.length-1;k>=0;k--){ if(out[k].k==='pairs'&&out[k].pairs.some(x=>x.chord)){prev=out[k];break;} if(out[k].k==='sec')break; }
+      if(prev){ prev.alt=prev.alt||{}; prev.alt[+vm[1]]=vm[2]; continue; }
+    }
     if(isChordLine(line)){
       const pos=[],re=/\S+/g; let m;
       while((m=re.exec(line))!==null)pos.push({col:m.index,raw:m[0]});
@@ -255,6 +262,29 @@ function parseChart(raw){
     out.push({k:'pairs',pairs:[{chord:null,raw:'',text:line}]});
   }
   return out;
+}
+function splitByCounts(src,counts){
+  const out=[]; let i=0;
+  for(const n of counts){
+    let taken=0,buf='';
+    while(i<src.length&&taken<n){const ch=src[i++];buf+=ch;if(ch!==' ')taken++;}
+    while(i<src.length&&src[i]===' ')buf+=src[i++];
+    out.push(buf);
+  }
+  if(i<src.length)out[out.length-1]=(out[out.length-1]||'')+src.slice(i);
+  return out;
+}
+/* 해당 절의 가사로 바꾼 pairs 를 돌려준다. 없으면 원본 그대로. */
+function pairsForVerse(b,vn){
+  if(vn<=1||!b.alt||!b.alt[vn])return b.pairs;
+  const counts=b.pairs.map(p=>[...(p.text||'')].filter(c=>c!==' ').length);
+  const parts=splitByCounts(b.alt[vn],counts);
+  return b.pairs.map((p,i)=>({chord:p.chord,raw:p.raw,idx:p.idx,text:parts[i]||''}));
+}
+function maxVerse(){
+  let m=1;
+  for(const b of blocks) if(b.alt) for(const k in b.alt) m=Math.max(m,+k);
+  return m;
 }
 function detectKey(bl){
   for(const b of bl){ if(b.k!=='pairs')continue;
@@ -557,7 +587,7 @@ G       D       Em7     C
 G       D/F#    C       D    G
 내 입술이 잠잠할 수 없네`;
 
-const S={raw:SAMPLE,semis:0,flat:null,num:false,capo:false,font:17,col:false,photo:null};
+const S={raw:SAMPLE,semis:0,flat:null,num:false,capo:false,font:17,col:false,photo:null,verse:1};
 let blocks=[], origKey={pc:0,minor:false};
 function reparse(){
   blocks=parseChart(S.raw); origKey=detectKey(blocks);
@@ -631,9 +661,7 @@ function renderChart(){
     if(b.k==='sec'){const d=document.createElement('div');d.className='section';d.textContent=b.text;el.appendChild(d);continue;}
     if(b.k==='mel')continue;
     const row=document.createElement('div');row.className='lineblk';
-    const noChord=!b.pairs.some(p=>p.chord);
-    if(noChord&&/^\s*[2-9]\)/.test((b.pairs[0]||{}).text||''))row.className+=' verse2';
-    for(const pr of b.pairs){
+    for(const pr of pairsForVerse(b,S.verse)){
       const label=pr.chord?(S.num?showNum(pr.chord,origKey.pc):showChord(pr.chord,sm,p)):pr.raw;
       const wrap=document.createElement('span');wrap.className='pair';
       const ch=document.createElement('span');
@@ -662,6 +690,8 @@ function renderToolbar(){
   $('b-flat').classList.toggle('on',S.flat==='flat');
   $('b-col').classList.toggle('on',S.col);
   $('b-font').textContent='글자 '+S.font;
+  const mv=maxVerse(), vb=$('b-verse');
+  if(vb){ vb.textContent=S.verse+'절'; vb.disabled=mv<2; vb.classList.toggle('on',S.verse>1); }
 }
 function renderAll(){renderRail();renderMeta();renderChart();renderToolbar();}
 
@@ -672,7 +702,8 @@ const CSANS="'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif";
 
 function subtitle(){
   const ci=capoInfo();
-  return '원키 '+origLabel()+' → 연주키 '+(S.num?'넘버':targetLabel())+((S.capo&&ci)?'  ·  카포 '+ci.fret:'');
+  return '원키 '+origLabel()+' → 연주키 '+(S.num?'넘버':targetLabel())
+    +((S.capo&&ci)?'  ·  카포 '+ci.fret:'')+(maxVerse()>1?'  ·  '+S.verse+'절':'');
 }
 function chartCanvas(){
   const M=78,W=PAGE_W,maxW=W-M*2,CH=27,LY=27,LINE=74,GAP=14,sm=chordSemis(),p=pref();
@@ -686,7 +717,7 @@ function chartCanvas(){
     if(b.k==='sec'){y+=26;ops.push({t:'sec',x:M,y:y+18,s:b.text.toUpperCase()});y+=30;ops.push({t:'rule',x:M,y,w:maxW});y+=20;continue;}
     if(b.k==='mel')continue;
     let x=M;
-    for(const pr of b.pairs){
+    for(const pr of pairsForVerse(b,S.verse)){
       const label=pr.chord?(S.num?showNum(pr.chord,origKey.pc):showChord(pr.chord,sm,p)):pr.raw;
       probe.font=cf; const cw=label?probe.measureText(label).width+GAP:0;
       probe.font=lf; const tw=probe.measureText(pr.text).width;
@@ -764,7 +795,7 @@ function chartText(){
     else if(b.k==='mel')out.push(melLine(b.notes,S.semis,p));
     else{
       let cl='',ly='';
-      for(const pr of b.pairs){
+      for(const pr of pairsForVerse(b,S.verse)){
         const ch=pr.chord?(S.num?showNum(pr.chord,origKey.pc):showChord(pr.chord,sm,p)):pr.raw;
         const w=Math.max(ch.length+1,pr.text.length);
         cl+=ch.padEnd(w,' ');ly+=pr.text.padEnd(w,' ');
@@ -1006,7 +1037,7 @@ async function runOCR(){
 
     const txt=wordsToChart(chordWords.concat(lyricWords));
     if(!txt.trim())throw new Error('읽어낸 내용이 없습니다');
-    S.raw=txt; S.semis=0; stopPlay(); reparse(); renderAll();
+    S.raw=txt; S.semis=0; S.verse=1; stopPlay(); reparse(); renderAll();
     box.className='callout ok';
     box.innerHTML='<b>코드 '+chordWords.length+'개, 가사 '+lyricWords.length+'덩어리를 읽었습니다.</b> '
       +'키 없이 읽은 것이라 빠지거나 틀린 게 많습니다. 원본과 비교하며 <b>직접 입력</b>에서 고쳐 주세요. '
@@ -1139,7 +1170,7 @@ async function runScan(){
     const tm=text.match(/^TITLE:\s*(.+)$/m);
     if(tm){$('title').value=tm[1].trim();text=text.replace(/^TITLE:\s*.+$/m,'').trim();}
     if(!text)throw new Error('읽어낸 내용이 없습니다');
-    S.raw=text; S.semis=0; stopPlay(); reparse(); renderAll();
+    S.raw=text; S.semis=0; S.verse=1; stopPlay(); reparse(); renderAll();
     box.className='callout ok';
     const n=blocks.filter(b=>b.k==='pairs').length, mel=hasMelody();
     box.innerHTML='<b>옮겼습니다.</b> 가사 '+n+'줄'+(mel?', 멜로디 포함':'')+'. '
@@ -1305,6 +1336,7 @@ $('scrim').onclick=e=>{if(e.target===$('scrim'))closePanel()};
 document.querySelectorAll('nav [data-panel]').forEach(b=>b.onclick=()=>openPanel(b.dataset.panel));
 $('up').onclick=()=>{S.semis=Math.min(12,S.semis+1);renderAll()};
 $('down').onclick=()=>{S.semis=Math.max(-12,S.semis-1);renderAll()};
+$('b-verse').onclick=()=>{const mv=maxVerse(); if(mv<2)return; S.verse=S.verse>=mv?1:S.verse+1; renderAll();};
 $('b-number').onclick=()=>{S.num=!S.num;renderAll()};
 $('b-capo').onclick=()=>{S.capo=!S.capo;renderAll()};
 $('b-flat').onclick=()=>{S.flat=S.flat==='flat'?null:'flat';renderAll()};
