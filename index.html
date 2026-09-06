@@ -185,7 +185,7 @@ body.focus #focusout{display:block}
    예) const SCAN_ENDPOINT = "https://konti-scan.내계정.workers.dev";
 */
 const SCAN_ENDPOINT = "";
-const APP_VER = "20";
+const APP_VER = "21";
 /* file:// 나 content:// 로 열면 브라우저가 외부 호출을 막는다(CORS). 미리 알려준다. */
 const LOCAL_FILE = !/^https?:$/.test(location.protocol);
 /* Claude 앱처럼 iframe 안에서 실행 중이면 키 없이도 인식이 통한다. */
@@ -233,6 +233,7 @@ const NOTE_RE=/^(?:(r)|([A-G])([#♯b♭]?)(-?\d))(?::([\d.]+))?$/i;
 function parseMelody(line){
   const out=[];
   for(const t of line.trim().replace(/^[♪♫]\s*/,'').split(/\s+/)){
+    if(/^\|+$/.test(t)){ out.push({bar:true}); continue; }
     const m=t.match(NOTE_RE); if(!m)continue;
     const beats=m[5]?parseFloat(m[5]):1;
     if(!isFinite(beats)||beats<=0)continue;
@@ -243,7 +244,7 @@ function parseMelody(line){
   return out;
 }
 function melLine(notes,semis,p){
-  return '♪ '+notes.map(n=>n.rest?('r:'+n.beats)
+  return '♪ '+notes.map(n=>n.bar?'|':n.rest?('r:'+n.beats)
     :(nm(n.midi+semis,p)+(Math.floor((n.midi+semis)/12)-1)+':'+n.beats)).join(' ');
 }
 
@@ -578,23 +579,49 @@ function buildTimeline(){
   const evs=[], hasBar=blocks.some(b=>b.k==='pairs'&&b.pairs.some(p=>p.bar));
   let beat=0, pendingMel=null, drift=0, melNotes=0;
 
-  const layMel=(mel,startBeat,lineBeats)=>{
-    if(!mel)return;
-    let mb=startBeat, sum=0;
-    for(const n of mel.notes){
-      if(!n.rest){evs.push({type:'m',midi:n.midi,beats:n.beats,at:mb});melNotes++;}
-      mb+=n.beats; sum+=n.beats;
+  const put=(notes,startBeat)=>{
+    let t=startBeat;
+    for(const n of notes){
+      if(n.bar)continue;
+      if(!n.rest){evs.push({type:'m',midi:n.midi,beats:n.beats,at:t});melNotes++;}
+      t+=n.beats;
     }
-    if(lineBeats>0&&Math.abs(sum-lineBeats)>0.75)drift++;   // 단 길이와 안 맞으면 표시
+    return t-startBeat;
+  };
+  const dur=g=>g.reduce((a,n)=>a+(n.bar?0:n.beats),0);
+
+  /* 멜로디를 마디 단위로 코드 마디에 맞춘다. 못갖춘마디는 첫 마디 앞에 붙인다. */
+  const layMel=(mel,barStarts,lineStart,lineBeats)=>{
+    if(!mel)return;
+    const groups=[[]];
+    for(const n of mel.notes){ if(n.bar)groups.push([]); else groups[groups.length-1].push(n); }
+    const gs=groups.filter(g=>g.length);
+    if(!barStarts.length||gs.length<2){          // 마디 표시가 없으면 단 시작에 붙인다
+      const d=put(mel.notes,lineStart);
+      if(lineBeats>0&&Math.abs(d-lineBeats)>0.75)drift++;
+      return;
+    }
+    const nb=barStarts.length, off=gs.length-nb;
+    if(off>0){                                   // 못갖춘마디: 첫 마디 앞에서 끝나도록
+      let t=barStarts[0];
+      for(let g=off-1;g>=0;g--){ t-=dur(gs[g]); put(gs[g],t); }
+    }
+    for(let i=0;i<nb;i++){
+      const g=gs[i+Math.max(0,off)];
+      if(!g)break;
+      const d=put(g,barStarts[i]);
+      if(Math.abs(d-P.beats)>0.75)drift++;
+    }
   };
 
   for(const b of blocks){
-    if(b.k==='mel'){ if(pendingMel)layMel(pendingMel,beat,0); pendingMel=b; continue; }
+    if(b.k==='mel'){ if(pendingMel)layMel(pendingMel,[],beat,0); pendingMel=b; continue; }
     if(b.k!=='pairs')continue;
 
-    const lineStart=beat;
+    const lineStart=beat, barStarts=[];
     let bar=[];
     const flush=()=>{ if(!bar.length)return;
+      barStarts.push(beat);
       const per=P.beats/bar.length;
       bar.forEach(x=>{evs.push({type:'c',chord:x.chord,idx:x.idx,beats:per,at:beat});beat+=per;});
       bar=[]; };
@@ -603,11 +630,14 @@ function buildTimeline(){
       if(pr.chord){ bar.push(pr); if(!hasBar)flush(); }
     }
     flush();
-
-    /* 멜로디는 그 단의 코드 시작 지점에 맞춰 놓는다 (단마다 다시 동기화) */
-    if(pendingMel){ layMel(pendingMel,lineStart,beat-lineStart); pendingMel=null; }
+    if(pendingMel){ layMel(pendingMel,barStarts,lineStart,beat-lineStart); pendingMel=null; }
   }
-  if(pendingMel)layMel(pendingMel,beat,0);
+  if(pendingMel)layMel(pendingMel,[],beat,0);
+
+  /* 못갖춘마디가 0박 앞으로 나갔으면 전체를 밀어준다 */
+  let minAt=0;
+  for(const e of evs) if(e.at<minAt)minAt=e.at;
+  if(minAt<0){ for(const e of evs)e.at-=minAt; beat-=minAt; }
 
   const total=Math.max(beat,1);
   if(P.click)for(let t=0;t<total;t+=1)
@@ -1017,7 +1047,9 @@ function makePrompt(withMel){
    예: |[Bb]내가 누려왔던 |[F/A]모든 것들이 |[Gm7]내가
    슬래시 코드(F/A)와 텐션(Gm7, Bbmaj7)은 그대로 유지합니다.
 `+(withMel?`4. 멜로디 줄은 반드시 ♪ 로 시작하고, 한 단을 한 줄에 모두 적습니다. 중간에 줄을 바꾸지 마세요.
-   예: ♪ Bb4:1 C5:0.5 D5:0.5 r:1
+   예: ♪ D4:0.5 D4:0.5 | Bb4:1 C5:0.5 D5:0.5 r:1 | Eb4:2 D4:2
+   - 코드 줄과 똑같은 자리에 마디선 | 을 넣습니다. 마디마다 박수 합이 박자표와 맞아야 합니다.
+   - 못갖춘마디로 시작하면 첫 | 앞에 그 음들만 적습니다.
    - 음이름 + 옥타브 숫자. 가온다는 C4. 임시표는 # 또는 b 를 음이름 바로 뒤에.
    - 조표를 반영해 실제로 소리나는 음을 씁니다. ♭이 2개면 B와 E는 Bb, Eb 입니다.
    - 콜론 뒤는 박수. 4분음표 1, 8분음표 0.5, 16분음표 0.25, 2분음표 2, 점4분음표 1.5, 온음표 4.
