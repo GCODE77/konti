@@ -41,15 +41,16 @@ header{position:sticky;top:0;z-index:30;background:var(--ink);border-bottom:1px 
 #meta{display:flex;align-items:center;gap:8px;margin-top:4px;font-size:11.5px;color:var(--dim);flex-wrap:wrap}
 #meta b{font-size:13px}
 
-main{flex:1;padding:18px 14px 176px;font-family:var(--mono);line-height:1.5}
-.section{break-inside:avoid;margin:18px 0 6px;padding-bottom:3px;border-bottom:1px solid var(--line);font-family:var(--ui);font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--ribbon)}
+main{flex:1;padding:16px 14px 176px;font-family:var(--mono);line-height:1.45}
+.section{break-inside:avoid;margin:30px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--line);
+  font-family:var(--ui);font-size:12.5px;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:var(--ribbon)}
 .section:first-child{margin-top:0}
-.lineblk{break-inside:avoid;margin-bottom:2px;display:flex;flex-wrap:wrap}
+.lineblk{break-inside:avoid;margin:0 0 15px;display:flex;flex-wrap:wrap;align-items:flex-end}
 .pair{display:inline-block;vertical-align:bottom}
-.ch{display:block;color:var(--brass);font-weight:700;padding-right:8px;white-space:pre;line-height:1.35;cursor:pointer}
+.ch{display:block;color:var(--brass);font-weight:800;letter-spacing:.01em;padding-right:9px;white-space:pre;line-height:1.3;cursor:pointer;transition:transform .12s}
 .ch.plain{cursor:default}
 .ly{display:block;white-space:pre-wrap}
-.bar{display:inline-block;width:0;border-left:1px solid var(--dim);opacity:.5;margin:2px 8px 2px 4px;align-self:stretch}
+.bar{display:inline-block;width:0;border-left:2px solid var(--dim);opacity:.32;margin:0 10px 2px 5px;align-self:stretch;border-radius:1px}
 .verse2 .ly{color:var(--dim)}
 .verse2{margin-top:2px}
 .capo{break-inside:avoid;margin-bottom:14px;padding:8px 12px;border:1px dashed var(--mint);border-radius:8px;font-size:12px;font-family:var(--ui);color:var(--mint)}
@@ -86,7 +87,8 @@ footer{position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--raise)
 .tempo input:focus{color:var(--brass)}
 .tempo .unit{font-size:10px;color:var(--dim);padding-right:4px;letter-spacing:.08em}
 #instbtn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
-.ch.now{background:var(--brass);color:var(--ink);border-radius:4px;padding-left:3px;margin-left:-3px}
+.ch.now{background:var(--brass);color:var(--ink);border-radius:5px;padding-left:5px;margin-left:-5px;
+  transform:scale(1.06);transform-origin:left bottom;box-shadow:0 0 0 3px rgba(214,163,84,.18)}
 .opts{display:flex;gap:7px;flex-wrap:wrap;margin:6px 0 16px}
 .lbl{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);font-weight:600;display:block;margin-bottom:6px}
 .vh{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;clip:rect(0 0 0 0)}
@@ -97,6 +99,12 @@ label.btn{display:inline-flex;align-items:center}
   border-radius:6px;padding:6px 10px;margin-right:10px;font-family:var(--ui);font-size:12px}
 #camwrap{display:none;margin-top:12px}
 #cam{width:100%;border-radius:10px;border:1px solid var(--line);background:#000;display:block}
+body.focus header{display:none}
+body.focus nav{display:none}
+body.focus main{padding:14px 12px 96px}
+body.focus #transport{padding:7px 12px calc(7px + env(safe-area-inset-bottom))}
+#focusout{position:fixed;top:calc(10px + env(safe-area-inset-top));right:12px;z-index:35;display:none}
+body.focus #focusout{display:block}
 #toast{position:fixed;bottom:132px;left:50%;transform:translateX(-50%);z-index:50;background:var(--brass);color:var(--ink);padding:9px 16px;border-radius:999px;font-size:12.5px;font-weight:600;max-width:90vw;text-align:center;display:none}
 #toast.show{display:block}
 
@@ -138,6 +146,7 @@ label.btn{display:inline-flex;align-items:center}
 <nav class="scroll">
   <button class="btn" data-panel="scan">사진</button>
   <button class="btn" data-panel="input">직접 입력</button>
+  <button class="btn" id="b-focus">집중</button>
   <button class="btn" id="b-verse">1절</button>
   <button class="btn" id="b-number">넘버</button>
   <button class="btn" id="b-capo">카포</button>
@@ -150,6 +159,7 @@ label.btn{display:inline-flex;align-items:center}
 </nav>
 </footer>
 
+<button class="btn" id="focusout">나가기</button>
 <div id="scrim"><div id="sheet"></div></div>
 <div id="toast" role="status"></div>
 
@@ -593,11 +603,13 @@ function startPlay(){
   P.timer=setInterval(schedule,25);
   schedule(); requestAnimationFrame(frame);
   $('play').innerHTML='&#10073;&#10073;';
+  wakeOn();
 }
 function stopPlay(){
   P.playing=false; clearInterval(P.timer); P.timer=null; P.marks=[]; P.vmarks=[]; P.cur=-1;
   document.querySelectorAll('.ch.now').forEach(e=>e.classList.remove('now'));
   $('play').innerHTML='&#9654;';
+  wakeOff();
 }
 function togglePlay(){ P.playing?stopPlay():startPlay(); }
 
@@ -614,7 +626,7 @@ G       D       Em7     C
 G       D/F#    C       D    G
 내 입술이 잠잠할 수 없네`;
 
-const S={raw:SAMPLE,semis:0,flat:null,num:false,capo:false,font:17,col:false,photo:null,verse:1};
+const S={raw:SAMPLE,semis:0,flat:null,num:false,capo:false,font:20,col:false,photo:null,verse:1};
 let blocks=[], origKey={pc:0,minor:false};
 function reparse(){
   blocks=parseChart(S.raw); origKey=detectKey(blocks);
@@ -1374,7 +1386,7 @@ $('b-verse').onclick=()=>{const mv=maxVerse(); if(mv<2)return; S.verse=S.verse>=
 $('b-number').onclick=()=>{S.num=!S.num;renderAll()};
 $('b-capo').onclick=()=>{S.capo=!S.capo;renderAll()};
 $('b-flat').onclick=()=>{S.flat=S.flat==='flat'?null:'flat';renderAll()};
-$('b-font').onclick=()=>{S.font=S.font>=26?14:S.font+3;renderAll()};
+$('b-font').onclick=()=>{const L=[16,20,24,28,34];S.font=L[(L.indexOf(S.font)+1)%L.length]||20;renderAll()};
 $('b-col').onclick=()=>{S.col=!S.col;renderAll()};
 $('b-save').onclick=()=>{
   const t=$('title').value.trim()||'제목 없음';
@@ -1416,6 +1428,25 @@ $('bpm').value=P.bpm;
 document.addEventListener('keydown',e=>{
   if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')return;
   if(e.code==='Space'){e.preventDefault();togglePlay();}
+});
+/* 집중 모드: 헤더와 도구막대를 감춰 악보만 크게 */
+function setFocus(on){
+  document.body.classList.toggle('focus',on);
+  $('b-focus').classList.toggle('on',on);
+  if(on)wakeOn(); else wakeOff();
+}
+$('b-focus').onclick=()=>setFocus(!document.body.classList.contains('focus'));
+$('focusout').onclick=()=>setFocus(false);
+
+/* 연주 중 화면이 꺼지지 않게 */
+let wl=null;
+async function wakeOn(){
+  try{ if('wakeLock' in navigator && !wl){ wl=await navigator.wakeLock.request('screen');
+    wl.addEventListener('release',()=>{wl=null}); } }catch(e){}
+}
+function wakeOff(){ if(wl&&!P.playing&&!document.body.classList.contains('focus')){try{wl.release()}catch(e){} wl=null;} }
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible'&&(P.playing||document.body.classList.contains('focus')))wakeOn();
 });
 renderAll();
 </script>
