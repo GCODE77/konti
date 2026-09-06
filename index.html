@@ -185,7 +185,7 @@ body.focus #focusout{display:block}
    예) const SCAN_ENDPOINT = "https://konti-scan.내계정.workers.dev";
 */
 const SCAN_ENDPOINT = "";
-const APP_VER = "17";
+const APP_VER = "18";
 /* file:// 나 content:// 로 열면 브라우저가 외부 호출을 막는다(CORS). 미리 알려준다. */
 const LOCAL_FILE = !/^https?:$/.test(location.protocol);
 /* Claude 앱처럼 iframe 안에서 실행 중이면 키 없이도 인식이 통한다. */
@@ -200,6 +200,8 @@ const DEG={0:'1',1:'b2',2:'2',3:'b3',4:'3',5:'4',6:'#4',7:'5',8:'b6',9:'6',10:'b
 const SHAPES=[7,0,2,9,4];
 const CHORD_RE=/^([A-G])([#♯b♭]?)([^/\s]*?)(?:\/([A-G])([#♯b♭]?))?$/;
 const PASS=/^(\||\|\||:\||\|:|-|—|%|x\d+|\(?\d+x\)?|N\.?C\.?|\/+)$/i;
+/* 코드 접미사로 허용되는 조각만 나열한다. Chorus/Bridge/Ending 이 코드로 잡히던 문제 방지 */
+const SUFFIX_RE=/^(?:maj|min|sus|add|dim|aug|m|M|Δ|°|\+|-|\(|\)|[#b♯♭]|\d)*$/;
 const mod=n=>((n%12)+12)%12;
 const nm=(pc,p)=>(p==='flat'?FLAT:SHARP)[mod(pc)];
 
@@ -209,6 +211,7 @@ function parseChord(t){
   const[,l,a,sfx='',bl,ba]=m;
   if(/[가-힣ㄱ-ㅎㅏ-ㅣ]/.test(sfx))return null;
   if(sfx.length>9)return null;
+  if(sfx&&!SUFFIX_RE.test(sfx))return null;
   return{root:mod(PCM[l]+(ACC[a]||0)),suffix:sfx,bass:bl?mod(PCM[bl]+(ACC[ba]||0)):null};
 }
 const showChord=(c,s,p)=>nm(c.root+s,p)+c.suffix+(c.bass===null?'':'/'+nm(c.bass+s,p));
