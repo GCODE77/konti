@@ -349,72 +349,30 @@ const QUAL=[[/^(m7b5|ø)/,[0,3,6,10]],[/^(dim7|°7)/,[0,3,6,9]],[/^(dim|°)/,[0,
  [/^m(?:in)?(?!aj)/,[0,3,7]],[/^sus2/,[0,2,7]],[/^sus4?/,[0,5,7]],[/^7/,[0,4,7,10]],[/^6/,[0,4,7,9]]];
 
 const INSTRUMENTS={
-  piano :{label:'피아노',      partials:[[1,.55],[2,.20],[3,.09],[4,.04]], a:.004,d:.55,sus:.28,r:.35, spread:0},
-  ep    :{label:'일렉피아노',  partials:[[1,.60],[2,.10],[4,.15],[7,.04]], a:.006,d:.85,sus:.30,r:.40, spread:0},
-  organ :{label:'오르간',      partials:[[1,.42],[2,.24],[3,.15],[4,.10],[6,.06]], a:.02,d:.08,sus:.90,r:.08, spread:0},
-  pad   :{label:'스트링 패드', partials:[[1,.34],[1.006,.30],[2,.10]], a:.45,d:.4,sus:.85,r:.65, spread:0, lp:true},
-  guitar:{label:'어쿠스틱 기타', pluck:true, spread:.020},
-  bass  :{label:'베이스만',    partials:[[1,.85],[2,.10]], a:.006,d:.5,sus:.25,r:.3, spread:0, bassOnly:true}
+  piano  :{label:'피아노',    partials:[[1,.52],[2,.20],[3,.09],[4,.05],[6,.02]], a:.004,d:.6,sus:.26,r:.35, wave:'triangle', spread:0, rev:.30},
+  ep     :{label:'일렉피아노', partials:[[1,.58],[2,.10],[4,.16],[7,.05]],        a:.006,d:.9,sus:.28,r:.40, wave:'sine',     spread:0, rev:.34, trem:[5.4,.12]},
+  organ  :{label:'오르간',    partials:[[1,.40],[2,.24],[3,.15],[4,.10],[6,.07],[8,.04]], a:.02,d:.08,sus:.90,r:.10, wave:'sine', spread:0, rev:.28},
+  strings:{label:'현악·바이올린', partials:[[1,.30],[2,.19],[3,.11],[4,.07],[5,.05],[6,.03]], a:.24,d:.35,sus:.86,r:.55, wave:'sawtooth', spread:.012, rev:.48, vib:[5.1,.30], lp:[2700,1.1]},
+  cello  :{label:'첼로',      partials:[[1,.34],[2,.20],[3,.12],[4,.06],[5,.03]], a:.16,d:.3,sus:.84,r:.5,  wave:'sawtooth', spread:.01, rev:.44, vib:[4.6,.26], lp:[1500,1.0], oct:-1},
+  brass  :{label:'트럼펫·금관', partials:[[1,.28],[2,.22],[3,.17],[4,.12],[5,.08],[6,.05]], a:.045,d:.2,sus:.80,r:.22, wave:'sawtooth', spread:.006, rev:.36, vib:[5.6,.16], fenv:[600,3400,.13]},
+  flute  :{label:'플루트',    partials:[[1,.62],[2,.08],[3,.03]],                a:.08,d:.22,sus:.82,r:.28, wave:'sine', spread:0, rev:.42, vib:[5.9,.28], breath:.06},
+  choir  :{label:'합창',      partials:[[1,.40],[2,.14],[3,.08],[4,.05]],        a:.30,d:.4,sus:.88,r:.7,  wave:'sawtooth', spread:.015, rev:.58, vib:[4.4,.22], lp:[1900,.9]},
+  pad    :{label:'신스 패드',  partials:[[1,.34],[1.006,.30],[2,.10]],            a:.45,d:.4,sus:.85,r:.65, wave:'sawtooth', spread:0, rev:.55, lp:[1800,.8]},
+  guitar :{label:'어쿠스틱 기타', pluck:true, spread:.020, rev:.28},
+  bass   :{label:'베이스',    partials:[[1,.82],[2,.12],[3,.04]],                a:.006,d:.5,sus:.24,r:.3,  wave:'triangle', spread:0, rev:.12, bassOnly:true}
 };
-
-let actx=null, master=null, wet=null, dry=null;
-function makeIR(ctx,sec,decay){
-  const len=Math.max(1,Math.floor(ctx.sampleRate*sec));
-  const buf=ctx.createBuffer(2,len,ctx.sampleRate);
-  for(let ch=0;ch<2;ch++){
-    const d=buf.getChannelData(ch);
-    for(let i=0;i<len;i++){
-      const t=i/len;
-      d[i]=(Math.random()*2-1)*Math.pow(1-t,decay)*(1-t*0.15);
-    }
-  }
-  return buf;
-}
-function AC(){
-  if(!actx){
-    const A=window.AudioContext||window.webkitAudioContext; if(!A)return null;
-    actx=new A();
-    const comp=actx.createDynamicsCompressor();
-    comp.threshold.value=-16; comp.knee.value=22; comp.ratio.value=3.4;
-    comp.attack.value=.006; comp.release.value=.26;
-    comp.connect(actx.destination);
-
-    master=actx.createGain(); master.gain.value=.85;   // 모든 소리가 여기로 모인다
-    dry=actx.createGain(); dry.gain.value=.82;
-    wet=actx.createGain(); wet.gain.value=.30;
-    const rev=actx.createConvolver();
-    try{ rev.buffer=makeIR(actx,2.6,2.4); }catch(e){}
-    const damp=actx.createBiquadFilter();
-    damp.type='lowpass'; damp.frequency.value=3600;   // 잔향의 고음을 깎아 자연스럽게
-    master.connect(dry); dry.connect(comp);
-    master.connect(wet); wet.connect(rev); rev.connect(damp); damp.connect(comp);
-  }
-  if(actx.state==='suspended')actx.resume();
-  return actx;
-}
-/* 악기마다 울림의 양이 다르다 */
-const REVERB={piano:.30,ep:.34,organ:.26,pad:.55,guitar:.28,bass:.12};
-function setReverb(inst){ if(wet)wet.gain.value=REVERB[inst]!==undefined?REVERB[inst]:.3; }
-const mtof=m=>440*Math.pow(2,(m-69)/12);
-
-const ksCache={};
-function pluckBuf(ctx,freq){
-  const k=Math.round(freq*4); if(ksCache[k])return ksCache[k];
-  const sr=ctx.sampleRate,len=Math.floor(sr*2.4),N=Math.max(2,Math.round(sr/freq));
-  const buf=ctx.createBuffer(1,len,sr),d=buf.getChannelData(0);
-  const ring=new Float32Array(N);
-  for(let i=0;i<N;i++)ring[i]=Math.random()*2-1;
-  let p=0,last=0;
-  for(let i=0;i<len;i++){
-    const cur=ring[p], v=(cur+last)*.5*.9965;
-    d[i]=v*Math.exp(-i/(sr*1.6));
-    ring[p]=v; last=cur; p=(p+1)%N;
-  }
-  ksCache[k]=buf; return buf;
+function setReverb(insts){
+  if(!wet)return;
+  const list=Array.isArray(insts)?insts:[insts];
+  let v=.3;
+  for(const k of list){ const I=INSTRUMENTS[k]; if(I&&I.rev!==undefined)v=Math.max(v,I.rev); }
+  wet.gain.value=v;
 }
 
 function voice(ctx,inst,midi,t,dur,vel,pan){
-  const I=INSTRUMENTS[inst]||INSTRUMENTS.piano, f=mtof(midi);
+  const I=INSTRUMENTS[inst]||INSTRUMENTS.piano;
+  if(I.oct)midi+=I.oct*12;
+  const f=mtof(midi);
   let out2=master;
   if(pan!==undefined&&ctx.createStereoPanner){
     const sp=ctx.createStereoPanner();
@@ -431,29 +389,59 @@ function voice(ctx,inst,midi,t,dur,vel,pan){
     src.start(t); src.stop(t+Math.min(2.4,dur+.7));
     return;
   }
+  const end=t+dur+I.r+.2;
   const g=ctx.createGain(), peak=Math.max(.0002,vel);
   g.gain.setValueAtTime(.0001,t);
   g.gain.exponentialRampToValueAtTime(peak,t+I.a);
   g.gain.exponentialRampToValueAtTime(Math.max(.0002,peak*I.sus),t+I.a+I.d);
   g.gain.setTargetAtTime(.0001,t+dur,I.r/3);
-  let out=g;
-  if(I.lp){
+
+  let node=g;
+  if(I.lp){                                   // 톤을 둥글게
     const lp=ctx.createBiquadFilter(); lp.type='lowpass';
-    lp.frequency.setValueAtTime(600,t);
-    lp.frequency.linearRampToValueAtTime(2400,t+Math.min(1.2,dur));
-    g.connect(lp); out=lp;
+    lp.frequency.value=I.lp[0]; lp.Q.value=I.lp[1];
+    g.connect(lp); node=lp;
   }
-  out.connect(out2);
-  const layer=(inst==='piano'||inst==='ep'||inst==='pad')?2:1;   // 살짝 어긋난 두 겹 = 두께
+  if(I.fenv){                                 // 금관: 세게 불면 밝아진다
+    const bp=ctx.createBiquadFilter(); bp.type='lowpass'; bp.Q.value=.9;
+    bp.frequency.setValueAtTime(I.fenv[0],t);
+    bp.frequency.linearRampToValueAtTime(I.fenv[1],t+I.fenv[2]);
+    bp.frequency.setTargetAtTime(I.fenv[0]*1.6,t+dur*.7,.3);
+    node.connect(bp); node=bp;
+  }
+  node.connect(out2);
+
+  let vibGain=null;
+  if(I.vib){                                  // 비브라토 — 전자음을 벗어나는 핵심
+    const lfo=ctx.createOscillator(), lg=ctx.createGain();
+    lfo.frequency.value=I.vib[0];
+    lg.gain.setValueAtTime(0,t);
+    lg.gain.linearRampToValueAtTime(I.vib[1]*100,t+Math.min(.5,I.a+.25));  // 서서히 걸린다
+    lfo.connect(lg); lfo.start(t); lfo.stop(end);
+    vibGain=lg;
+  }
+  if(I.breath){                               // 플루트 숨소리
+    const len=Math.max(1,Math.floor(ctx.sampleRate*Math.min(.25,dur)));
+    const nb=ctx.createBuffer(1,len,ctx.sampleRate), nd=nb.getChannelData(0);
+    for(let i=0;i<len;i++)nd[i]=(Math.random()*2-1)*Math.pow(1-i/len,2);
+    const ns=ctx.createBufferSource(); ns.buffer=nb;
+    const nf=ctx.createBiquadFilter(); nf.type='bandpass'; nf.frequency.value=f*2; nf.Q.value=1.2;
+    const ng=ctx.createGain(); ng.gain.value=vel*I.breath;
+    ns.connect(nf); nf.connect(ng); ng.connect(out2);
+    ns.start(t); ns.stop(t+Math.min(.3,dur));
+  }
+
+  const layer=(inst==='piano'||inst==='ep'||inst==='pad'||inst==='strings'||inst==='choir')?2:1;
   for(const[mult,amp] of I.partials){
     for(let L=0;L<(mult===1?layer:1);L++){
       const o=ctx.createOscillator(), og=ctx.createGain();
-      o.type=(inst==='organ'||inst==='ep')?'sine':(mult===1?'triangle':'sine');
+      o.type=I.wave||'sine';
       o.frequency.value=f*mult;
-      o.detune.value=layer>1&&mult===1?(L===0?-5:5):0;
+      o.detune.value=(layer>1&&mult===1?(L===0?-6:6):0)+(I.spread?(Math.random()*6-3):0);
+      if(vibGain)vibGain.connect(o.detune);
       og.gain.value=amp/(mult===1?layer:1);
       o.connect(og); og.connect(g);
-      o.start(t); o.stop(t+dur+I.r+.15);
+      o.start(t); o.stop(end);
     }
   }
 }
@@ -464,98 +452,37 @@ function chordVoicing(chord,semis){
   const bassPc=mod((chord.bass===null?chord.root:chord.bass)+semis);
   return {bass:36+bassPc, upper:iv.map(i=>60+rp+i)};
 }
-/* 연주 패턴: 한 코드가 차지하는 b박을 어떻게 쪼개 칠 것인가
-   반환 [{t:박 오프셋, n:[미디음], d:박 길이, g:세기}] */
-const PATTERNS={
-  block:{label:'블록 코드',build:(v,b)=>[{t:0,n:[v.bass].concat(v.upper),d:b,g:.26}]},
 
-  arp:{label:'아르페지오',build:(v,b)=>{
-    const u=v.upper, top=u[u.length-1];
-    const seq=[v.bass,u[0],u[1]||u[0],top,u[1]||u[0],u[0]];
-    const n=Math.max(2,Math.round(b*2)),step=b/n,out=[];
-    for(let i=0;i<n;i++)out.push({t:i*step,n:[seq[i%seq.length]],d:b-i*step+.4,g:.30});
-    return out;}},
-
-  alberti:{label:'알베르티',build:(v,b)=>{
-    const u=v.upper, hi=u[u.length-1], mid=u[1]||u[0];
-    const seq=[v.bass,hi,mid,hi];
-    const n=Math.max(2,Math.round(b*2)),step=b/n,out=[];
-    for(let i=0;i<n;i++)out.push({t:i*step,n:[seq[i%4]],d:step*2.2,g:.29});
-    return out;}},
-
-  eight:{label:'8비트',build:(v,b)=>{
-    const n=Math.max(2,Math.round(b*2)),step=b/n,out=[];
-    for(let i=0;i<n;i++){
-      const t=i*step;
-      if(i%2===0)out.push({t,n:[v.bass],d:step*1.7,g:.32});
-      out.push({t,n:v.upper,d:step*.95,g:i%2?.13:.19});
-    }
-    return out;}},
-
-  waltz:{label:'왈츠',build:(v,b)=>{
-    const beats=Math.max(2,Math.round(b)),out=[{t:0,n:[v.bass],d:1,g:.33}];
-    for(let i=1;i<beats;i++)out.push({t:i,n:v.upper,d:.9,g:.19});
-    return out;}},
-
-  shuffle:{label:'셔플',build:(v,b)=>{
-    const n=Math.max(1,Math.round(b)),out=[];
-    for(let i=0;i<n;i++){
-      out.push({t:i,n:i%2===0?[v.bass]:v.upper,d:.62,g:.30});
-      out.push({t:i+2/3,n:v.upper,d:.34,g:.16});
-    }
-    return out;}},
-
-  bossa:{label:'보사노바',build:(v,b)=>{
-    const out=[],n=Math.max(2,Math.round(b));
-    for(let i=0;i<n;i+=2){
-      out.push({t:i,n:[v.bass],d:1.4,g:.32});
-      out.push({t:i+1.5,n:[v.bass],d:1,g:.27});
-    }
-    [0,.75,1.5,2.5,3.25].forEach(t=>out.push({t,n:v.upper,d:.5,g:.17}));
-    return out;}},
-
-  ballad:{label:'발라드',build:(v,b)=>{
-    const u=v.upper,out=[{t:0,n:[v.bass],d:b,g:.30}];
-    const rest=Math.max(1,Math.round((b-.5)*2)),step=(b-.5)/rest;
-    for(let i=0;i<rest;i++)out.push({t:.5+i*step,n:[u[i%u.length]],d:b-(.5+i*step)+.5,g:.24});
-    return out;}}
-};
-
-const GENRES={
-  hymn   :{label:'찬송가',    inst:'organ', mel:'organ', pat:'block',   bpm:76,  beats:4},
-  ballad :{label:'CCM 발라드',inst:'piano', mel:'ep',    pat:'ballad',  bpm:68,  beats:4},
-  modern :{label:'모던 워십', inst:'pad',   mel:'ep',    pat:'arp',     bpm:72,  beats:4},
-  acou   :{label:'어쿠스틱',  inst:'guitar',mel:'piano', pat:'arp',     bpm:84,  beats:4},
-  gospel :{label:'가스펠',    inst:'ep',    mel:'ep',    pat:'shuffle', bpm:96,  beats:4},
-  band   :{label:'밴드 8비트',inst:'piano', mel:'ep',    pat:'eight',   bpm:100, beats:4},
-  bossa  :{label:'보사노바',  inst:'guitar',mel:'piano', pat:'bossa',   bpm:124, beats:4},
-  waltz  :{label:'왈츠',      inst:'piano', mel:'piano', pat:'waltz',   bpm:108, beats:3},
-  classic:{label:'클래식',    inst:'piano', mel:'piano', pat:'alberti', bpm:88,  beats:4}
-};
-function applyGenre(k){
-  const g=GENRES[k]; if(!g)return;
-  P.genre=k; P.inst=g.inst; P.melInst=g.mel; P.pattern=g.pat; P.beats=g.beats;
-  setBpm(g.bpm);
-  renderToolbar();
-  if(P.playing)startPlay();
+/* 여러 악기를 동시에 울린다 */
+function instList(){
+  const l=(P.insts&&P.insts.length)?P.insts:['piano'];
+  return l.filter(k=>INSTRUMENTS[k]);
 }
-
-function strike(ctx,chord,semis,inst,t,dur,beats,spb){
-  const I=INSTRUMENTS[inst]||INSTRUMENTS.piano;
+function strike(ctx,chord,semis,insts,t,dur,beats,spb){
+  const list=(insts&&insts.length?insts:['piano']).filter(k=>INSTRUMENTS[k]);
+  if(!list.length)return;
+  setReverb(list);
+  const mix=1/Math.sqrt(list.length);          // 겹칠수록 각각을 낮춰 뭉개지지 않게
   const v=chordVoicing(chord,semis);
-  setReverb(inst);
-  if(I.bassOnly){voice(ctx,inst,v.bass,t,dur,.34,0);voice(ctx,inst,v.bass-12,t,dur,.16,0);return;}
   const P2=PATTERNS[P.pattern]||PATTERNS.block;
-  for(const e of P2.build(v,beats)){
-    if(e.t>=beats||e.t<0)continue;
-    const n=e.n.length;
-    e.n.forEach((m,i)=>{
-      const low=m<52;
-      const pan=low?0:((n>1?(i/(n-1)):.5)-.5)*.62;      // 낮은 음은 가운데, 화음은 좌우로
-      voice(ctx,inst,m,t+e.t*spb+i*(I.spread||0),Math.max(.14,e.d*spb),e.g,pan);
-      if(low&&e.g>.28)voice(ctx,inst,m-12,t+e.t*spb,Math.max(.14,e.d*spb),e.g*.42,0);  // 저음 한 옥타브 아래 살짝
-    });
-  }
+  const evs=P2.build(v,beats).filter(e=>e.t<beats&&e.t>=0);
+  list.forEach((inst,ii)=>{
+    const I=INSTRUMENTS[inst];
+    if(I.bassOnly){
+      evs.forEach(e=>{ if(e.n.some(m=>m<52))voice(ctx,inst,v.bass,t+e.t*spb,Math.max(.14,e.d*spb),e.g*mix,0); });
+      return;
+    }
+    const off=ii*.008;                          // 악기마다 아주 살짝 어긋나게 = 합주 느낌
+    for(const e of evs){
+      const n=e.n.length;
+      e.n.forEach((m,i)=>{
+        const low=m<52;
+        const pan=low?0:((n>1?(i/(n-1)):.5)-.5)*.62+(ii-(list.length-1)/2)*.12;
+        voice(ctx,inst,m,t+e.t*spb+i*(I.spread||0)+off,Math.max(.14,e.d*spb),e.g*mix,pan);
+        if(low&&e.g>.28)voice(ctx,inst,m-12,t+e.t*spb+off,Math.max(.14,e.d*spb),e.g*.4*mix,0);
+      });
+    }
+  });
 }
 function click(ctx,t,strong){
   const o=ctx.createOscillator(),g=ctx.createGain();
@@ -567,10 +494,15 @@ function click(ctx,t,strong){
 }
 function tapChord(chord,semis){
   const ctx=AC(); if(!ctx||!chord)return;
-  const I=INSTRUMENTS[P.inst]||INSTRUMENTS.piano, v=chordVoicing(chord,semis), t=ctx.currentTime+.01;
-  setReverb(P.inst);
-  voice(ctx,P.inst,v.bass,t,1.3,.34,0);
-  if(!I.bassOnly)v.upper.forEach((m,i,a)=>voice(ctx,P.inst,m,t+i*(I.spread||0),1.3,.26,((i/Math.max(1,a.length-1))-.5)*.6));
+  const list=instList();
+  setReverb(list);
+  const v=chordVoicing(chord,semis), t=ctx.currentTime+.01, mix=1/Math.sqrt(list.length);
+  list.forEach((inst,ii)=>{
+    const I=INSTRUMENTS[inst];
+    voice(ctx,inst,v.bass,t+ii*.008,1.4,.34*mix,0);
+    if(!I.bassOnly)v.upper.forEach((m,i,arr)=>
+      voice(ctx,inst,m,t+i*(I.spread||0)+ii*.008,1.4,.26*mix,((i/Math.max(1,arr.length-1))-.5)*.6));
+  });
 }
 
 /* ---- 시퀀서 ---- */
