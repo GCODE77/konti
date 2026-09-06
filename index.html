@@ -216,7 +216,7 @@ window.onerror=function(msg,src,ln){
    예) const SCAN_ENDPOINT = "https://konti-scan.내계정.workers.dev";
 */
 const SCAN_ENDPOINT = "";
-const APP_VER = "31";
+const APP_VER = "32";
 /* file:// 나 content:// 로 열면 브라우저가 외부 호출을 막는다(CORS). 미리 알려준다. */
 const LOCAL_FILE = !/^https?:$/.test(location.protocol);
 /* Claude 앱처럼 iframe 안에서 실행 중이면 키 없이도 인식이 통한다. */
@@ -261,10 +261,29 @@ function isChordLine(l){
 }
 const MEL_RE=/^\s*[♪♫]\s*\S/;
 const NOTE_RE=/^(?:(r)|([A-G])([#♯b♭]?)(-?\d))(?::([\d.]+))?$/i;
+const SOL={'도':0,'레':2,'미':4,'파':5,'솔':7,'라':9,'시':11};
+const SOL_RE=/^([#♯b♭]?)([도레미파솔라시])(-?\d)?(?::([\d.]+))?$/;
+const DEG_RE=/^([#♯b♭]?)([1-7])([v^]?)(?::([\d.]+))?$/;
+const DEG_SEMI={1:0,2:2,3:4,4:5,5:7,6:9,7:11};
 function parseMelody(line){
   const out=[];
   for(const t of line.trim().replace(/^[♪♫]\s*/,'').split(/\s+/)){
     if(/^\|+$/.test(t)){ out.push({bar:true}); continue; }
+    const sm=t.match(SOL_RE);
+    if(sm){
+      const beats=sm[4]?parseFloat(sm[4]):1;
+      const oct=sm[3]?parseInt(sm[3],10):4;
+      const midi=(oct+1)*12+SOL[sm[2]]+(ACC[sm[1]]||0);
+      if(beats>0&&midi>=12&&midi<=108)out.push({midi,beats});
+      continue;
+    }
+    const dm=t.match(DEG_RE);
+    if(dm){
+      const beats=dm[4]?parseFloat(dm[4]):1;
+      if(beats>0)out.push({deg:DEG_SEMI[dm[2]]+(ACC[dm[1]]||0),
+        oct:(dm[3]==='^'?1:dm[3]==='v'?-1:0),beats});
+      continue;
+    }
     const m=t.match(NOTE_RE); if(!m)continue;
     const beats=m[5]?parseFloat(m[5]):1;
     if(!isFinite(beats)||beats<=0)continue;
@@ -669,7 +688,7 @@ function applyGenre(k){
 }
 
 /* ---- 시퀀서 ---- */
-const P={playing:false,bpm:84,genre:'',insts:['piano'],melInst:'ep',pattern:'block',beats:4,loop:true,click:false,melody:true,accomp:true,readMel:true,melOct:0,melFit:true,
+const P={playing:false,bpm:84,genre:'',insts:['piano'],melInst:'ep',pattern:'block',beats:4,loop:true,click:false,melody:true,accomp:true,readMel:true,bySystem:true,melOct:0,melFit:true,
          evs:[],total:0,k:0,cursorT:0,lastAt:0,t0:0,timer:null,marks:[],vmarks:[],vnext:1,cur:-1};
 
 function buildTimeline(){
@@ -683,7 +702,10 @@ function buildTimeline(){
     for(const n of notes){
       if(n.bar)continue;
       const d=n.beats*k;
-      if(!n.rest){evs.push({type:'m',midi:n.midi,beats:d,at:t});melNotes++;}
+      if(!n.rest){
+        const mi=(n.midi!==undefined)?n.midi:(60+origKey.pc+n.deg+(n.oct||0)*12);
+        evs.push({type:'m',midi:mi,beats:d,at:t});melNotes++;
+      }
       t+=d;
     }
     return t-startBeat;
@@ -1235,6 +1257,65 @@ document.addEventListener('paste',ev=>{
   prepImage(f).then(p=>{S.photos.push(p);openPanel('scan')}).catch(()=>toast('이미지를 열지 못했습니다.'));
 });
 
+/* 오선이 모인 줄(단)을 찾아 한 단씩 잘라낸다.
+   한 번에 보는 음표가 줄면 음높이 인식이 훨씬 정확해진다. */
+function splitSystems(url){
+  return new Promise((res)=>{
+    const img=new Image();
+    img.onload=()=>{
+      try{
+        const W=img.width,H=img.height;
+        const cv=document.createElement('canvas'); cv.width=W; cv.height=H;
+        const ctx=cv.getContext('2d'); ctx.drawImage(img,0,0);
+        const d=ctx.getImageData(0,0,W,H).data;
+        const rows=new Float32Array(H);
+        for(let y=0;y<H;y++){
+          let c=0,o=y*W*4;
+          for(let x=0;x<W;x++){const i=o+x*4;
+            if((d[i]*.3+d[i+1]*.59+d[i+2]*.11)<150)c++;}
+          rows[y]=c/W;
+        }
+        const isLine=y=>rows[y]>0.45;              // 가로로 길게 이어진 줄 = 오선
+        const bands=[]; let st=-1;
+        for(let y=0;y<H;y++){
+          if(isLine(y)){ if(st<0)st=y; }
+          else if(st>=0){ bands.push([st,y]); st=-1; }
+        }
+        if(st>=0)bands.push([st,H-1]);
+        // 가까운 오선들을 한 단으로 묶는다
+        const sys=[]; let cur=null;
+        for(const [a,b] of bands){
+          if(cur&&a-cur[1]<H*0.045){ cur[1]=b; }
+          else { if(cur)sys.push(cur); cur=[a,b]; }
+        }
+        if(cur)sys.push(cur);
+        const good=sys.filter(x=>x[1]-x[0]>H*0.008);
+        if(good.length<2||good.length>14){ res(null); return; }
+        const out=[];
+        for(let i=0;i<good.length;i++){
+          const prevEnd=i>0?good[i-1][1]:0;
+          const nextStart=i<good.length-1?good[i+1][0]:H;
+          const top=Math.max(0,Math.floor((good[i][0]+prevEnd)/2)-6);
+          const bot=Math.min(H,Math.ceil((good[i][1]+nextStart)/2)+6);
+          const hh=bot-top; if(hh<20)continue;
+          const sc=Math.min(2.4,1400/W);
+          const c2=document.createElement('canvas');
+          c2.width=Math.round(W*sc); c2.height=Math.round(hh*sc);
+          const x2=c2.getContext('2d');
+          x2.fillStyle='#fff'; x2.fillRect(0,0,c2.width,c2.height);
+          x2.filter='grayscale(1) contrast(1.2)';
+          x2.drawImage(img,0,top,W,hh,0,0,c2.width,c2.height);
+          const u=c2.toDataURL('image/jpeg',.92);
+          out.push({url:u,b64:u.split(',')[1]});
+        }
+        res(out.length>=2?out:null);
+      }catch(e){ res(null); }
+    };
+    img.onerror=()=>res(null);
+    img.src=url;
+  });
+}
+
 let camStream=null;
 function closeCam(){
   if(camStream){camStream.getTracks().forEach(t=>t.stop());camStream=null;}
@@ -1538,11 +1619,23 @@ async function runScan(){
   const say=m=>{box.className='callout work';box.innerHTML='<span class="spin"></span> '+m;};
   LAST_TRUNCATED=false; P._retried=false;
   try{
+    /* 한 장을 단 단위로 쪼개면 인식이 정확해진다 */
+    let shots=S.photos;
+    if(P.bySystem!==false){
+      say('악보를 단 단위로 나누는 중…');
+      const acc=[];
+      for(const ph of S.photos){
+        const parts=await splitSystems(ph.url);
+        if(parts&&parts.length)acc.push(...parts); else acc.push(ph);
+      }
+      if(acc.length&&acc.length<=16)shots=acc;
+    }
+    const NN=shots.length;
     const pages=[];
-    for(let i=0;i<N;i++){
-      const tag=N>1?(i+1)+'/'+N+'쪽 ':'';
+    for(let i=0;i<NN;i++){
+      const tag=NN>1?(i+1)+'/'+NN+'단 ':'';
       say(tag+'악보를 읽는 중입니다…');
-      const b64=S.photos[i].b64;
+      const b64=shots[i].b64;
       const usePrompt=P.readMel===false?makePrompt(false):PROMPT;
       let t='';
       if(hosted){
@@ -1578,14 +1671,14 @@ async function runScan(){
       const tm=t.match(/^TITLE:\s*(.+)$/m);
       if(tm){ if(i===0)$('title').value=tm[1].trim(); t=t.replace(/^TITLE:\s*.+$/m,'').trim(); }
       if(t)pages.push(t);
-      if(i<N-1)await new Promise(r=>setTimeout(r,1200));   // 무료 등급 분당 한도 배려
+      if(i<NN-1)await new Promise(r=>setTimeout(r,1100));   // 무료 등급 분당 한도 배려
     }
     let text=pages.join('\n\n');
     if(!text)throw new Error('읽어낸 내용이 없습니다 — 사진을 더 밝고 반듯하게 찍어 보세요');
     S.raw=text; S.semis=0; S.verse=1; stopPlay(); reparse(); renderAll(); addHistory();
     box.className='callout ok';
     const n=blocks.filter(b=>b.k==='pairs').length, mel=hasMelody();
-    box.innerHTML='<b>옮겼습니다.</b> '+(N>1?N+'쪽, ':'')+'가사 '+n+'줄'+(mel?', 멜로디 포함':'')+'. '
+    box.innerHTML='<b>옮겼습니다.</b> '+(NN>1?NN+'조각, ':'')+'가사 '+n+'줄'+(mel?', 멜로디 포함':'')+'. '
       +(LAST_TRUNCATED?'<b style="color:var(--ribbon)">길이 제한으로 뒷부분이 잘렸을 수 있습니다. 악보를 반씩 나눠 찍으면 더 잘 됩니다.</b> ':'')
       +'원본과 비교해 확인한 뒤 쓰세요. 수정은 <b>직접 입력</b>에서 합니다.';
   }catch(err){
@@ -1622,6 +1715,8 @@ function openPanel(name){
         : '<div class="drop" style="margin-top:14px">여러 장을 한 번에 고를 수 있습니다.<br>인쇄된 악보가 손글씨보다 훨씬 잘 읽힙니다.</div>')
       +'<div class="rowline"><span><b>멜로디까지 읽기</b><small>오선보의 음표를 함께 가져옵니다</small></span>'
       +'<button class="btn '+(P.readMel!==false?'on':'')+'" id="melread">'+(P.readMel!==false?'켬':'끔')+'</button></div>'
+      +'<div class="rowline"><span><b>단별로 나눠 읽기</b><small>오선 줄마다 잘라 따로 인식합니다. 느리지만 정확합니다</small></span>'
+      +'<button class="btn '+(P.bySystem!==false?'on':'')+'" id="bysys">'+(P.bySystem!==false?'켬':'끔')+'</button></div>'
       +'<div id="scanstate"></div>'
       +(S.photos.length
         ? '<div class="btns"><button class="btn lg on wide" id="go">코드 차트로 바꾸기'
@@ -1647,6 +1742,7 @@ function openPanel(name){
     if($('apikey'))$('apikey').onchange=e=>setLS('konti:apikey',e.target.value.trim());
     if($('gkey'))$('gkey').onchange=e=>setLS('konti:gkey',e.target.value.trim());
     if($('melread'))$('melread').onclick=()=>{P.readMel=P.readMel===false;openPanel('scan')};
+    if($('bysys'))$('bysys').onclick=()=>{P.bySystem=P.bySystem===false;openPanel('scan')};
     if($('file'))$('file').onchange=onPickFile;
     if($('camopen'))$('camopen').onclick=openCam;
     if($('shoot'))$('shoot').onclick=shoot;
@@ -1674,7 +1770,9 @@ function openPanel(name){
       +'<textarea class="field" id="ta" spellcheck="false"></textarea>'
       +'<p class="note" style="margin:8px 0 0">'
       +'코드는 <b>가사 바로 앞에 대괄호</b>로 넣습니다. 예: <code>|[Bb]내가 |[F/A]누려왔던</code><br>'
-      +'마디는 <code>|</code>, 2절은 <code>2)</code>로 시작, 멜로디는 <code>♪ Bb4:1 C5:0.5</code><br>'
+      +'마디는 <code>|</code>, 2절은 <code>2)</code>로 시작<br>'
+      +'멜로디는 세 가지로 쓸 수 있습니다 — <code>♪ Bb4:1</code> · <code>♪ 시b4:1</code> · <code>♪ 1:1 5:0.5</code>(숫자 계이름)<br>'
+      +'콜론 뒤는 박수(4분음표 1, 8분음표 0.5), 쉼표는 <code>r:1</code><br>'
       +'고치는 즉시 뒤 화면에 반영됩니다.</p>'
       +'<div class="btns">'
       +'<button class="btn wide" id="apply">닫고 확인</button>'
@@ -1767,6 +1865,21 @@ function openPanel(name){
         +(r.sums.length?' 박합['+r.sums.join(',')+']':' <b style="color:var(--ribbon)">멜로디 없음</b>')).join('<br>')
         :'<b style="color:var(--ribbon)">읽어낸 단이 없습니다</b>')
       +'</div>'
+      +(tl.melNotes?'<p class="note" style="margin-top:14px"><b>읽어온 멜로디 계이름</b><br>'
+        +'악보와 눈으로 대조해 보세요. 틀린 음은 <b>편집</b>에서 고칠 수 있습니다.</p>'
+        +'<div style="font-family:var(--mono);font-size:13px;line-height:2;color:var(--brass);'
+        +'background:var(--ink);border:1px solid var(--line);border-radius:8px;padding:12px;max-height:38vh;overflow:auto">'
+        +(function(){
+            const NM=['도','도#','레','레#','미','파','파#','솔','솔#','라','라#','시'];
+            const out=[];let bar=[],n=0;
+            for(const e of tl.evs){ if(e.type!=='m')continue;
+              bar.push(NM[mod(e.midi)]+(Math.floor(e.midi/12)-1));
+              if(++n%8===0){out.push(bar.join(' '));bar=[];}
+            }
+            if(bar.length)out.push(bar.join(' '));
+            return out.join('<br>')||'—';
+          })()
+        +'</div>':'')
       +'<div class="btns"><button class="btn" id="dcopy">이 내용 복사</button></div>';
     $('dcopy').onclick=async()=>{
       try{await navigator.clipboard.writeText($('dbox').innerText+'\n\n--- 원문 ---\n'+S.raw.slice(0,3000));toast('복사했어요');}
