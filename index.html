@@ -69,7 +69,17 @@ nav{border-top:1px solid var(--line);padding:9px 12px 10px;display:flex;gap:7px;
 .note{font-size:12.5px;color:var(--dim);line-height:1.7;margin:0 0 12px}
 .field{background:var(--ink);color:var(--paper);border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-size:13px;width:100%;outline:none}
 textarea.field{font-family:var(--mono);min-height:220px;line-height:1.5;resize:vertical}
-.btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.btns{display:flex;gap:9px;flex-wrap:wrap;margin-top:12px}
+.btn.lg{padding:15px 20px;font-size:15px;font-weight:800;border-radius:14px}
+.btn.wide{flex:1;text-align:center}
+label.btn.wide{justify-content:center}
+.rowline{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 0;border-bottom:1px solid var(--line)}
+.rowline b{font-size:14px;font-weight:700}
+.rowline small{display:block;font-size:11.5px;color:var(--dim);margin-top:3px;font-weight:400}
+.more{background:none;border:none;color:var(--brass);font-size:13px;font-weight:700;padding:14px 0 4px;cursor:pointer;font-family:var(--ui)}
+.keys{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:9px}
+.keys button{background:var(--ink);border:1px solid var(--line);color:var(--brass);border-radius:9px;
+  padding:10px 13px;font-family:var(--mono);font-size:14px;font-weight:700;cursor:pointer}
 .callout{padding:10px 12px;border-radius:8px;font-size:12.5px;line-height:1.6;margin-bottom:12px}
 .callout.err{border:1px solid var(--ribbon);color:var(--ribbon)}
 .callout.ok{border:1px dashed var(--mint);color:var(--mint)}
@@ -187,7 +197,7 @@ body.focus #focusout{display:block}
    예) const SCAN_ENDPOINT = "https://konti-scan.내계정.workers.dev";
 */
 const SCAN_ENDPOINT = "";
-const APP_VER = "24";
+const APP_VER = "25";
 /* file:// 나 content:// 로 열면 브라우저가 외부 호출을 막는다(CORS). 미리 알려준다. */
 const LOCAL_FILE = !/^https?:$/.test(location.protocol);
 /* Claude 앱처럼 iframe 안에서 실행 중이면 키 없이도 인식이 통한다. */
@@ -1333,7 +1343,9 @@ async function geminiScan(gkey,prompt,b64,say){
         for(let w=25;w>0;w--){ if(say)say('무료 한도에 걸렸습니다. '+w+'초 뒤 자동으로 다시 시도합니다…'); await new Promise(z=>setTimeout(z,1000)); }
         return await geminiScan(gkey,prompt,b64,say);
       }
-      throw new Error('무료 한도에 걸렸습니다. 1분쯤 뒤 다시 시도해 주세요');
+      throw new Error('무료 한도를 다 썼습니다. 분당 한도라면 1~2분 뒤 됩니다. '
+        +'몇 시간째 안 되면 하루 한도까지 쓴 것이고, 태평양 시간 자정(한국 시간 오후 4~5시)에 초기화됩니다. '
+        +'그때까지는 아래 OCR이나 직접 입력을 쓰세요');
     }
     lastErr=msg;
   }
@@ -1420,56 +1432,59 @@ function openPanel(name){
   $('close').onclick=closePanel;
 
   if(name==='scan'){
-    const hosted=!!SCAN_ENDPOINT;
+    const hosted=!!SCAN_ENDPOINT, showCfg=!!S.showCfg;
     body.innerHTML=
-      '<p class="note">코드 차트는 물론 <b>오선보</b>도 읽습니다. 오선보면 멜로디까지 가져와 함께 재생합니다. 반듯하게, 그림자 없이, 한 페이지씩 찍을수록 잘 됩니다.</p>'
-      +(hosted
-        ? '<p class="note">인터넷만 연결되어 있으면 바로 됩니다. 하루 사용 횟수에 제한이 있습니다.</p>'
-        : LOCAL_FILE
-        ? '<div class="callout err"><b>이 방식으로는 사진 인식이 안 됩니다.</b><br>'
-          +'내려받은 파일을 직접 열면 브라우저가 외부 호출을 막습니다(CORS).<br>'
-          +'https 주소로 올려서 여세요. 지금은 <b>직접 입력</b>을 쓰시면 됩니다.</div>'
-        : ('<span class="lbl">인식 엔진</span><div class="opts">'
-          +'<button class="btn '+(getProv()==='gemini'?'on':'')+'" data-prov="gemini">Gemini · 무료</button>'
-          +'<button class="btn '+(getProv()==='claude'?'on':'')+'" data-prov="claude">Claude · 유료</button>'
-          +'</div>'
-          +(getProv()==='gemini'
-            ? '<p class="note"><b>카드 등록도 결제도 없습니다.</b> aistudio.google.com → 구글 로그인 → <b>Get API key</b> → 아래에 붙여넣기. 하루 수백 장까지 무료입니다.<br>'
-              +'다만 무료 등급에서는 구글이 올린 자료를 모델 개선에 쓸 수 있습니다.</p>'
-              +'<input class="field" id="gkey" type="password" placeholder="AIza... (무료 Gemini 키)" value="'+esc(getGKey())+'">'
-            : '<p class="note">Claude API는 유료입니다. 키는 platform.claude.com에서 발급합니다.</p>'
-              +'<input class="field" id="apikey" type="password" placeholder="sk-ant-... (Claude 키)" value="'+esc(getKey())+'">')))
-      +'<div class="btns"><label class="btn on" for="file">사진 고르기</label>'
-      +'<button class="btn" id="camopen">카메라로 찍기</button>'
-      +'<button class="btn '+(P.readMel!==false?'on':'')+'" id="melread">멜로디까지</button>'
-      +(S.photos.length?'<button class="btn" id="go">코드 차트로 바꾸기'+(S.photos.length>1?' ('+S.photos.length+'쪽)':'')+'</button>'
-        +'<button class="btn" id="ocr">OCR로 읽기 (키 없이)</button>'
-        +'<button class="btn" id="clr">전부 빼기</button>':'')
-      +'</div><div id="scanstate"></div>'
+      (LOCAL_FILE&&!hosted
+        ? '<div class="callout err">내려받은 파일로 열면 사진 인식이 막힙니다(CORS). https 주소로 여세요.</div>' : '')
+      +'<div class="btns" style="margin-top:0">'
+      +'<label class="btn lg on wide" for="file">사진 고르기</label>'
+      +'<button class="btn lg wide" id="camopen">카메라</button>'
+      +'</div>'
       +'<input type="file" id="file" class="vh" accept="image/*" multiple>'
       +'<div id="camwrap"><video id="cam" playsinline muted></video>'
       +'<div class="btns"><button class="btn on" id="shoot">촬영</button>'
       +'<button class="btn" id="camclose">취소</button></div></div>'
-      +'<p class="note" style="margin:12px 0 0">위 버튼이 반응하지 않으면 아래를 직접 눌러 주세요. 사진을 복사해서 붙여넣어도 됩니다.</p>'
-      +'<input type="file" id="file2" class="rawfile" accept="image/*" multiple>'
       +(S.photos.length
         ? '<div class="thumbs">'+S.photos.map((ph,i)=>
             '<div class="thumb"><span class="n">'+(i+1)+'</span>'
             +'<button class="x" data-del="'+i+'" aria-label="'+(i+1)+'쪽 빼기">×</button>'
             +'<img src="'+ph.url+'" alt="'+(i+1)+'쪽"></div>').join('')+'</div>'
-          +'<p class="note" style="margin:6px 0 0">'+S.photos.length+'쪽. 위에서부터 순서대로 이어 붙입니다. 순서가 다르면 빼고 다시 넣으세요. (최대 8쪽)</p>'
-        : '<div class="drop" style="margin-top:12px">아직 사진이 없습니다.<br>여러 장을 한 번에 고를 수 있습니다.<br>인쇄된 악보가 손글씨보다 훨씬 잘 읽힙니다.</div>');
-    body.querySelectorAll('[data-prov]').forEach(b=>b.onclick=()=>{setLS('konti:prov',b.dataset.prov);openPanel('scan')});
+          +'<p class="note" style="margin:4px 0 0">'+S.photos.length+'쪽 · 순서대로 이어 붙입니다 (최대 8쪽)</p>'
+        : '<div class="drop" style="margin-top:14px">여러 장을 한 번에 고를 수 있습니다.<br>인쇄된 악보가 손글씨보다 훨씬 잘 읽힙니다.</div>')
+      +'<div class="rowline"><span><b>멜로디까지 읽기</b><small>오선보의 음표를 함께 가져옵니다</small></span>'
+      +'<button class="btn '+(P.readMel!==false?'on':'')+'" id="melread">'+(P.readMel!==false?'켬':'끔')+'</button></div>'
+      +'<div id="scanstate"></div>'
+      +(S.photos.length
+        ? '<div class="btns"><button class="btn lg on wide" id="go">코드 차트로 바꾸기'
+          +(S.photos.length>1?' ('+S.photos.length+'쪽)':'')+'</button></div>'
+          +'<div class="btns"><button class="btn wide" id="ocr">OCR로 읽기 · 키 없이</button>'
+          +'<button class="btn" id="clr">전부 빼기</button></div>'
+        : '')
+      +'<button class="more" id="cfgtoggle">'+(showCfg?'▾':'▸')+' 인식 설정'+(getGKey()||getKey()?'':' · 키 필요')+'</button>'
+      +(showCfg
+        ? '<div class="opts">'
+          +'<button class="btn '+(getProv()==='gemini'?'on':'')+'" data-prov="gemini">Gemini · 무료</button>'
+          +'<button class="btn '+(getProv()==='claude'?'on':'')+'" data-prov="claude">Claude · 유료</button>'
+          +'</div>'
+          +(getProv()==='gemini'
+            ? '<p class="note">aistudio.google.com → 구글 로그인 → <b>Get API key</b> → 아래에 붙여넣기. 카드 등록 없이 무료입니다.</p>'
+              +'<input class="field" id="gkey" type="password" placeholder="AIza... (무료 Gemini 키)" value="'+esc(getGKey())+'">'
+            : '<p class="note">platform.claude.com → API keys → Create Key</p>'
+              +'<input class="field" id="apikey" type="password" placeholder="sk-ant-... (Claude 키)" value="'+esc(getKey())+'">')
+        : '');
+
+    $('cfgtoggle').onclick=()=>{S.showCfg=!showCfg;openPanel('scan')};
+    body.querySelectorAll('[data-prov]').forEach(b=>b.onclick=()=>{setLS('konti:prov',b.dataset.prov);S.showCfg=true;openPanel('scan')});
     if($('apikey'))$('apikey').onchange=e=>setLS('konti:apikey',e.target.value.trim());
     if($('gkey'))$('gkey').onchange=e=>setLS('konti:gkey',e.target.value.trim());
-    ['file','file2'].forEach(id=>{ const el=$(id); if(el)el.onchange=onPickFile; });
     if($('melread'))$('melread').onclick=()=>{P.readMel=P.readMel===false;openPanel('scan')};
-    if($('ocr'))$('ocr').onclick=runOCR;
+    if($('file'))$('file').onchange=onPickFile;
     if($('camopen'))$('camopen').onclick=openCam;
     if($('shoot'))$('shoot').onclick=shoot;
     if($('camclose'))$('camclose').onclick=closeCam;
     if(S.photos.length){
       $('go').onclick=runScan;
+      $('ocr').onclick=runOCR;
       $('clr').onclick=()=>{S.photos=[];openPanel('scan')};
       body.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{
         S.photos.splice(+b.dataset.del,1); openPanel('scan');
@@ -1478,15 +1493,38 @@ function openPanel(name){
   }
 
   if(name==='input'){
-    body.innerHTML='<p class="note">코드가 가사 위에 있는 형식과 <code>[G]가사</code> 형식을 모두 읽습니다. 첫 코드를 원키로 잡습니다.</p>'
-      +(S.photos.length?'<div class="thumbs" style="margin-bottom:10px">'+S.photos.map((ph,i)=>
-          '<div class="thumb"><span class="n">'+(i+1)+'</span><img src="'+ph.url+'" alt="'+(i+1)+'쪽"></div>').join('')+'</div>':'')
+    body.innerHTML=
+      '<div class="keys">'
+      +'<button data-ins="[]" data-back="1">[코드]</button>'
+      +'<button data-ins="|">| 마디</button>'
+      +'<button data-ins="\n2) ">2) 절</button>'
+      +'<button data-ins="\n[Verse 1]\n">[구간]</button>'
+      +'<button data-ins="\n♪ ">♪ 멜로디</button>'
+      +'<button data-ins="\n\n">빈 줄</button>'
+      +'</div>'
       +'<textarea class="field" id="ta" spellcheck="false"></textarea>'
-      +'<div class="btns"><button class="btn" id="ex">예시 다시 넣기</button><button class="btn" id="cl">비우기</button></div>';
-    const ta=$('ta');ta.value=S.raw;
-    ta.oninput=()=>{S.raw=ta.value;S.semis=0;reparse();if(P.playing)startPlay();renderAll();};
-    $('ex').onclick=()=>{ta.value=SAMPLE;ta.oninput();$('title').value='예시 곡'};
-    $('cl').onclick=()=>{ta.value='';ta.oninput()};
+      +'<p class="note" style="margin:8px 0 0">'
+      +'코드는 <b>가사 바로 앞에 대괄호</b>로 넣습니다. 예: <code>|[Bb]내가 |[F/A]누려왔던</code><br>'
+      +'마디는 <code>|</code>, 2절은 <code>2)</code>로 시작, 멜로디는 <code>♪ Bb4:1 C5:0.5</code><br>'
+      +'고치는 즉시 뒤 화면에 반영됩니다.</p>'
+      +'<div class="btns">'
+      +'<button class="btn wide" id="apply">닫고 확인</button>'
+      +'<button class="btn" id="ex">예시</button>'
+      +'<button class="btn" id="cl">비우기</button></div>';
+    const ta=$('ta'); ta.value=S.raw;
+    const sync=()=>{S.raw=ta.value;S.semis=0;S.verse=1;stopPlay();reparse();renderAll();};
+    ta.oninput=sync;
+    body.querySelectorAll('[data-ins]').forEach(btn=>btn.onclick=()=>{
+      const ins=btn.dataset.ins, back=+(btn.dataset.back||0);
+      const st=ta.selectionStart, en=ta.selectionEnd;
+      ta.value=ta.value.slice(0,st)+ins+ta.value.slice(en);
+      const pos=st+ins.length-back;
+      ta.focus(); ta.setSelectionRange(pos,pos);
+      sync();
+    });
+    $('apply').onclick=closePanel;
+    $('ex').onclick=()=>{ta.value=SAMPLE;$('title').value='예시 곡';sync()};
+    $('cl').onclick=()=>{ta.value='';sync()};
   }
 
   if(name==='library'){
@@ -1625,8 +1663,8 @@ function openPanel(name){
 
   if(name==='export'){
     body.innerHTML='<p class="note">지금 보이는 키 그대로 내보냅니다. PDF는 A4 세로, 넘치면 자동으로 여러 장이 됩니다.</p>'
-      +'<div class="btns"><button class="btn on" id="pdf">PDF 내려받기</button>'
-      +'<button class="btn" id="png">이미지(PNG)</button>'
+      +'<div class="btns"><button class="btn lg on wide" id="pdf">PDF 내려받기</button>'
+      +'<button class="btn lg wide" id="png">이미지 PNG</button>'
       +'<button class="btn" id="prt">인쇄</button>'
       +'<button class="btn" id="txt">TXT</button>'
       +'<button class="btn" id="cho">ChordPro</button>'
