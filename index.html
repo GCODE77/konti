@@ -216,7 +216,7 @@ window.onerror=function(msg,src,ln){
    예) const SCAN_ENDPOINT = "https://konti-scan.내계정.workers.dev";
 */
 const SCAN_ENDPOINT = "";
-const APP_VER = "33";
+const APP_VER = "34";
 /* file:// 나 content:// 로 열면 브라우저가 외부 호출을 막는다(CORS). 미리 알려준다. */
 const LOCAL_FILE = !/^https?:$/.test(location.protocol);
 /* Claude 앱처럼 iframe 안에서 실행 중이면 키 없이도 인식이 통한다. */
@@ -395,6 +395,114 @@ function detectKey(bl){
   for(const b of bl){ if(b.k!=='pairs')continue;
     for(const p of b.pairs) if(p.chord) return{pc:p.chord.root,minor:/^m(?!aj)/.test(p.chord.suffix)}; }
   return{pc:0,minor:false};
+}
+
+/* ============ 오선보 그리기 ============ */
+const LET=['C','D','E','F','G','A','B'];
+const LET_SEMI={C:0,D:2,E:4,F:5,G:7,A:9,B:11};
+const SHARP_ORD=['F','C','G','D','A','E','B'];
+const FLAT_ORD=['B','E','A','D','G','C','F'];
+/* 조표: 장조 으뜸음(pc) → [기호, 개수] */
+function keySig(pc){
+  const SH={7:1,2:2,9:3,4:4,11:5,6:6,1:7};
+  const FL={5:1,10:2,3:3,8:4,1:5,6:6,11:7};
+  if(SH[pc])return['#',SH[pc]];
+  if(FL[pc])return['b',FL[pc]];
+  return['',0];
+}
+/* 미디 음 → 오선 위치(온음 단계)와 임시표 */
+function spell(midi,pref,sigSet){
+  const pc=mod(midi), name=(pref==='flat'?FLAT:SHARP)[pc];
+  const letter=name[0], acc=name.length>1?name[1]:'';
+  const oct=Math.floor(midi/12)-1;
+  const step=LET.indexOf(letter)+7*oct;
+  const sigAcc=sigSet[letter]||'';
+  return {step,acc,show:acc!==sigAcc?(acc||'n'):''};
+}
+/* 멜로디를 SVG 오선보로 */
+function renderStaff(sel){
+  const notes=[];
+  for(let bi=0;bi<blocks.length;bi++){
+    const b=blocks[bi]; if(b.k!=='mel')continue;
+    b.notes.forEach((n,ni)=>notes.push({n,bi,ni}));
+  }
+  if(!notes.length)return '<p class="note">이 곡에는 멜로디가 없습니다. 사진에서 <b>멜로디까지 읽기</b>를 켜고 다시 인식하거나, 편집에서 직접 넣으세요.</p>';
+
+  const pc=mod(origKey.pc+S.semis), pref=S.flat||PREF[pc];
+  const [sgn,cnt]=keySig(pc);
+  const sigSet={}; const ord=sgn==='#'?SHARP_ORD:FLAT_ORD;
+  for(let i=0;i<cnt;i++)sigSet[ord[i]]=sgn;
+
+  const GAP=9, W=1000, LEFT=96, RIGHT=24;
+  const rows=[]; let cur=[], x=LEFT;
+  for(const item of notes){
+    const n=item.n;
+    const w=n.bar?12:Math.round(26+Math.min(4,n.beats||1)*13);
+    if(x+w>W-RIGHT&&cur.length){rows.push(cur);cur=[];x=LEFT;}
+    cur.push({...item,x,w}); x+=w;
+  }
+  if(cur.length)rows.push(cur);
+
+  const RH=104, H=rows.length*RH+18;
+  let svg='<svg viewBox="0 0 '+W+' '+H+'" width="100%" style="display:block">';
+  const C='var(--paper)', A='var(--brass)';
+  rows.forEach((row,ri)=>{
+    const top=ri*RH+30;
+    for(let i=0;i<5;i++)
+      svg+='<line x1="14" y1="'+(top+i*GAP*2)+'" x2="'+(W-10)+'" y2="'+(top+i*GAP*2)+'" stroke="'+C+'" stroke-width="1.1" opacity=".55"/>';
+    const bottom=top+8*GAP;   // E4 자리
+    const yOf=st=>bottom-(st-30)*GAP;
+    svg+='<text x="22" y="'+(top+GAP*5.6)+'" font-size="46" fill="'+C+'" opacity=".85">&#119070;</text>';
+    let sx=58;
+    for(let i=0;i<cnt;i++){
+      const L=ord[i];
+      const oc=(sgn==='#')?(['F','G','A'].indexOf(L)>=0?5:(L==='B'?4:5)):(['B','A','G'].indexOf(L)>=0?4:5);
+      const st=LET.indexOf(L)+7*(L==='B'||L==='A'||L==='G'?4:5);
+      svg+='<text x="'+sx+'" y="'+(yOf(st)+5)+'" font-size="19" fill="'+C+'" opacity=".8">'+(sgn==='#'?'♯':'♭')+'</text>';
+      sx+=11;
+    }
+    for(const it of row){
+      const n=it.n;
+      if(n.bar){ svg+='<line x1="'+it.x+'" y1="'+top+'" x2="'+it.x+'" y2="'+(top+8*GAP)+'" stroke="'+C+'" stroke-width="1.6" opacity=".6"/>'; continue; }
+      const cx=it.x+13;
+      if(n.rest){ svg+='<rect x="'+(cx-7)+'" y="'+(top+3*GAP)+'" width="14" height="'+GAP+'" fill="'+C+'" opacity=".55" rx="1"/>'; continue; }
+      const midi=(n.midi!==undefined)?n.midi+S.semis:(60+pc+n.deg+(n.oct||0)*12);
+      const sp=spell(midi,pref,sigSet), y=yOf(sp.step);
+      const on=(sel&&sel.bi===it.bi&&sel.ni===it.ni);
+      const col=on?A:C;
+      for(let L=32;L>=sp.step;L-=2) if(L<=28) svg+='<line x1="'+(cx-12)+'" y1="'+yOf(L)+'" x2="'+(cx+12)+'" y2="'+yOf(L)+'" stroke="'+C+'" stroke-width="1.1" opacity=".5"/>';
+      for(let L=32;L<=sp.step;L+=2) if(L>=40) svg+='<line x1="'+(cx-12)+'" y1="'+yOf(L)+'" x2="'+(cx+12)+'" y2="'+yOf(L)+'" stroke="'+C+'" stroke-width="1.1" opacity=".5"/>';
+      const b=n.beats||1, hollow=b>=2;
+      svg+='<ellipse cx="'+cx+'" cy="'+y+'" rx="7.4" ry="5.6" transform="rotate(-18 '+cx+' '+y+')" '
+        +(hollow?'fill="none" stroke="'+col+'" stroke-width="2"':'fill="'+col+'"')+'/>';
+      if(b<4){
+        const up=sp.step<36, sx2=up?cx+7:cx-7, sy2=up?y-32:y+32;
+        svg+='<line x1="'+sx2+'" y1="'+y+'" x2="'+sx2+'" y2="'+sy2+'" stroke="'+col+'" stroke-width="1.7"/>';
+        if(b<1){
+          svg+='<path d="M'+sx2+' '+sy2+' q9 5 7 16" stroke="'+col+'" stroke-width="1.7" fill="none"/>';
+          if(b<0.5)svg+='<path d="M'+sx2+' '+(sy2+8)+' q9 5 7 16" stroke="'+col+'" stroke-width="1.7" fill="none"/>';
+        }
+      }
+      if(sp.show)svg+='<text x="'+(cx-20)+'" y="'+(y+5)+'" font-size="17" fill="'+col+'">'+(sp.show==='#'?'♯':sp.show==='b'?'♭':'♮')+'</text>';
+      svg+='<rect x="'+(it.x-2)+'" y="'+(top-14)+'" width="'+(it.w+4)+'" height="'+(8*GAP+28)+'" fill="transparent" '
+        +'style="cursor:pointer" data-bi="'+it.bi+'" data-ni="'+it.ni+'"/>';
+      if(on)svg+='<rect x="'+(it.x-2)+'" y="'+(top-14)+'" width="'+(it.w+4)+'" height="'+(8*GAP+28)+'" fill="'+A+'" opacity=".12" rx="5" pointer-events="none"/>';
+    }
+  });
+  return svg+'</svg>';
+}
+/* 고친 멜로디를 원문에 다시 써넣는다 */
+function writeBackMelody(){
+  const lines=S.raw.replace(/\r\n?/g,'\n').split('\n');
+  const mels=blocks.filter(b=>b.k==='mel');
+  let k=0;
+  for(let i=0;i<lines.length;i++){
+    if(!MEL_RE.test(lines[i]))continue;
+    if(k<mels.length)lines[i]=melLine(mels[k].notes,0,S.flat||'flat');
+    k++;
+  }
+  S.raw=lines.join('\n');
+  scheduleSave();
 }
 
 /* ============ 오디오 엔진 ============ */
@@ -1688,7 +1796,7 @@ async function runScan(){
 
 /* ============ 패널 ============ */
 function openPanel(name){
-  const s=$('sheet'),titles={scan:'사진에서 가져오기',input:'악보 편집',library:'저장된 콘티',export:'내보내기',diag:'멜로디 진단',play:'재생 설정',view:'보기 설정'};
+  const s=$('sheet'),titles={scan:'사진에서 가져오기',input:'악보 편집',library:'저장된 콘티',export:'내보내기',diag:'멜로디 진단',play:'재생 설정',view:'보기 설정',staff:'오선보'};
   s.innerHTML='<div class="sheethead"><span class="eyebrow">'+titles[name]+'</span><button class="btn" id="close">닫기</button></div>';
   const body=document.createElement('div');s.appendChild(body);
   $('close').onclick=closePanel;
@@ -1810,6 +1918,45 @@ function openPanel(name){
     });
   }
 
+  if(name==='staff'){
+    const sel=S.selNote||null;
+    const cur=(()=>{ if(!sel)return null;
+      const b=blocks[sel.bi]; if(!b||b.k!=='mel')return null;
+      return b.notes[sel.ni]||null; })();
+    const NM=['도','도♯','레','레♯','미','파','파♯','솔','솔♯','라','라♯','시'];
+    const midiOf=n=>n&&(n.midi!==undefined?n.midi:60+mod(origKey.pc)+n.deg+(n.oct||0)*12);
+    body.innerHTML=
+      '<p class="note">읽어온 멜로디입니다. 원본 악보와 대조해 보세요. '
+      +'<b>음을 누르면 선택</b>되고, 아래 화살표로 반음씩 고칠 수 있습니다.</p>'
+      +'<div id="staffbox" style="background:var(--ink);border:1px solid var(--line);'
+      +'border-radius:10px;padding:10px 6px;overflow-x:auto">'+renderStaff(sel)+'</div>'
+      +(cur&&!cur.rest&&!cur.bar
+        ? '<div class="rowline"><span><b>'+NM[mod(midiOf(cur))]+(Math.floor(midiOf(cur)/12)-1)+'</b>'
+          +'<small>'+(cur.beats||1)+'박</small></span>'
+          +'<span class="fontset"><button id="n-dn">▼</button><button id="n-play">듣기</button>'
+          +'<button id="n-up">▲</button></span></div>'
+          +'<div class="btns"><button class="btn wide" id="n-oct-dn">한 옥타브 아래</button>'
+          +'<button class="btn wide" id="n-oct-up">한 옥타브 위</button></div>'
+        : '<p class="note">아직 고를 음이 없습니다. 위에서 음표를 눌러 보세요.</p>');
+
+    const box=$('staffbox');
+    if(box)box.querySelectorAll('[data-bi]').forEach(r=>r.onclick=()=>{
+      S.selNote={bi:+r.dataset.bi,ni:+r.dataset.ni}; openPanel('staff');
+    });
+    const shift=(d)=>{
+      if(!cur||cur.rest||cur.bar)return;
+      if(cur.midi===undefined){cur.midi=60+mod(origKey.pc)+cur.deg+(cur.oct||0)*12;delete cur.deg;delete cur.oct;}
+      cur.midi=Math.max(24,Math.min(96,cur.midi+d));
+      writeBackMelody(); renderAll();
+      const ctx=AC(); if(ctx)voice(ctx,P.melInst,cur.midi+S.semis,ctx.currentTime+.01,.7,.5,0);
+      openPanel('staff');
+    };
+    const on=(id,fn)=>{const el=$(id); if(el)el.onclick=fn;};
+    on('n-up',()=>shift(1)); on('n-dn',()=>shift(-1));
+    on('n-oct-up',()=>shift(12)); on('n-oct-dn',()=>shift(-12));
+    on('n-play',()=>{const ctx=AC(); if(ctx&&cur)voice(ctx,P.melInst,midiOf(cur)+S.semis,ctx.currentTime+.01,.8,.5,0);});
+  }
+
   if(name==='view'){
     const T=(id,on,label,sub)=>'<div class="rowline"><span><b>'+label+'</b>'
       +(sub?'<small>'+sub+'</small>':'')+'</span>'
@@ -1822,7 +1969,8 @@ function openPanel(name){
       +T('v-capo',S.capo,'카포','기타용 잡는 자리 계산')
       +T('v-flat',S.flat==='flat','♭ 우선','올림표 대신 내림표로 표기')
       +T('v-col',S.col,'2단 보기','가로가 넓을 때 두 줄로')
-      +'<div class="btns"><button class="btn lg on wide" id="v-save">이 곡 저장</button>'
+      +'<div class="btns"><button class="btn lg on wide" id="v-staff">오선보로 보기</button></div>'
+      +'<div class="btns"><button class="btn wide" id="v-save">이 곡 저장</button>'
       +'<button class="btn wide" id="v-diag">멜로디 진단</button></div>';
     const up=()=>{renderAll();openPanel('view')};
     const on=(id,fn)=>{const el=$(id); if(el)el.onclick=fn;};
@@ -1833,6 +1981,7 @@ function openPanel(name){
     on('v-flat',()=>{S.flat=S.flat==='flat'?null:'flat';up()});
     on('v-col',()=>{S.col=!S.col;up()});
     on('v-save',()=>{saveSong();closePanel()});
+    on('v-staff',()=>openPanel('staff'));
     on('v-diag',()=>openPanel('diag'));
   }
 
