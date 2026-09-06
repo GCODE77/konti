@@ -78,7 +78,11 @@ textarea.field{font-family:var(--mono);min-height:220px;line-height:1.5;resize:v
 .rowlist small{display:block;font-size:11px;color:var(--dim);font-weight:400;margin-top:2px}
 
 footer{position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--raise);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
-#transport{display:flex;align-items:center;gap:8px;padding:8px 12px 6px}
+#progwrap{padding:0 12px;display:flex;align-items:center;gap:9px}
+#track{flex:1;height:4px;background:var(--line);border-radius:2px;overflow:hidden;cursor:pointer}
+#bar-fill{height:100%;width:0;background:var(--brass);border-radius:2px;transition:width .12s linear}
+#time{font-family:var(--mono);font-size:11px;color:var(--dim);white-space:nowrap;letter-spacing:.02em}
+#transport{display:flex;align-items:center;gap:8px;padding:6px 12px 6px}
 #play{width:44px;height:36px;font-size:15px;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
 .tempo{display:flex;align-items:center;gap:2px;border:1px solid var(--line);border-radius:999px;padding:2px 4px}
 .tempo button{background:none;border:none;color:var(--paper);font-size:15px;width:26px;height:28px;cursor:pointer}
@@ -137,6 +141,7 @@ body.focus #focusout{display:block}
 <main id="chart"></main>
 
 <footer class="noprint">
+<div id="progwrap"><div id="track"><div id="bar-fill"></div></div><span id="time">0:00 / 0:00</span></div>
 <div id="transport">
   <button class="btn on" id="play" aria-label="재생">&#9654;</button>
   <div class="tempo"><button id="bpmd" aria-label="느리게">−</button><input id="bpm" type="number" inputmode="numeric" pattern="[0-9]*" min="30" max="300" value="84" aria-label="빠르기 BPM"><span class="unit">BPM</span><button id="bpmu" aria-label="빠르게">+</button></div>
@@ -335,15 +340,44 @@ const INSTRUMENTS={
   bass  :{label:'베이스만',    partials:[[1,.85],[2,.10]], a:.006,d:.5,sus:.25,r:.3, spread:0, bassOnly:true}
 };
 
-let actx=null, master=null;
+let actx=null, master=null, wet=null, dry=null;
+function makeIR(ctx,sec,decay){
+  const len=Math.max(1,Math.floor(ctx.sampleRate*sec));
+  const buf=ctx.createBuffer(2,len,ctx.sampleRate);
+  for(let ch=0;ch<2;ch++){
+    const d=buf.getChannelData(ch);
+    for(let i=0;i<len;i++){
+      const t=i/len;
+      d[i]=(Math.random()*2-1)*Math.pow(1-t,decay)*(1-t*0.15);
+    }
+  }
+  return buf;
+}
 function AC(){
   if(!actx){
     const A=window.AudioContext||window.webkitAudioContext; if(!A)return null;
-    actx=new A(); master=actx.createGain(); master.gain.value=.9; master.connect(actx.destination);
+    actx=new A();
+    const comp=actx.createDynamicsCompressor();
+    comp.threshold.value=-16; comp.knee.value=22; comp.ratio.value=3.4;
+    comp.attack.value=.006; comp.release.value=.26;
+    comp.connect(actx.destination);
+
+    master=actx.createGain(); master.gain.value=.85;   // 모든 소리가 여기로 모인다
+    dry=actx.createGain(); dry.gain.value=.82;
+    wet=actx.createGain(); wet.gain.value=.30;
+    const rev=actx.createConvolver();
+    try{ rev.buffer=makeIR(actx,2.6,2.4); }catch(e){}
+    const damp=actx.createBiquadFilter();
+    damp.type='lowpass'; damp.frequency.value=3600;   // 잔향의 고음을 깎아 자연스럽게
+    master.connect(dry); dry.connect(comp);
+    master.connect(wet); wet.connect(rev); rev.connect(damp); damp.connect(comp);
   }
   if(actx.state==='suspended')actx.resume();
   return actx;
 }
+/* 악기마다 울림의 양이 다르다 */
+const REVERB={piano:.30,ep:.34,organ:.26,pad:.55,guitar:.28,bass:.12};
+function setReverb(inst){ if(wet)wet.gain.value=REVERB[inst]!==undefined?REVERB[inst]:.3; }
 const mtof=m=>440*Math.pow(2,(m-69)/12);
 
 const ksCache={};
@@ -362,14 +396,21 @@ function pluckBuf(ctx,freq){
   ksCache[k]=buf; return buf;
 }
 
-function voice(ctx,inst,midi,t,dur,vel){
+function voice(ctx,inst,midi,t,dur,vel,pan){
   const I=INSTRUMENTS[inst]||INSTRUMENTS.piano, f=mtof(midi);
+  let out2=master;
+  if(pan!==undefined&&ctx.createStereoPanner){
+    const sp=ctx.createStereoPanner();
+    sp.pan.value=Math.max(-.7,Math.min(.7,pan));
+    sp.connect(master); out2=sp;
+  }
   if(I.pluck){
     const src=ctx.createBufferSource(); src.buffer=pluckBuf(ctx,f);
+    src.detune.value=(Math.random()*8-4);
     const g=ctx.createGain();
     g.gain.setValueAtTime(vel*1.1,t);
     g.gain.setTargetAtTime(.0001,t+Math.max(.25,dur*.85),.14);
-    src.connect(g); g.connect(master);
+    src.connect(g); g.connect(out2);
     src.start(t); src.stop(t+Math.min(2.4,dur+.7));
     return;
   }
@@ -385,14 +426,18 @@ function voice(ctx,inst,midi,t,dur,vel){
     lp.frequency.linearRampToValueAtTime(2400,t+Math.min(1.2,dur));
     g.connect(lp); out=lp;
   }
-  out.connect(master);
+  out.connect(out2);
+  const layer=(inst==='piano'||inst==='ep'||inst==='pad')?2:1;   // 살짝 어긋난 두 겹 = 두께
   for(const[mult,amp] of I.partials){
-    const o=ctx.createOscillator(), og=ctx.createGain();
-    o.type=(inst==='organ'||inst==='ep')?'sine':(mult===1?'triangle':'sine');
-    o.frequency.value=f*mult;
-    og.gain.value=amp;
-    o.connect(og); og.connect(g);
-    o.start(t); o.stop(t+dur+I.r+.15);
+    for(let L=0;L<(mult===1?layer:1);L++){
+      const o=ctx.createOscillator(), og=ctx.createGain();
+      o.type=(inst==='organ'||inst==='ep')?'sine':(mult===1?'triangle':'sine');
+      o.frequency.value=f*mult;
+      o.detune.value=layer>1&&mult===1?(L===0?-5:5):0;
+      og.gain.value=amp/(mult===1?layer:1);
+      o.connect(og); og.connect(g);
+      o.start(t); o.stop(t+dur+I.r+.15);
+    }
   }
 }
 
@@ -481,11 +526,18 @@ function applyGenre(k){
 function strike(ctx,chord,semis,inst,t,dur,beats,spb){
   const I=INSTRUMENTS[inst]||INSTRUMENTS.piano;
   const v=chordVoicing(chord,semis);
-  if(I.bassOnly){voice(ctx,inst,v.bass,t,dur,.34);return;}
-  const pat=PATTERNS[P.pattern]||PATTERNS.block;
-  for(const e of pat.build(v,beats)){
+  setReverb(inst);
+  if(I.bassOnly){voice(ctx,inst,v.bass,t,dur,.34,0);voice(ctx,inst,v.bass-12,t,dur,.16,0);return;}
+  const P2=PATTERNS[P.pattern]||PATTERNS.block;
+  for(const e of P2.build(v,beats)){
     if(e.t>=beats||e.t<0)continue;
-    e.n.forEach((m,i)=>voice(ctx,inst,m,t+e.t*spb+i*(I.spread||0),Math.max(.14,e.d*spb),e.g));
+    const n=e.n.length;
+    e.n.forEach((m,i)=>{
+      const low=m<52;
+      const pan=low?0:((n>1?(i/(n-1)):.5)-.5)*.62;      // 낮은 음은 가운데, 화음은 좌우로
+      voice(ctx,inst,m,t+e.t*spb+i*(I.spread||0),Math.max(.14,e.d*spb),e.g,pan);
+      if(low&&e.g>.28)voice(ctx,inst,m-12,t+e.t*spb,Math.max(.14,e.d*spb),e.g*.42,0);  // 저음 한 옥타브 아래 살짝
+    });
   }
 }
 function click(ctx,t,strong){
@@ -499,13 +551,14 @@ function click(ctx,t,strong){
 function tapChord(chord,semis){
   const ctx=AC(); if(!ctx||!chord)return;
   const I=INSTRUMENTS[P.inst]||INSTRUMENTS.piano, v=chordVoicing(chord,semis), t=ctx.currentTime+.01;
-  voice(ctx,P.inst,v.bass,t,1.1,.34);
-  if(!I.bassOnly)v.upper.forEach((m,i)=>voice(ctx,P.inst,m,t+i*(I.spread||0),1.1,.26));
+  setReverb(P.inst);
+  voice(ctx,P.inst,v.bass,t,1.3,.34,0);
+  if(!I.bassOnly)v.upper.forEach((m,i,a)=>voice(ctx,P.inst,m,t+i*(I.spread||0),1.3,.26,((i/Math.max(1,a.length-1))-.5)*.6));
 }
 
 /* ---- 시퀀서 ---- */
 const P={playing:false,bpm:84,genre:'',inst:'piano',melInst:'ep',pattern:'block',beats:4,loop:true,click:false,melody:true,
-         evs:[],total:0,k:0,cursorT:0,lastAt:0,timer:null,marks:[],vmarks:[],vnext:1,cur:-1};
+         evs:[],total:0,k:0,cursorT:0,lastAt:0,t0:0,timer:null,marks:[],vmarks:[],vnext:1,cur:-1};
 
 function buildTimeline(){
   const evs=[], hasBar=blocks.some(b=>b.k==='pairs'&&b.pairs.some(p=>p.bar));
@@ -571,9 +624,13 @@ function schedule(){
   }
 }
 function frame(){
-  if(!P.playing)return;
+  if(!P.playing){renderTime(0);return;}
   const ctx=actx; if(ctx){
     const now=ctx.currentTime;
+    const total=songSeconds();
+    let el=now-P.t0;
+    if(P.loop&&total>0&&el>total)el=el%total;
+    renderTime(el);
     while(P.vmarks.length&&P.vmarks[0].t<=now){
       const v=P.vmarks.shift().v;
       if(S.verse!==v){S.verse=v;renderChart();renderToolbar();}
@@ -598,6 +655,7 @@ function startPlay(){
   if(!tl.evs.length){toast('재생할 내용이 없습니다.');return;}
   P.evs=tl.evs; P.total=tl.total;
   P.playing=true; P.k=0; P.lastAt=0; P.marks=[]; P.vmarks=[]; P.vnext=S.verse; P.cur=-1;
+  P.t0=ctx.currentTime+.25;
   P.cursorT=ctx.currentTime+.25;
   clearInterval(P.timer);
   P.timer=setInterval(schedule,25);
@@ -721,7 +779,19 @@ function renderChart(){
     el.appendChild(row);
   }
 }
+const fmt=s=>{s=Math.max(0,Math.round(s));return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')};
+function songSeconds(){
+  const tl=buildTimeline();
+  return tl.total*(60/P.bpm)*Math.max(1,maxVerse());
+}
+function renderTime(elapsed){
+  const total=songSeconds();
+  const el=Math.min(elapsed===undefined?0:elapsed,total);
+  const t=$('time'); if(t)t.textContent=fmt(el)+' / '+fmt(total);
+  const f=$('bar-fill'); if(f)f.style.width=(total>0?Math.min(100,el/total*100):0)+'%';
+}
 function renderToolbar(){
+  renderTime(P.playing&&actx?actx.currentTime-P.t0:0);
   const ib=$('instbtn');
   if(ib)ib.textContent=(hasMelody()&&P.melody?'♪ ':'')+INSTRUMENTS[P.inst].label;
   $('b-number').classList.toggle('on',S.num);
@@ -1419,6 +1489,7 @@ $('bpm').oninput=e=>{
   if(v>=30&&v<=300){P.bpm=v;if($('bpmr'))$('bpmr').value=v;}
 };
 $('bpm').onchange=e=>setBpm(e.target.value);
+setInterval(()=>{if(!P.playing)renderTime(0)},1500);
 $('bpm').onkeydown=e=>{
   if(e.key==='Enter'){e.preventDefault();setBpm(e.target.value);e.target.blur();}
   if(e.key==='ArrowUp'){e.preventDefault();setBpm(P.bpm+1);}
