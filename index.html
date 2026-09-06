@@ -178,7 +178,7 @@ body.focus #focusout{display:block}
    예) const SCAN_ENDPOINT = "https://konti-scan.내계정.workers.dev";
 */
 const SCAN_ENDPOINT = "";
-const APP_VER = "14";
+const APP_VER = "15";
 /* file:// 나 content:// 로 열면 브라우저가 외부 호출을 막는다(CORS). 미리 알려준다. */
 const LOCAL_FILE = !/^https?:$/.test(location.protocol);
 /* Claude 앱처럼 iframe 안에서 실행 중이면 키 없이도 인식이 통한다. */
@@ -813,7 +813,45 @@ function renderToolbar(){
   const mv=maxVerse(), vb=$('b-verse');
   if(vb){ vb.textContent=S.verse+'절'; vb.disabled=mv<2; vb.classList.toggle('on',S.verse>1); }
 }
-function renderAll(){renderRail();renderMeta();renderChart();renderToolbar();}
+function renderAll(){renderRail();renderMeta();renderChart();renderToolbar();scheduleSave();}
+
+/* ── 마지막 상태 자동 저장 ── */
+let saveT=null;
+function scheduleSave(){clearTimeout(saveT);saveT=setTimeout(saveLast,500);}
+function saveLast(){
+  try{
+    setLS('konti:last',JSON.stringify({
+      t:$('title').value, raw:S.raw, semis:S.semis, verse:S.verse, flat:S.flat,
+      num:S.num, capo:S.capo, font:S.font, col:S.col,
+      bpm:P.bpm, inst:P.inst, melInst:P.melInst, pattern:P.pattern,
+      beats:P.beats, genre:P.genre, loop:P.loop, click:P.click, melody:P.melody,
+      at:Date.now()
+    }));
+  }catch(e){}
+}
+function restoreLast(){
+  let r=null;
+  try{ r=JSON.parse(localStorage.getItem('konti:last')||'null'); }catch(e){}
+  if(!r||!r.raw||!r.raw.trim())return false;
+  S.raw=r.raw;
+  S.semis=r.semis||0; S.verse=r.verse||1; S.flat=r.flat||null;
+  S.num=!!r.num; S.capo=!!r.capo; S.font=r.font||20; S.col=!!r.col;
+  if(r.bpm)P.bpm=r.bpm;
+  if(r.inst)P.inst=r.inst; if(r.melInst)P.melInst=r.melInst;
+  if(r.pattern)P.pattern=r.pattern; if(r.beats)P.beats=r.beats;
+  P.genre=r.genre||''; P.loop=r.loop!==false; P.click=!!r.click; P.melody=r.melody!==false;
+  if(r.t)$('title').value=r.t;
+  return true;
+}
+/* 인식에 성공하면 자동으로 기록에 남긴다 */
+function addHistory(){
+  const t=($('title').value||'').trim()||'제목 없음';
+  const stamp=new Date();
+  const list=load().filter(x=>x.title!==t);
+  list.unshift({id:'s'+Date.now(),title:t,raw:S.raw,semis:S.semis,
+    at:stamp.toISOString().slice(0,10)+' '+stamp.toTimeString().slice(0,5),auto:true});
+  save(list.slice(0,40));
+}
 
 /* ============ 내보내기 ============ */
 const PAGE_W=1240, RATIO=1.41428;
@@ -1161,7 +1199,7 @@ async function runOCR(){
 
     const txt=wordsToChart(chordWords.concat(lyricWords));
     if(!txt.trim())throw new Error('읽어낸 내용이 없습니다');
-    S.raw=txt; S.semis=0; S.verse=1; stopPlay(); reparse(); renderAll();
+    S.raw=txt; S.semis=0; S.verse=1; stopPlay(); reparse(); renderAll(); addHistory();
     box.className='callout ok';
     box.innerHTML='<b>코드 '+chordWords.length+'개, 가사 '+lyricWords.length+'덩어리를 읽었습니다.</b> '
       +'키 없이 읽은 것이라 빠지거나 틀린 게 많습니다. 원본과 비교하며 <b>직접 입력</b>에서 고쳐 주세요. '
@@ -1294,7 +1332,7 @@ async function runScan(){
     const tm=text.match(/^TITLE:\s*(.+)$/m);
     if(tm){$('title').value=tm[1].trim();text=text.replace(/^TITLE:\s*.+$/m,'').trim();}
     if(!text)throw new Error('읽어낸 내용이 없습니다 — 사진을 더 밝고 반듯하게 찍어 보세요');
-    S.raw=text; S.semis=0; S.verse=1; stopPlay(); reparse(); renderAll();
+    S.raw=text; S.semis=0; S.verse=1; stopPlay(); reparse(); renderAll(); addHistory();
     box.className='callout ok';
     const n=blocks.filter(b=>b.k==='pairs').length, mel=hasMelody();
     box.innerHTML='<b>옮겼습니다.</b> 가사 '+n+'줄'+(mel?', 멜로디 포함':'')+'. '
@@ -1369,13 +1407,14 @@ function openPanel(name){
 
   if(name==='library'){
     const list=load();
-    if(!list.length){body.innerHTML='<p class="note">아직 저장한 곡이 없습니다. 차트를 띄운 뒤 <b>저장</b>을 누르면 이번 주 콘티가 쌓입니다.</p>';}
+    if(list.length)body.innerHTML='<p class="note">누르면 그 곡이 열립니다. 사진 인식은 자동으로 기록됩니다. 최근 40개까지 보관합니다.</p>';
+    if(!list.length){body.innerHTML='<p class="note">아직 기록이 없습니다. 사진을 인식하면 자동으로 여기 쌓이고, <b>저장</b>을 눌러 직접 넣을 수도 있습니다.</p>';}
     else list.forEach(song=>{
       const d=document.createElement('div');d.className='rowlist';
       const b=document.createElement('button');b.className='load';
       b.innerHTML=esc(song.title)+'<small>'+song.at+' · '+(song.semis?(song.semis>0?'+':'')+song.semis+'반음':'원키')+'</small>';
-      b.onclick=()=>{$('title').value=song.title;S.raw=song.raw;S.semis=song.semis||0;
-        reparse();if(P.playing)startPlay();renderAll();closePanel();};
+      b.onclick=()=>{$('title').value=song.title;S.raw=song.raw;S.semis=song.semis||0;S.verse=1;
+        stopPlay();reparse();renderAll();closePanel();};
       const del=document.createElement('button');del.className='btn sm';del.style.color='var(--ribbon)';del.textContent='지우기';
       del.onclick=()=>{save(load().filter(x=>x.id!==song.id));openPanel('library')};
       d.appendChild(b);d.appendChild(del);body.appendChild(d);
@@ -1471,7 +1510,9 @@ $('b-col').onclick=()=>{S.col=!S.col;renderAll()};
 $('b-save').onclick=()=>{
   const t=$('title').value.trim()||'제목 없음';
   const list=load().filter(s=>s.title!==t);
-  list.unshift({id:'s'+Date.now(),title:t,raw:S.raw,semis:S.semis,at:new Date().toISOString().slice(0,10)});
+  const st=new Date();
+  list.unshift({id:'s'+Date.now(),title:t,raw:S.raw,semis:S.semis,
+    at:st.toISOString().slice(0,10)+' '+st.toTimeString().slice(0,5)});
   toast(save(list.slice(0,40))?'콘티에 “'+t+'” 저장':'저장에 실패했어요.');
 };
 $('theme').onclick=()=>{
@@ -1530,6 +1571,7 @@ document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState==='visible'&&(P.playing||document.body.classList.contains('focus')))wakeOn();
 });
 if($("ver"))$("ver").textContent=APP_VER;
+if(restoreLast())reparse();
 renderAll();
 </script>
 </body>
