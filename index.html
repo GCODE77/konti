@@ -161,6 +161,7 @@ body.focus #focusout{display:block}
 <nav class="scroll">
   <button class="btn" data-panel="scan">사진</button>
   <button class="btn" data-panel="input">직접 입력</button>
+  <button class="btn" id="b-melonly">멜로디만</button>
   <button class="btn" id="b-focus">집중</button>
   <button class="btn" id="b-verse">1절</button>
   <button class="btn" id="b-number">넘버</button>
@@ -186,7 +187,7 @@ body.focus #focusout{display:block}
    예) const SCAN_ENDPOINT = "https://konti-scan.내계정.workers.dev";
 */
 const SCAN_ENDPOINT = "";
-const APP_VER = "22";
+const APP_VER = "23";
 /* file:// 나 content:// 로 열면 브라우저가 외부 호출을 막는다(CORS). 미리 알려준다. */
 const LOCAL_FILE = !/^https?:$/.test(location.protocol);
 /* Claude 앱처럼 iframe 안에서 실행 중이면 키 없이도 인식이 통한다. */
@@ -573,7 +574,7 @@ function tapChord(chord,semis){
 }
 
 /* ---- 시퀀서 ---- */
-const P={playing:false,bpm:84,genre:'',inst:'piano',melInst:'ep',pattern:'block',beats:4,loop:true,click:false,melody:true,readMel:true,melOct:0,melFit:true,
+const P={playing:false,bpm:84,genre:'',inst:'piano',melInst:'ep',pattern:'block',beats:4,loop:true,click:false,melody:true,accomp:true,readMel:true,melOct:0,melFit:true,
          evs:[],total:0,k:0,cursorT:0,lastAt:0,t0:0,timer:null,marks:[],vmarks:[],vnext:1,cur:-1};
 
 function buildTimeline(){
@@ -671,10 +672,10 @@ function schedule(){
     const ev=P.evs[P.k], t=P.cursorT+(ev.at-P.lastAt)*spb;
     if(t>now+.25)return;
     if(ev.type==='c'){
-      strike(ctx,ev.chord,S.semis,P.inst,t,ev.beats*spb*.96,ev.beats,spb);
+      if(P.accomp!==false)strike(ctx,ev.chord,S.semis,P.inst,t,ev.beats*spb*.96,ev.beats,spb);
       P.marks.push({t,idx:ev.idx});
     }else if(ev.type==='m'){
-      if(P.melody)voice(ctx,P.melInst,ev.midi+S.semis+(P.melOct||0)*12,t,ev.beats*spb*.92,.46,0);
+      if(P.melody)voice(ctx,P.melInst,ev.midi+S.semis+(P.melOct||0)*12,t,ev.beats*spb*.92,P.accomp===false?.6:.46,0);
     }else{
       click(ctx,t,ev.strong);
     }
@@ -873,6 +874,8 @@ function renderToolbar(){
   $('b-flat').classList.toggle('on',S.flat==='flat');
   $('b-col').classList.toggle('on',S.col);
   $('b-font').textContent='글자 '+S.font;
+  const mb=$('b-melonly');
+  if(mb){ mb.classList.toggle('on',P.accomp===false); mb.disabled=!hasMelody(); }
   const mv=maxVerse(), vb=$('b-verse');
   if(vb){ vb.textContent=S.verse+'절'; vb.disabled=mv<2; vb.classList.toggle('on',S.verse>1); }
 }
@@ -1591,6 +1594,11 @@ function openPanel(name){
           +'<button class="btn '+(P.melFit!==false?'on':'')+'" id="melfit">'
           +(P.melFit!==false?'켬 · 마디에 강제로 맞춤':'끔 · 읽은 음가 그대로')+'</button></div>'
         : '')
+      +'<span class="lbl">소리 구성</span><div class="opts">'
+      +'<button class="btn '+(P.accomp!==false&&P.melody!==false?'on':'')+'" data-mix="all">전체</button>'
+      +'<button class="btn '+(P.accomp===false&&P.melody!==false?'on':'')+'" data-mix="mel">멜로디만</button>'
+      +'<button class="btn '+(P.accomp!==false&&P.melody===false?'on':'')+'" data-mix="acc">반주만</button>'
+      +'</div>'
       +'<span class="lbl">장르</span><div class="opts">'
       +opt('genre',P.genre,Object.keys(GENRES).map(k=>[k,GENRES[k].label]))+'</div>'
       +'<span class="lbl">반주 패턴</span><div class="opts">'
@@ -1598,7 +1606,10 @@ function openPanel(name){
       +'<span class="lbl">마디당 박</span><div class="opts" id="beats">'
       +opt('beats',P.beats,[[2,'2박'],[3,'3박'],[4,'4박'],[6,'6박']])+'</div>'
       +'<span class="lbl">빠르기 (BPM)</span>'
-      +'<input class="field" id="bpmr" type="range" min="30" max="300" step="1" value="'+P.bpm+'">'
+      +'<div style="display:flex;align-items:center;gap:12px">'
+      +'<input class="field" id="bpmr" type="range" min="30" max="300" step="1" value="'+P.bpm+'" style="flex:1">'
+      +'<span id="bpmnum" style="font-family:var(--mono);font-size:17px;font-weight:800;color:var(--brass);min-width:52px;text-align:right">'+P.bpm+'</span>'
+      +'</div>'
       +'<div class="opts" style="margin-top:10px">'
       +'<button class="btn '+(P.click?'on':'')+'" id="clk">메트로놈</button>'
       +'<button class="btn '+(P.loop?'on':'')+'" id="lp">반복</button></div>'
@@ -1617,6 +1628,11 @@ function openPanel(name){
       P.genre='';P.inst=b.dataset.inst; $('instbtn').textContent=INSTRUMENTS[P.inst].label;
       if(P.playing)startPlay(); openPanel('play');
     });
+    body.querySelectorAll('[data-mix]').forEach(b=>b.onclick=()=>{
+      const m=b.dataset.mix;
+      P.accomp=(m!=='mel'); P.melody=(m!=='acc');
+      renderToolbar(); if(P.playing)startPlay(); openPanel('play');
+    });
     body.querySelectorAll('[data-genre]').forEach(b=>b.onclick=()=>{
       applyGenre(b.dataset.genre); openPanel('play');
     });
@@ -1634,7 +1650,7 @@ function openPanel(name){
     body.querySelectorAll('[data-beats]').forEach(b=>b.onclick=()=>{
       P.beats=parseInt(b.dataset.beats,10); if(P.playing)startPlay(); openPanel('play');
     });
-    $('bpmr').oninput=e=>setBpm(parseInt(e.target.value,10),true);
+    $('bpmr').oninput=e=>{const v=parseInt(e.target.value,10);setBpm(v,true);if($('bpmnum'))$('bpmnum').textContent=v;};
     $('clk').onclick=()=>{P.click=!P.click;openPanel('play')};
     $('lp').onclick=()=>{P.loop=!P.loop;$('loopbtn').classList.toggle('on',P.loop);openPanel('play')};
   }
@@ -1722,6 +1738,12 @@ function setFocus(on){
   $('b-focus').classList.toggle('on',on);
   if(on)wakeOn(); else wakeOff();
 }
+$('b-melonly').onclick=()=>{
+  if(!hasMelody()){toast('이 곡에는 멜로디가 없습니다.');return;}
+  P.accomp=(P.accomp===false); P.melody=true;
+  renderToolbar(); if(P.playing)startPlay();
+  toast(P.accomp===false?'멜로디만 재생합니다':'반주와 함께 재생합니다');
+};
 $('b-focus').onclick=()=>setFocus(!document.body.classList.contains('focus'));
 $('focusout').onclick=()=>setFocus(false);
 
