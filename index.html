@@ -57,7 +57,10 @@ main{flex:1;padding:16px 8px 182px;font-family:var(--mono);line-height:1.5}
 .ch{display:block;color:var(--brass);font-weight:800;letter-spacing:.01em;padding-right:9px;white-space:pre;line-height:1.3;cursor:pointer;transition:transform .12s}
 .ch.plain{cursor:default}
 .ly{display:block;white-space:pre-wrap}
-.bar{display:inline-block;width:0;border-left:2px solid var(--dim);opacity:.32;margin:0 10px 2px 5px;align-self:stretch;border-radius:1px}
+.meas{display:inline-flex;align-items:flex-end;border-left:2px solid var(--line);
+  padding:0 0 0 10px;margin:0 10px 10px 0;border-radius:2px}
+.meas:first-child{border-left-color:var(--brass);opacity:1}
+.lineblk.cur .meas{border-left-color:var(--brass)}
 .capo{break-inside:avoid;margin-bottom:14px;padding:8px 12px;border:1px dashed var(--mint);border-radius:8px;font-size:12px;font-family:var(--ui);color:var(--mint)}
 
 nav{border-top:1px solid var(--line);padding:9px 12px 10px;display:flex;gap:7px;overflow-x:auto}
@@ -177,20 +180,12 @@ body.focus #focusout{display:block}
 </div>
 <nav class="scroll">
   <button class="btn" data-panel="scan">사진</button>
-  <button class="btn" data-panel="input">직접 입력</button>
+  <button class="btn" data-panel="input">편집</button>
   <button class="btn" id="b-melonly">멜로디만</button>
-  <button class="btn" id="b-focus">집중</button>
   <button class="btn" id="b-verse">1절</button>
-  <button class="btn" id="b-number">넘버</button>
-  <button class="btn" id="b-capo">카포</button>
-  <button class="btn" id="b-flat">♭ 우선</button>
-  <div class="fontset"><button id="f-minus" aria-label="글자 작게">가−</button>
-  <span id="f-size">20</span>
-  <button id="f-plus" aria-label="글자 크게">가＋</button></div>
-  <button class="btn" id="b-col">2단</button>
-  <button class="btn" id="b-save">저장</button>
+  <button class="btn" id="b-focus">집중</button>
+  <button class="btn" data-panel="view">보기</button>
   <button class="btn" data-panel="library">콘티</button>
-  <button class="btn" data-panel="diag">진단</button>
   <button class="btn" data-panel="export">내보내기</button>
 </nav>
 </footer>
@@ -216,7 +211,7 @@ window.onerror=function(msg,src,ln){
    예) const SCAN_ENDPOINT = "https://konti-scan.내계정.workers.dev";
 */
 const SCAN_ENDPOINT = "";
-const APP_VER = "27";
+const APP_VER = "28";
 /* file:// 나 content:// 로 열면 브라우저가 외부 호출을 막는다(CORS). 미리 알려준다. */
 const LOCAL_FILE = !/^https?:$/.test(location.protocol);
 /* Claude 앱처럼 iframe 안에서 실행 중이면 키 없이도 인식이 통한다. */
@@ -351,13 +346,19 @@ function maxVerse(){
   return m;
 }
 /* 가사/코드 속의 | 를 마디 구분 표시로 바꾼다 */
+function cleanLyric(t){
+  if(!t)return t;
+  return t.replace(/(^|\s)r(?=\s|$)/g,'$1 ')      // 홀로 남은 쉼표 기호
+          .replace(/(^|\s)r:[\d.]+/g,'$1')
+          .replace(/[ ]{3,}/g,'  ');
+}
 function withBars(pairs){
   const out=[];
   const push=o=>{ if(o.bar){ if(out.length&&out[out.length-1].bar)return; out.push(o); return; }
     if(o.chord||(o.text&&o.text.trim())||(o.raw&&o.raw.trim()))out.push(o); };
   for(const p of pairs){
     if(!p.chord&&/^\|+$/.test((p.raw||'').trim())){ push({bar:true}); if(p.text&&p.text.trim())push({chord:null,raw:'',text:p.text}); continue; }
-    const t=p.text||'';
+    const t=cleanLyric(p.text||'');
     if(t.indexOf('|')<0){ push(p); continue; }
     const parts=t.split('|');
     push({chord:p.chord,raw:p.raw,text:parts[0]});
@@ -917,8 +918,11 @@ function renderChart(){
     if(b.k==='sec'){const d=document.createElement('div');d.className='section';d.textContent=b.text;el.appendChild(d);continue;}
     if(b.k==='mel')continue;
     const row=document.createElement('div');row.className='lineblk';
+    let meas=document.createElement('span'), nIn=0; meas.className='meas';
+    const flushMeas=()=>{ if(nIn)row.appendChild(meas);
+      meas=document.createElement('span'); meas.className='meas'; nIn=0; };
     for(const pr of pairsForVerse(b,S.verse)){
-      if(pr.bar){const d=document.createElement('span');d.className='bar';row.appendChild(d);continue;}
+      if(pr.bar){ flushMeas(); continue; }
       const label=pr.chord?(S.num?showNum(pr.chord,origKey.pc):showChord(pr.chord,sm,p)):pr.raw;
       const wrap=document.createElement('span');wrap.className='pair';
       const ch=document.createElement('span');
@@ -931,10 +935,12 @@ function renderChart(){
         if(pr.idx===P.cur){ch.classList.add('now');row.classList.add('cur');}
         ch.onclick=()=>tapChord(pr.chord,sm);
         ch.setAttribute('role','button');ch.tabIndex=0;
-        ch.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();tapChord(pr.chord,sm)}};}
+        ch.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();tapChord(pr.chord,sm)}};
+      }
       const ly=document.createElement('span');ly.className='ly';ly.textContent=pr.text;
-      wrap.appendChild(ch);wrap.appendChild(ly);row.appendChild(wrap);
+      wrap.appendChild(ch);wrap.appendChild(ly);meas.appendChild(wrap);nIn++;
     }
+    flushMeas();
     el.appendChild(row);
   }
 }
@@ -961,12 +967,7 @@ function renderToolbar(){
     ib.textContent=(hasMelody()&&P.melody?'♪ ':'')
       +(L.length>1?INSTRUMENTS[L[0]].label+' 외 '+(L.length-1):INSTRUMENTS[L[0]].label);
   }
-  $('b-number').classList.toggle('on',S.num);
-  $('b-capo').classList.toggle('on',S.capo);
-  $('b-capo').disabled=!capoInfo();
-  $('b-flat').classList.toggle('on',S.flat==='flat');
-  $('b-col').classList.toggle('on',S.col);
-  if($('f-size'))$('f-size').textContent=S.font;
+  if($('v-size'))$('v-size').textContent=S.font;
   const mb=$('b-melonly');
   if(mb){ mb.classList.toggle('on',P.accomp===false); mb.disabled=!hasMelody(); }
   const mv=maxVerse(), vb=$('b-verse');
@@ -1554,7 +1555,7 @@ async function runScan(){
 
 /* ============ 패널 ============ */
 function openPanel(name){
-  const s=$('sheet'),titles={scan:'사진에서 가져오기',input:'직접 입력',library:'저장된 콘티',export:'내보내기',diag:'멜로디 진단',play:'재생 설정'};
+  const s=$('sheet'),titles={scan:'사진에서 가져오기',input:'악보 편집',library:'저장된 콘티',export:'내보내기',diag:'멜로디 진단',play:'재생 설정',view:'보기 설정'};
   s.innerHTML='<div class="sheethead"><span class="eyebrow">'+titles[name]+'</span><button class="btn" id="close">닫기</button></div>';
   const body=document.createElement('div');s.appendChild(body);
   $('close').onclick=closePanel;
@@ -1669,6 +1670,31 @@ function openPanel(name){
       del.onclick=()=>{save(load().filter(x=>x.id!==song.id));openPanel('library')};
       d.appendChild(b);d.appendChild(del);body.appendChild(d);
     });
+  }
+
+  if(name==='view'){
+    const T=(id,on,label,sub)=>'<div class="rowline"><span><b>'+label+'</b>'
+      +(sub?'<small>'+sub+'</small>':'')+'</span>'
+      +'<button class="btn '+(on?'on':'')+'" id="'+id+'">'+(on?'켬':'끔')+'</button></div>';
+    body.innerHTML=
+      '<div class="rowline"><span><b>글자 크기</b><small>보면대 거리에 맞춰 조절하세요</small></span>'
+      +'<span class="fontset"><button id="v-minus">가−</button><span id="v-size">'+S.font+'</span>'
+      +'<button id="v-plus">가＋</button></span></div>'
+      +T('v-num',S.num,'넘버 시스템','코드를 1·4·5 숫자로 표시')
+      +T('v-capo',S.capo,'카포','기타용 잡는 자리 계산')
+      +T('v-flat',S.flat==='flat','♭ 우선','올림표 대신 내림표로 표기')
+      +T('v-col',S.col,'2단 보기','가로가 넓을 때 두 줄로')
+      +'<div class="btns"><button class="btn lg on wide" id="v-save">이 곡 저장</button>'
+      +'<button class="btn wide" id="v-diag">멜로디 진단</button></div>';
+    const up=()=>{renderAll();openPanel('view')};
+    $('v-minus').onclick=()=>{setFont(S.font-2);openPanel('view')};
+    $('v-plus').onclick=()=>{setFont(S.font+2);openPanel('view')};
+    $('v-num').onclick=()=>{S.num=!S.num;up()};
+    $('v-capo').onclick=()=>{if(!capoInfo()){toast('이 키에는 쓸 만한 카포 자리가 없습니다.');return;}S.capo=!S.capo;up()};
+    $('v-flat').onclick=()=>{S.flat=S.flat==='flat'?null:'flat';up()};
+    $('v-col').onclick=()=>{S.col=!S.col;up()};
+    $('v-save').onclick=()=>{saveSong();closePanel()};
+    $('v-diag').onclick=()=>openPanel('diag');
   }
 
   if(name==='diag'){
@@ -1817,14 +1843,13 @@ document.querySelectorAll('nav [data-panel]').forEach(b=>b.onclick=()=>openPanel
 $('up').onclick=()=>{S.semis=Math.min(12,S.semis+1);renderAll()};
 $('down').onclick=()=>{S.semis=Math.max(-12,S.semis-1);renderAll()};
 $('b-verse').onclick=()=>{const mv=maxVerse(); if(mv<2)return; S.verse=S.verse>=mv?1:S.verse+1; renderAll();};
-$('b-number').onclick=()=>{S.num=!S.num;renderAll()};
-$('b-capo').onclick=()=>{S.capo=!S.capo;renderAll()};
-$('b-flat').onclick=()=>{S.flat=S.flat==='flat'?null:'flat';renderAll()};
+
+
+
 function setFont(v){S.font=Math.max(12,Math.min(44,v));renderAll();}
-$('f-minus').onclick=()=>setFont(S.font-2);
-$('f-plus').onclick=()=>setFont(S.font+2);
-$('b-col').onclick=()=>{S.col=!S.col;renderAll()};
-$('b-save').onclick=()=>{
+
+
+if($('b-save'))$('b-save').onclick=()=>{
   const t=$('title').value.trim()||'제목 없음';
   const list=load().filter(s=>s.title!==t);
   const st=new Date();
