@@ -2,6 +2,9 @@
 <html lang="ko" data-theme="dark">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#131A23">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -126,7 +129,7 @@ body.focus #focusout{display:block}
 
 <header class="noprint">
   <div class="row" style="align-items:baseline;margin-bottom:9px">
-    <span class="eyebrow" style="color:var(--ribbon)">콘티</span>
+    <span class="eyebrow" style="color:var(--ribbon)">콘티 v<span id="ver">?</span></span>
     <input id="title" value="예시 곡" aria-label="곡 제목">
     <button class="btn" id="theme">밝게</button>
   </div>
@@ -175,6 +178,7 @@ body.focus #focusout{display:block}
    예) const SCAN_ENDPOINT = "https://konti-scan.내계정.workers.dev";
 */
 const SCAN_ENDPOINT = "";
+const APP_VER = "14";
 /* file:// 나 content:// 로 열면 브라우저가 외부 호출을 막는다(CORS). 미리 알려준다. */
 const LOCAL_FILE = !/^https?:$/.test(location.protocol);
 /* Claude 앱처럼 iframe 안에서 실행 중이면 키 없이도 인식이 통한다. */
@@ -688,6 +692,12 @@ const S={raw:SAMPLE,semis:0,flat:null,num:false,capo:false,font:20,col:false,pho
 let blocks=[], origKey={pc:0,minor:false};
 function reparse(){
   blocks=parseChart(S.raw); origKey=detectKey(blocks);
+  const empty=!blocks.some(b=>b.k==='pairs'&&b.pairs.some(p=>p.chord||(p.text||'').trim()));
+  if(empty&&S.raw.trim()){
+    blocks=S.raw.replace(/\r\n?/g,'\n').split('\n')
+      .map(l=>l.trim()?{k:'pairs',pairs:[{chord:null,raw:'',text:l}]}:{k:'blank'});
+    origKey=detectKey(blocks);
+  }
   let n=0;
   for(const b of blocks) if(b.k==='pairs') for(const p of b.pairs) if(p.chord)p.idx=n++;
 }
@@ -1283,7 +1293,7 @@ async function runScan(){
     text=text.trim().replace(/^```[a-z]*\n?/i,'').replace(/```\s*$/,'').trim();
     const tm=text.match(/^TITLE:\s*(.+)$/m);
     if(tm){$('title').value=tm[1].trim();text=text.replace(/^TITLE:\s*.+$/m,'').trim();}
-    if(!text)throw new Error('읽어낸 내용이 없습니다');
+    if(!text)throw new Error('읽어낸 내용이 없습니다 — 사진을 더 밝고 반듯하게 찍어 보세요');
     S.raw=text; S.semis=0; S.verse=1; stopPlay(); reparse(); renderAll();
     box.className='callout ok';
     const n=blocks.filter(b=>b.k==='pairs').length, mel=hasMelody();
@@ -1519,6 +1529,7 @@ function wakeOff(){ if(wl&&!P.playing&&!document.body.classList.contains('focus'
 document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState==='visible'&&(P.playing||document.body.classList.contains('focus')))wakeOn();
 });
+if($("ver"))$("ver").textContent=APP_VER;
 renderAll();
 </script>
 </body>
