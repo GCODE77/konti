@@ -49,6 +49,8 @@ main{flex:1;padding:18px 14px 176px;font-family:var(--mono);line-height:1.5}
 .ch{display:block;color:var(--brass);font-weight:700;padding-right:8px;white-space:pre;line-height:1.35;cursor:pointer}
 .ch.plain{cursor:default}
 .ly{display:block;white-space:pre-wrap}
+.verse2 .ly{color:var(--dim)}
+.verse2{margin-top:2px}
 .capo{break-inside:avoid;margin-bottom:14px;padding:8px 12px;border:1px dashed var(--mint);border-radius:8px;font-size:12px;font-family:var(--ui);color:var(--mint)}
 
 nav{border-top:1px solid var(--line);padding:9px 12px 10px;display:flex;gap:7px;overflow-x:auto}
@@ -629,6 +631,8 @@ function renderChart(){
     if(b.k==='sec'){const d=document.createElement('div');d.className='section';d.textContent=b.text;el.appendChild(d);continue;}
     if(b.k==='mel')continue;
     const row=document.createElement('div');row.className='lineblk';
+    const noChord=!b.pairs.some(p=>p.chord);
+    if(noChord&&/^\s*[2-9]\)/.test((b.pairs[0]||{}).text||''))row.className+=' verse2';
     for(const pr of b.pairs){
       const label=pr.chord?(S.num?showNum(pr.chord,origKey.pc):showChord(pr.chord,sm,p)):pr.raw;
       const wrap=document.createElement('span');wrap.className='pair';
