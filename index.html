@@ -553,10 +553,14 @@ function renderStaffSection(melM,chM,lyM,verses,measureStart){
     x=Math.max(x,sx+24);
   }
   for(let m=mFrom;m<mTo;m++){
-    body+='<line x1="'+x+'" y1="'+TOP+'" x2="'+x+'" y2="'+bottom+'" stroke="'+C+'" stroke-width="1.5" opacity=".5"/>';
-    body+='<text x="'+(x+4)+'" y="'+(TOP-32)+'" font-size="13" fill="'+C+'" opacity=".55">'+(measureStart+m)+'</text>';
-    x+=10;
     const notes=melM[m]||[], chs=chM[m]||[];
+    const beatSum=notes.length?notes.reduce((a,it)=>a+(it.n.beats||1),0):null;
+    const mismatch=beatSum!==null&&Math.abs(beatSum-P.beats)>0.01;
+    const R='var(--ribbon)';
+    body+='<line x1="'+x+'" y1="'+TOP+'" x2="'+x+'" y2="'+bottom+'" stroke="'+(mismatch?R:C)+'" stroke-width="1.5" opacity="'+(mismatch?'.85':'.5')+'"/>';
+    body+='<text x="'+(x+4)+'" y="'+(TOP-32)+'" font-size="13" fill="'+(mismatch?R:C)+'" opacity="'+(mismatch?'.95':'.55')+'" font-weight="'+(mismatch?'700':'400')+'">'
+      +(measureStart+m)+(mismatch?' ⚠'+(beatSum%1?beatSum.toFixed(1):beatSum)+'박':'')+'</text>';
+    x+=10;
     const startX=x;
     if(!notes.length){                       // 멜로디가 없는 마디는 코드와 절별 가사만
       chs.forEach((p,i)=>{
