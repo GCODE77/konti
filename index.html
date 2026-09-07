@@ -1290,6 +1290,8 @@ function renderAll(){renderRail();renderMeta();renderChart();renderToolbar();sch
 /* ── 마지막 상태 자동 저장 ── */
 let saveT=null;
 function scheduleSave(){clearTimeout(saveT);saveT=setTimeout(saveLast,500);}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'){clearTimeout(saveT);saveLast();}});
+window.addEventListener('pagehide',()=>{clearTimeout(saveT);saveLast();});
 function saveLast(){
   try{
     setLS('konti:last',JSON.stringify({
