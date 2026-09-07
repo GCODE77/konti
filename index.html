@@ -496,14 +496,12 @@ function renderStaff(sel){
   });
   return svg+'</svg>';
 }
-/* 한 단을 리드시트(코드+오선+가사)로 그린다. measureStart: 곡 전체 기준 첫 마디 번호(1부터) */
-function leadLineSVGs(mel,blk,measureStart){
-  const pc=mod(origKey.pc+S.semis), pref=S.flat||PREF[pc];
-  const [sgn,cnt]=keySig(pc), ord=sgn==='#'?SHARP_ORD:FLAT_ORD;
-  const sigSet={}; for(let i=0;i<cnt;i++)sigSet[ord[i]]=sgn;
-
-  // 마디별로 나눈다 (마디선 위치는 절과 무관하므로 코드/가사 공통으로 쓴다)
-  const mm=[[]]; if(mel)for(const n of mel.notes){ if(n.bar)mm.push([]); else mm[mm.length-1].push(n); }
+/* 한 블록(코드+가사 한 줄 + 앞서 나온 멜로디)을 마디 배열로 쪼갠다.
+   melM/chM/lyM은 서로 길이가 같도록(N) 빈 배열로 맞춰서 반환 — 여러 블록을
+   이어 붙여도 마디 위치가 어긋나지 않게 하기 위함이다. */
+function measuresOfBlock(mel,blk){
+  const mm=[[]];
+  if(mel)mel.notes.forEach((n,ni)=>{ if(n.bar)mm.push([]); else mm[mm.length-1].push({n,bi:mel._bi,ni}); });
   const chPairs=blk?blk.pairs:[];
   const cm=[[]]; for(const pr of chPairs){ if(pr.bar)cm.push([]); else cm[cm.length-1].push(pr); }
   const verses=(blk&&blk.alt)?[1,...Object.keys(blk.alt).map(Number)].sort((a,b)=>a-b):[1];
@@ -517,6 +515,18 @@ function leadLineSVGs(mel,blk,measureStart){
   const melM=mm.filter(g=>g.length), chM=cm.filter((g,i)=>keep[i]);
   const lyM={}; verses.forEach(v=>{ lyM[v]=lyGroups[v].filter((g,i)=>keep[i]); });
   const N=Math.max(melM.length,chM.length);
+  while(melM.length<N)melM.push([]);
+  while(chM.length<N)chM.push([]);
+  verses.forEach(v=>{ while(lyM[v].length<N)lyM[v].push([]); });
+  return {melM,chM,lyM,verses,N};
+}
+/* 이어붙인 마디 배열(melM/chM/lyM)을 한 줄에 4마디씩 리드시트(코드+오선+가사) SVG로 그린다.
+   measureStart: 곡 전체 기준 첫 마디 번호(1부터) */
+function renderStaffSection(melM,chM,lyM,verses,measureStart){
+  const pc=mod(origKey.pc+S.semis), pref=S.flat||PREF[pc];
+  const [sgn,cnt]=keySig(pc), ord=sgn==='#'?SHARP_ORD:FLAT_ORD;
+  const sigSet={}; for(let i=0;i<cnt;i++)sigSet[ord[i]]=sgn;
+  const N=melM.length;
   if(!N)return {svgs:[],count:0};
   const per=4;   // 가독성을 위해 한 줄에 최소 4마디씩 표시
   const out=[];
@@ -528,6 +538,7 @@ function leadLineSVGs(mel,blk,measureStart){
   const GAP=9, TOP=50, W=1000, PAD=16, VOFF=22;
   const bottom=TOP+8*GAP, yOf=st=>bottom-(st-30)*GAP;
   const C='var(--paper)', A='var(--brass)';
+  const labeled={};   // 절 번호는 이 줄에서 한 번만 표시
   let body='', x=PAD+(cnt?58+cnt*11:52);
   let clef='<text x="'+PAD+'" y="'+(TOP+GAP*5.6)+'" font-size="46" fill="'+C+'" opacity=".8">&#119070;</text>';
   let sx=PAD+42;
@@ -555,7 +566,8 @@ function leadLineSVGs(mel,blk,measureStart){
       verses.forEach((v,vi)=>{
         const grp=(lyM[v]&&lyM[v][m])||[];
         grp.forEach((p,i)=>{
-          const label=(verses.length>1&&i===0)?(v+'. '):'';
+          const label=(verses.length>1&&!labeled[v])?(v+'. '):'';
+          if(label)labeled[v]=true;
           body+='<text x="'+(x+i*74)+'" y="'+(bottom+30+vi*VOFF)+'" font-size="19" fill="'+C+'">'+esc(label+(p.text||''))+'</text>';
         });
       });
@@ -563,13 +575,14 @@ function leadLineSVGs(mel,blk,measureStart){
       continue;
     }
     const realCx=[];
-    for(const n of notes){
+    for(const it of notes){
+      const n=it.n;
       const w=Math.round(24+Math.min(4,n.beats||1)*15);
       const cx=x+w/2;
       if(n.rest){ body+='<rect x="'+(cx-7)+'" y="'+(TOP+3*GAP)+'" width="14" height="'+GAP+'" fill="'+C+'" opacity=".5" rx="1"/>'; x+=w; continue; }
       const midi=(n.midi!==undefined)?n.midi+S.semis:(60+pc+n.deg+(n.oct||0)*12);
       const sp=spell(midi,pref,sigSet), y=yOf(sp.step);
-      const on=(S.selNote&&mel&&S.selNote.bi===mel._bi&&S.selNote.ni===mel.notes.indexOf(n));
+      const on=(S.selNote&&S.selNote.bi===it.bi&&S.selNote.ni===it.ni);
       const col=on?A:C;
       for(let L=32;L>=sp.step;L-=2) if(L<=28) body+='<line x1="'+(cx-12)+'" y1="'+yOf(L)+'" x2="'+(cx+12)+'" y2="'+yOf(L)+'" stroke="'+C+'" stroke-width="1.1" opacity=".5"/>';
       for(let L=32;L<=sp.step;L+=2) if(L>=40) body+='<line x1="'+(cx-12)+'" y1="'+yOf(L)+'" x2="'+(cx+12)+'" y2="'+yOf(L)+'" stroke="'+C+'" stroke-width="1.1" opacity=".5"/>';
@@ -583,7 +596,7 @@ function leadLineSVGs(mel,blk,measureStart){
         if(b<0.5)body+='<path d="M'+sx2+' '+(sy2+8)+' q9 5 7 15" stroke="'+col+'" stroke-width="1.7" fill="none"/>';
       }
       if(sp.show)body+='<text x="'+(cx-19)+'" y="'+(y+5)+'" font-size="16" fill="'+col+'">'+(sp.show==='#'?'♯':sp.show==='b'?'♭':'♮')+'</text>';
-      if(mel)body+='<rect x="'+x+'" y="'+(TOP-26)+'" width="'+w+'" height="'+(8*GAP+58+(verses.length-1)*VOFF)+'" fill="transparent" style="cursor:pointer" data-bi="'+mel._bi+'" data-ni="'+mel.notes.indexOf(n)+'"/>';
+      body+='<rect x="'+x+'" y="'+(TOP-26)+'" width="'+w+'" height="'+(8*GAP+58+(verses.length-1)*VOFF)+'" fill="transparent" style="cursor:pointer" data-bi="'+it.bi+'" data-ni="'+it.ni+'"/>';
       realCx.push(cx); x+=w;
     }
     // 절별 가사를 실제 음표 위치에 맞춰 배치
@@ -591,7 +604,8 @@ function leadLineSVGs(mel,blk,measureStart){
       const grp=(lyM[v]&&lyM[v][m])||[];
       const syl=[...grp.map(p=>p.text||'').join('')].filter(ch=>ch.trim());
       for(let si=0;si<Math.min(syl.length,realCx.length);si++){
-        const label=(verses.length>1&&si===0)?(v+'. '):'';
+        const label=(verses.length>1&&!labeled[v])?(v+'. '):'';
+        if(label)labeled[v]=true;
         body+='<text x="'+realCx[si]+'" y="'+(bottom+30+vi*VOFF)+'" font-size="18" fill="'+C+'" text-anchor="middle">'+esc(label+syl[si])+'</text>';
       }
     });
@@ -1183,19 +1197,39 @@ function renderChartStaff(){
     el.appendChild(d);
   }
   let pendMel=null, measureNo=1;
+  /* 구간(절/후렴) 안에서는 원문 줄 구분과 무관하게 마디를 이어붙여
+     한 줄에 4마디씩 보이도록 한다 — [Verse]/[Chorus] 같은 구간 표시나
+     곡 끝에서만 끊는다. */
+  let accMel=[], accCh=[], accLy={};
+  const flush=()=>{
+    if(!accMel.length)return;
+    const verses=Object.keys(accLy).map(Number).sort((a,b)=>a-b);
+    const {svgs,count}=renderStaffSection(accMel,accCh,accLy,verses,measureNo);
+    measureNo+=count;
+    if(svgs.length){
+      const box=document.createElement('div');
+      box.className='staffline';
+      box.innerHTML=svgs.join('');
+      el.appendChild(box);
+    }
+    accMel=[]; accCh=[]; accLy={};
+  };
   for(const b of blocks){
     if(b.k==='mel'){ pendMel=b; continue; }
     if(b.k==='blank'){ continue; }
-    if(b.k==='sec'){ const d=document.createElement('div');d.className='section';d.textContent=b.text;el.appendChild(d);continue; }
-    const {svgs,count}=leadLineSVGs(pendMel,b,measureNo);
+    if(b.k==='sec'){ flush(); const d=document.createElement('div');d.className='section';d.textContent=b.text;el.appendChild(d);continue; }
+    const {melM,chM,lyM,verses,N}=measuresOfBlock(pendMel,b);
     pendMel=null;
-    measureNo+=count;
-    if(!svgs.length)continue;
-    const box=document.createElement('div');
-    box.className='staffline';
-    box.innerHTML=svgs.join('');
-    el.appendChild(box);
+    if(!N)continue;
+    const priorLen=accMel.length;
+    accMel=accMel.concat(melM); accCh=accCh.concat(chM);
+    const known=new Set(Object.keys(accLy).map(Number)); verses.forEach(v=>known.add(v));
+    known.forEach(v=>{
+      if(!accLy[v])accLy[v]=new Array(priorLen).fill(0).map(()=>[]);
+      accLy[v]=accLy[v].concat(lyM[v]||new Array(N).fill(0).map(()=>[]));
+    });
   }
+  flush();
   el.querySelectorAll('[data-bi]').forEach(r=>r.onclick=()=>{
     S.selNote={bi:+r.dataset.bi,ni:+r.dataset.ni}; openPanel('staff');
   });
