@@ -96,6 +96,16 @@ label.btn.wide{justify-content:center}
 @keyframes spin{to{transform:rotate(360deg)}}
 #preview{width:100%;border-radius:10px;border:1px solid var(--line);display:block;background:#fff}
 .drop{border:1px dashed var(--line);border-radius:10px;padding:28px 16px;text-align:center;font-size:12.5px;color:var(--dim);line-height:1.7}
+.modecards{display:flex;flex-direction:column;gap:10px;margin-top:4px}
+.modecard{display:flex;align-items:center;gap:14px;text-align:left;background:var(--ink);
+  border:1px solid var(--line);border-radius:14px;padding:16px;cursor:pointer;font-family:var(--ui)}
+.modecard:active{border-color:var(--brass)}
+.modecard .ico{font-size:26px;flex:0 0 auto;width:44px;text-align:center}
+.modecard>span{display:block;min-width:0}
+.modecard .tt{display:block;font-size:15px;font-weight:800;color:var(--paper)}
+.modecard .ds{display:block;font-size:12px;color:var(--dim);margin-top:3px;line-height:1.5;font-weight:400}
+.modecard .badge{margin-left:6px;font-size:10px;font-weight:700;color:var(--brass);border:1px solid var(--brass);border-radius:999px;padding:1px 7px;vertical-align:middle}
+.backlink{background:none;border:none;color:var(--dim);font-size:12.5px;font-weight:700;padding:0 0 14px;cursor:pointer;font-family:var(--ui)}
 .rowlist{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--line)}
 .rowlist button.load{flex:1;text-align:left;background:none;border:none;color:var(--paper);font-size:14px;font-weight:600;cursor:pointer;padding:0}
 .rowlist small{display:block;font-size:11px;color:var(--dim);font-weight:400;margin-top:2px}
@@ -186,7 +196,7 @@ body.focus #focusout{display:block}
   <button class="btn" id="loopbtn">반복</button>
 </div>
 <nav class="scroll">
-  <button class="btn" data-panel="scan">사진</button>
+  <button class="btn" data-panel="scan">가져오기</button>
   <button class="btn" data-panel="input">편집</button>
   <button class="btn" id="b-mode">악보</button>
   <button class="btn" id="b-melonly">멜로디만</button>
@@ -296,6 +306,29 @@ function parseMelody(line){
   }
   return out;
 }
+/* AI가 마디 안 쉼표를 빠뜨려 박수가 모자란 경우, 표준 쉼표 길이(온쉼표4~16분쉼표0.25)로
+   나머지를 채워 넣어 마디 박수 합을 박자표(P.beats)에 강제로 맞춘다.
+   첫 마디(마디선 앞)는 못갖춘마디일 수 있으므로 채우지 않는다. */
+function padMelodyRests(nts){
+  const per=(typeof P!=='undefined'&&P.beats)||4;
+  const groups=[[]];
+  for(const n of nts){ if(n.bar)groups.push([]); else groups[groups.length-1].push(n); }
+  if(groups.filter(g=>g.length).length<2)return nts;   // 마디 표시가 뚜렷하지 않으면 자동 배분(melFit)에 맡긴다
+  const fillRests=r=>{
+    const vals=[4,3,2,1.5,1,.75,.5,.25], out=[]; let guard=0;
+    while(r>0.01&&guard++<20){ const v=vals.find(x=>x<=r+1e-6)||0.25; out.push({rest:true,beats:v}); r-=v; }
+    return out;
+  };
+  const outNts=[];
+  groups.forEach((g,gi)=>{
+    if(gi>0)outNts.push({bar:true});
+    outNts.push(...g);
+    if(gi===0)return;
+    const sum=g.reduce((a,n)=>a+(n.beats||1),0);
+    if(sum>0.01&&sum<per-0.01)outNts.push(...fillRests(per-sum));
+  });
+  return outNts;
+}
 function melLine(notes,semis,p){
   return '♪ '+notes.map(n=>n.bar?'|':n.rest?('r:'+n.beats)
     :(nm(n.midi+semis,p)+(Math.floor((n.midi+semis)/12)-1)+':'+n.beats)).join(' ');
@@ -306,7 +339,7 @@ function parseChart(raw){
   const inline=/\[[A-G][#♯b♭]?[^\]]{0,8}\]/.test(raw)&&/\][^\s[]/.test(raw);
   for(let i=0;i<lines.length;i++){
     const line=lines[i];
-    if(MEL_RE.test(line)){const nts=parseMelody(line); if(nts.length){out.push({k:'mel',notes:nts});continue;} continue;}
+    if(MEL_RE.test(line)){const nts=parseMelody(line); if(nts.length){out.push({k:'mel',notes:padMelodyRests(nts)});continue;} continue;}
     if(/^[\s:.0-9]*(?:[A-G][#♯b♭]?-?\d|r):[\d.]/.test(line.trim())){continue;} // 잘린 멜로디 조각은 버린다
     if(isSection(line)){out.push({k:'sec',text:line.trim().replace(/^[[<(]|[\]>)]$/g,'').trim()});continue;}
     if(!line.trim()){out.push({k:'blank'});continue;}
@@ -496,33 +529,67 @@ function renderStaff(sel){
   });
   return svg+'</svg>';
 }
-/* 한 블록(코드+가사 한 줄 + 앞서 나온 멜로디)을 마디 배열로 쪼갠다.
+/* 한 블록(코드+가사 한 줄 + 앞서 나온 멜로디)을 "실제" 마디 배열로 쪼갠다.
+   재생 엔진(buildTimeline)과 같은 규칙을 쓴다:
+   - 곡 전체에 명시적 마디선(|)이 하나도 없으면, 코드 하나 = 마디 하나(리드시트 관례)로 본다.
+     예) "G  D/F#  Em" 처럼 파이프 없이 나열된 코드는 3마디로 나뉜다.
+   - 멜로디에 마디 표시가 2개 이상이면 그걸 그대로 존중하고, 없으면(대부분의 스캔 결과)
+     박자 누적으로 각 마디에 자동 배분한다 — 재생 때 쓰는 melFit과 같은 비율로 늘이거나 줄인다.
    melM/chM/lyM은 서로 길이가 같도록(N) 빈 배열로 맞춰서 반환 — 여러 블록을
    이어 붙여도 마디 위치가 어긋나지 않게 하기 위함이다. */
 function measuresOfBlock(mel,blk){
-  const mm=[[]];
-  if(mel)mel.notes.forEach((n,ni)=>{ if(n.bar)mm.push([]); else mm[mm.length-1].push({n,bi:mel._bi,ni}); });
   const chPairs=blk?blk.pairs:[];
-  const cm=[[]]; for(const pr of chPairs){ if(pr.bar)cm.push([]); else cm[cm.length-1].push(pr); }
+  const hasBarGlobal=blocks.some(b=>b.k==='pairs'&&b.pairs.some(p=>p.bar));
+  const splitPairs=pairs=>{
+    if(hasBarGlobal){
+      const g=[[]]; for(const pr of pairs){ if(pr.bar)g.push([]); else g[g.length-1].push(pr); }
+      return g.filter(x=>x.length);
+    }
+    const g=[]; for(const pr of pairs){ if(pr.chord||!g.length)g.push([]); g[g.length-1].push(pr); }
+    return g.length?g:[[]];
+  };
+  const chM=splitPairs(chPairs);
+  const N=chM.length;
+
   const verses=(blk&&blk.alt)?[1,...Object.keys(blk.alt).map(Number)].sort((a,b)=>a-b):[1];
-  const lyGroups={};
+  const lyM={};
   verses.forEach(v=>{
     const pv=blk?pairsForVerse(blk,v):[];
-    const g=[[]]; for(const pr of pv){ if(pr.bar)g.push([]); else g[g.length-1].push(pr); }
-    lyGroups[v]=g;
+    const g=splitPairs(pv);
+    while(g.length<N)g.push([]);
+    lyM[v]=g.slice(0,N);
   });
-  const keep=cm.map(g=>g.length>0);
-  const melM=mm.filter(g=>g.length), chM=cm.filter((g,i)=>keep[i]);
-  const lyM={}; verses.forEach(v=>{ lyM[v]=lyGroups[v].filter((g,i)=>keep[i]); });
-  const N=Math.max(melM.length,chM.length);
-  while(melM.length<N)melM.push([]);
-  while(chM.length<N)chM.push([]);
-  verses.forEach(v=>{ while(lyM[v].length<N)lyM[v].push([]); });
-  return {melM,chM,lyM,verses,N};
+
+  let melM=new Array(N).fill(0).map(()=>[]);
+  let fitM=new Array(N).fill(false);   // true인 마디는 박자 자동 배분(추정치)이라 박수 어긋남 경고를 보여주지 않는다
+  if(mel&&mel.notes&&mel.notes.length){
+    const groups=[[]];
+    mel.notes.forEach((n,ni)=>{ if(n.bar)groups.push([]); else groups[groups.length-1].push({n,bi:mel._bi,ni}); });
+    const gs=groups.filter(g=>g.length);
+    if(gs.length>=2){                       // 멜로디 자체에 마디 표시가 있으면 그대로 존중(못갖춘마디 포함)
+      const off=gs.length-N;
+      if(off>0)for(let g=0;g<off;g++)melM[0]=melM[0].concat(gs[g]);
+      for(let i=0;i<N;i++){ const g=gs[Math.max(0,off)+i]; if(g)melM[i]=melM[i].concat(g); }
+    }else{                                  // 마디 표시가 없으면 박자 누적으로 자동 배분(melFit과 동일한 원리)
+      const beatsPerBar=P.beats||4, fitTo=N*beatsPerBar;
+      const flat=gs[0]||[];
+      const raw=flat.reduce((a,it)=>a+(it.n.beats||1),0);
+      const k=(raw>0&&Math.abs(raw-fitTo)>0.01)?fitTo/raw:1;
+      let acc=0;
+      flat.forEach(it=>{
+        const barIdx=Math.min(N-1,Math.floor((acc+1e-9)/beatsPerBar));
+        melM[barIdx].push(it);
+        acc+=(it.n.beats||1)*k;
+      });
+      for(let i=0;i<N;i++)fitM[i]=true;
+    }
+  }
+  return {melM,chM,lyM,verses,N,fitM};
 }
 /* 이어붙인 마디 배열(melM/chM/lyM)을 한 줄에 4마디씩 리드시트(코드+오선+가사) SVG로 그린다.
    measureStart: 곡 전체 기준 첫 마디 번호(1부터) */
-function renderStaffSection(melM,chM,lyM,verses,measureStart){
+function renderStaffSection(melM,chM,lyM,verses,measureStart,fitM){
+  fitM=fitM||[];
   const pc=mod(origKey.pc+S.semis), pref=S.flat||PREF[pc];
   const [sgn,cnt]=keySig(pc), ord=sgn==='#'?SHARP_ORD:FLAT_ORD;
   const sigSet={}; for(let i=0;i<cnt;i++)sigSet[ord[i]]=sgn;
@@ -535,36 +602,36 @@ function renderStaffSection(melM,chM,lyM,verses,measureStart){
 
   function draw(mFrom,mTo){
 
-  const GAP=9, TOP=50, W=1000, PAD=16, VOFF=22;
+  const GAP=7, TOP=40, W=1000, PAD=14, VOFF=17;
   const bottom=TOP+8*GAP, yOf=st=>bottom-(st-30)*GAP;
   const C='var(--paper)', A='var(--brass)';
   const labeled={};   // 절 번호는 이 줄에서 한 번만 표시
-  let body='', x=PAD+(cnt?58+cnt*11:52);
-  let clef='<text x="'+PAD+'" y="'+(TOP+GAP*5.6)+'" font-size="46" fill="'+C+'" opacity=".8">&#119070;</text>';
-  let sx=PAD+42;
+  let body='', x=PAD+(cnt?46+cnt*9:42);
+  let clef='<text x="'+PAD+'" y="'+(TOP+GAP*5.6)+'" font-size="37" fill="'+C+'" opacity=".8">&#119070;</text>';
+  let sx=PAD+34;
   for(let i=0;i<cnt;i++){
     const L=ord[i], oc=(L==='B'||L==='A'||L==='G')?4:5;
-    clef+='<text x="'+sx+'" y="'+(yOf(LET.indexOf(L)+7*oc)+5)+'" font-size="19" fill="'+C+'" opacity=".8">'+(sgn==='#'?'♯':'♭')+'</text>';
-    sx+=11;
+    clef+='<text x="'+sx+'" y="'+(yOf(LET.indexOf(L)+7*oc)+4)+'" font-size="15" fill="'+C+'" opacity=".8">'+(sgn==='#'?'♯':'♭')+'</text>';
+    sx+=9;
   }
   if(measureStart===1&&mFrom===0){                 // 곡 맨 처음 한 번만 박자표 표기
-    clef+='<text x="'+sx+'" y="'+(TOP+26)+'" font-size="22" font-weight="700" fill="'+C+'" opacity=".85">'+P.beats+'</text>';
-    clef+='<text x="'+sx+'" y="'+(TOP+62)+'" font-size="22" font-weight="700" fill="'+C+'" opacity=".85">4</text>';
-    x=Math.max(x,sx+24);
+    clef+='<text x="'+sx+'" y="'+(TOP+22)+'" font-size="18" font-weight="700" fill="'+C+'" opacity=".85">'+P.beats+'</text>';
+    clef+='<text x="'+sx+'" y="'+(TOP+50)+'" font-size="18" font-weight="700" fill="'+C+'" opacity=".85">4</text>';
+    x=Math.max(x,sx+18);
   }
   for(let m=mFrom;m<mTo;m++){
     const notes=melM[m]||[], chs=chM[m]||[];
     const beatSum=notes.length?notes.reduce((a,it)=>a+(it.n.beats||1),0):null;
-    const mismatch=beatSum!==null&&Math.abs(beatSum-P.beats)>0.01;
+    const mismatch=beatSum!==null&&!fitM[m]&&Math.abs(beatSum-P.beats)>0.75;   // 자동 배분(fitM) 오차는 눈감아주고 진짜 어긋난 것만 표시
     const R='var(--ribbon)';
     body+='<line x1="'+x+'" y1="'+TOP+'" x2="'+x+'" y2="'+bottom+'" stroke="'+(mismatch?R:C)+'" stroke-width="1.5" opacity="'+(mismatch?'.85':'.5')+'"/>';
-    body+='<text x="'+(x+4)+'" y="'+(TOP-32)+'" font-size="13" fill="'+(mismatch?R:C)+'" opacity="'+(mismatch?'.95':'.55')+'" font-weight="'+(mismatch?'700':'400')+'">'
+    body+='<text x="'+(x+3)+'" y="'+(TOP-25)+'" font-size="11" fill="'+(mismatch?R:C)+'" opacity="'+(mismatch?'.95':'.55')+'" font-weight="'+(mismatch?'700':'400')+'">'
       +(measureStart+m)+(mismatch?' ⚠'+(beatSum%1?beatSum.toFixed(1):beatSum)+'박':'')+'</text>';
-    x+=10;
+    x+=8;
     const startX=x;
     if(!notes.length){                       // 멜로디가 없는 마디는 코드와 절별 가사만
       chs.forEach((p,i)=>{
-        if(p.chord)body+='<text x="'+(x+i*74)+'" y="'+(TOP-14)+'" font-size="21" font-weight="700" fill="'+A+'">'
+        if(p.chord)body+='<text x="'+(x+i*58)+'" y="'+(TOP-11)+'" font-size="17" font-weight="700" fill="'+A+'">'
           +(S.num?showNum(p.chord,origKey.pc):showChord(p.chord,S.semis,pref))+'</text>';
       });
       verses.forEach((v,vi)=>{
@@ -572,35 +639,35 @@ function renderStaffSection(melM,chM,lyM,verses,measureStart){
         grp.forEach((p,i)=>{
           const label=(verses.length>1&&!labeled[v])?(v+'. '):'';
           if(label)labeled[v]=true;
-          body+='<text x="'+(x+i*74)+'" y="'+(bottom+30+vi*VOFF)+'" font-size="19" fill="'+C+'">'+esc(label+(p.text||''))+'</text>';
+          body+='<text x="'+(x+i*58)+'" y="'+(bottom+24+vi*VOFF)+'" font-size="15" fill="'+C+'">'+esc(label+(p.text||''))+'</text>';
         });
       });
-      x+=Math.max(150,chs.length*74);
+      x+=Math.max(118,chs.length*58);
       continue;
     }
     const realCx=[];
     for(const it of notes){
       const n=it.n;
-      const w=Math.round(24+Math.min(4,n.beats||1)*15);
+      const w=Math.round(18+Math.min(4,n.beats||1)*12);
       const cx=x+w/2;
-      if(n.rest){ body+='<rect x="'+(cx-7)+'" y="'+(TOP+3*GAP)+'" width="14" height="'+GAP+'" fill="'+C+'" opacity=".5" rx="1"/>'; x+=w; continue; }
+      if(n.rest){ body+='<rect x="'+(cx-6)+'" y="'+(TOP+3*GAP)+'" width="11" height="'+GAP+'" fill="'+C+'" opacity=".5" rx="1"/>'; x+=w; continue; }
       const midi=(n.midi!==undefined)?n.midi+S.semis:(60+pc+n.deg+(n.oct||0)*12);
       const sp=spell(midi,pref,sigSet), y=yOf(sp.step);
       const on=(S.selNote&&S.selNote.bi===it.bi&&S.selNote.ni===it.ni);
       const col=on?A:C;
-      for(let L=32;L>=sp.step;L-=2) if(L<=28) body+='<line x1="'+(cx-12)+'" y1="'+yOf(L)+'" x2="'+(cx+12)+'" y2="'+yOf(L)+'" stroke="'+C+'" stroke-width="1.1" opacity=".5"/>';
-      for(let L=32;L<=sp.step;L+=2) if(L>=40) body+='<line x1="'+(cx-12)+'" y1="'+yOf(L)+'" x2="'+(cx+12)+'" y2="'+yOf(L)+'" stroke="'+C+'" stroke-width="1.1" opacity=".5"/>';
+      for(let L=32;L>=sp.step;L-=2) if(L<=28) body+='<line x1="'+(cx-10)+'" y1="'+yOf(L)+'" x2="'+(cx+10)+'" y2="'+yOf(L)+'" stroke="'+C+'" stroke-width="1.1" opacity=".5"/>';
+      for(let L=32;L<=sp.step;L+=2) if(L>=40) body+='<line x1="'+(cx-10)+'" y1="'+yOf(L)+'" x2="'+(cx+10)+'" y2="'+yOf(L)+'" stroke="'+C+'" stroke-width="1.1" opacity=".5"/>';
       const b=n.beats||1, hollow=b>=2;
-      body+='<ellipse cx="'+cx+'" cy="'+y+'" rx="7.4" ry="5.6" transform="rotate(-18 '+cx+' '+y+')" '
-        +(hollow?'fill="none" stroke="'+col+'" stroke-width="2"':'fill="'+col+'"')+'/>';
+      body+='<ellipse cx="'+cx+'" cy="'+y+'" rx="6" ry="4.5" transform="rotate(-18 '+cx+' '+y+')" '
+        +(hollow?'fill="none" stroke="'+col+'" stroke-width="1.6"':'fill="'+col+'"')+'/>';
       if(b<4){
-        const up=sp.step<36, sx2=up?cx+7:cx-7, sy2=up?y-30:y+30;
-        body+='<line x1="'+sx2+'" y1="'+y+'" x2="'+sx2+'" y2="'+sy2+'" stroke="'+col+'" stroke-width="1.7"/>';
-        if(b<1)body+='<path d="M'+sx2+' '+sy2+' q9 5 7 15" stroke="'+col+'" stroke-width="1.7" fill="none"/>';
-        if(b<0.5)body+='<path d="M'+sx2+' '+(sy2+8)+' q9 5 7 15" stroke="'+col+'" stroke-width="1.7" fill="none"/>';
+        const up=sp.step<36, sx2=up?cx+6:cx-6, sy2=up?y-24:y+24;
+        body+='<line x1="'+sx2+'" y1="'+y+'" x2="'+sx2+'" y2="'+sy2+'" stroke="'+col+'" stroke-width="1.4"/>';
+        if(b<1)body+='<path d="M'+sx2+' '+sy2+' q7 4 6 12" stroke="'+col+'" stroke-width="1.4" fill="none"/>';
+        if(b<0.5)body+='<path d="M'+sx2+' '+(sy2+6)+' q7 4 6 12" stroke="'+col+'" stroke-width="1.4" fill="none"/>';
       }
-      if(sp.show)body+='<text x="'+(cx-19)+'" y="'+(y+5)+'" font-size="16" fill="'+col+'">'+(sp.show==='#'?'♯':sp.show==='b'?'♭':'♮')+'</text>';
-      body+='<rect x="'+x+'" y="'+(TOP-26)+'" width="'+w+'" height="'+(8*GAP+58+(verses.length-1)*VOFF)+'" fill="transparent" style="cursor:pointer" data-bi="'+it.bi+'" data-ni="'+it.ni+'"/>';
+      if(sp.show)body+='<text x="'+(cx-15)+'" y="'+(y+4)+'" font-size="13" fill="'+col+'">'+(sp.show==='#'?'♯':sp.show==='b'?'♭':'♮')+'</text>';
+      body+='<rect x="'+x+'" y="'+(TOP-21)+'" width="'+w+'" height="'+(8*GAP+46+(verses.length-1)*VOFF)+'" fill="transparent" style="cursor:pointer" data-bi="'+it.bi+'" data-ni="'+it.ni+'"/>';
       realCx.push(cx); x+=w;
     }
     // 절별 가사를 실제 음표 위치에 맞춰 배치
@@ -610,14 +677,14 @@ function renderStaffSection(melM,chM,lyM,verses,measureStart){
       for(let si=0;si<Math.min(syl.length,realCx.length);si++){
         const label=(verses.length>1&&!labeled[v])?(v+'. '):'';
         if(label)labeled[v]=true;
-        body+='<text x="'+realCx[si]+'" y="'+(bottom+30+vi*VOFF)+'" font-size="18" fill="'+C+'" text-anchor="middle">'+esc(label+syl[si])+'</text>';
+        body+='<text x="'+realCx[si]+'" y="'+(bottom+24+vi*VOFF)+'" font-size="14" fill="'+C+'" text-anchor="middle">'+esc(label+syl[si])+'</text>';
       }
     });
     // 코드 심볼: 마디 안 음표에 맞춰 배치
     const span=x-startX;
     chs.filter(p=>p.chord).forEach((p,i,arr)=>{
-      const px=startX+(arr.length>1?span*i/arr.length:0)+4;
-      body+='<text x="'+px+'" y="'+(TOP-14)+'" font-size="21" font-weight="700" fill="'+A+'" data-cidx="'+(p.idx)+'" style="cursor:pointer">'
+      const px=startX+(arr.length>1?span*i/arr.length:0)+3;
+      body+='<text x="'+px+'" y="'+(TOP-11)+'" font-size="17" font-weight="700" fill="'+A+'" data-cidx="'+(p.idx)+'" style="cursor:pointer">'
         +(S.num?showNum(p.chord,origKey.pc):showChord(p.chord,S.semis,pref))+'</text>';
     });
   }
@@ -625,7 +692,7 @@ function renderStaffSection(melM,chM,lyM,verses,measureStart){
   const WW=Math.max(W,x+PAD);
   let lines='';
   for(let i=0;i<5;i++)lines+='<line x1="'+PAD+'" y1="'+(TOP+i*GAP*2)+'" x2="'+x+'" y2="'+(TOP+i*GAP*2)+'" stroke="'+C+'" stroke-width="1.1" opacity=".5"/>';
-  const H=bottom+48+(verses.length-1)*VOFF;
+  const H=bottom+38+(verses.length-1)*VOFF;
   return '<svg viewBox="0 0 '+WW+' '+H+'" width="100%" style="display:block">'
     +lines+clef+body+'</svg>';
   }
@@ -723,6 +790,55 @@ function setReverb(insts){
   wet.gain.value=v;
 }
 
+/* ============ 실제 악기 샘플(General MIDI, 무료·공개 라이선스) ============
+   합성음 대신 실제로 녹음된 악기 소리를 쓴다. 온라인일 때만 되고, 처음 쓰는 음은
+   내려받는 동안 합성음으로 대신 채워둔다 — 재생이 끊기거나 멈추는 일은 없다.
+   같은 음을 다시 연주할 때부터(같은 곡 반복 재생, 다음 곡 등) 실제 소리로 들린다. */
+const SAMPLE_BASE='https://cdn.jsdelivr.net/gh/gleitz/midi-js-soundfonts@gh-pages/FluidR3_GM/';
+const SAMPLE_MAP={piano:'acoustic_grand_piano',ep:'electric_piano_1',organ:'drawbar_organ',
+  strings:'string_ensemble_1',cello:'cello',brass:'trumpet',flute:'flute',
+  choir:'choir_aahs',pad:'pad_2_warm',guitar:'acoustic_guitar_nylon',bass:'acoustic_bass'};
+const FLAT_NAMES=['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
+const sampleCache=new Map();               // 'folder|pc|oct' -> AudioBuffer(성공) | null(실패) | Promise(진행중)
+const sampleKey=(folder,pc,oct)=>folder+'|'+pc+'|'+oct;
+async function fetchSample(folder,pc,oct){
+  const url=SAMPLE_BASE+folder+'-mp3/'+FLAT_NAMES[pc]+oct+'.mp3';
+  const r=await fetch(url); if(!r.ok)throw new Error('no sample');
+  const buf=await r.arrayBuffer();
+  const ctx=AC(); if(!ctx)throw new Error('no audio context');
+  return await ctx.decodeAudioData(buf);
+}
+function warmSample(folder,pc,oct){        // 백그라운드로 미리 받아둔다 — 지금 재생을 막지 않는다
+  const key=sampleKey(folder,pc,oct);
+  if(sampleCache.has(key))return;
+  const p=fetchSample(folder,pc,oct).then(ab=>{sampleCache.set(key,ab);return ab;})
+    .catch(()=>{sampleCache.set(key,null);return null;});
+  sampleCache.set(key,p);
+}
+/* 원하는 옥타브의 샘플이 아직 없으면, 같은 음이름의 다른(이미 받아진) 옥타브를 찾아
+   재생속도를 2의 거듭제곱으로 걸어 정확히 옮긴다(옥타브 이조는 배음이라 가장 자연스럽다).
+   아직 아무 옥타브도 캐시에 없으면(비동기 로딩 전) null — 그 순간만 합성음으로 대신한다. */
+function getCachedSample(folder,pc,oct){
+  for(let d=0;d<=4;d++){
+    const cands=d===0?[oct]:[oct-d,oct+d];
+    for(const o of cands){
+      const v=sampleCache.get(sampleKey(folder,pc,o));
+      if(v&&!(v instanceof Promise))return {buffer:v,octShift:oct-o};
+    }
+  }
+  return null;
+}
+function playSampleVoice(ctx,I,buf,octShift,t,dur,vel,out2){
+  const src=ctx.createBufferSource();
+  src.buffer=buf; src.playbackRate.value=Math.pow(2,octShift);
+  const g=ctx.createGain(), peak=Math.max(.0002,vel);
+  g.gain.setValueAtTime(.0001,t);
+  g.gain.exponentialRampToValueAtTime(peak,t+Math.min(.02,I.a||.01));   // 샘플 자체에 어택이 있어 살짝만 올린다
+  g.gain.setTargetAtTime(.0001,t+dur,Math.max(.05,(I.r||.3)/3));
+  src.connect(g); g.connect(out2);
+  src.start(t); src.stop(t+dur+(I.r||.3)+.4);
+}
+
 function voice(ctx,inst,midi,t,dur,vel,pan){
   const I=INSTRUMENTS[inst]||INSTRUMENTS.piano;
   if(I.oct)midi+=I.oct*12;
@@ -732,6 +848,13 @@ function voice(ctx,inst,midi,t,dur,vel,pan){
     const sp=ctx.createStereoPanner();
     sp.pan.value=Math.max(-.7,Math.min(.7,pan));
     sp.connect(master); out2=sp;
+  }
+  const sampleFolder=P.realInst!==false&&SAMPLE_MAP[inst];
+  if(sampleFolder){
+    const oct=Math.floor(midi/12)-1, pc=mod(midi);
+    const hit=getCachedSample(sampleFolder,pc,oct);
+    if(hit){ playSampleVoice(ctx,I,hit.buffer,hit.octShift,t,dur,vel,out2); return; }
+    warmSample(sampleFolder,pc,oct);   // 이번 음은 합성음으로, 다음부터는 실제 소리로
   }
   if(I.pluck){
     const src=ctx.createBufferSource(); src.buffer=pluckBuf(ctx,f);
@@ -936,7 +1059,7 @@ function applyGenre(k){
 }
 
 /* ---- 시퀀서 ---- */
-const P={playing:false,bpm:84,genre:'',insts:['piano'],melInst:'ep',pattern:'block',beats:4,loop:true,click:false,melody:true,accomp:true,readMel:true,bySystem:true,melOct:0,melFit:true,
+const P={playing:false,bpm:84,genre:'',insts:['piano'],melInst:'ep',pattern:'block',beats:4,loop:true,click:false,melody:true,accomp:true,readMel:true,bySystem:true,ocrBoost:true,realInst:true,melOct:0,melFit:true,
          evs:[],total:0,k:0,cursorT:0,lastAt:0,t0:0,timer:null,marks:[],vmarks:[],vnext:1,cur:-1};
 
 function buildTimeline(){
@@ -1102,18 +1225,18 @@ function togglePlay(){ P.playing?stopPlay():startPlay(); }
 
 /* ============ 상태 ============ */
 const SAMPLE=`[Verse 1]
-♪ G4:1 A4:1 B4:1 A4:1 G4:1 A4:1 B4:1 D5:1 B4:1 A4:1 G4:2
+♪ G4:1 A4:1 B4:1 A4:1 | B4:1 A4:1 G4:1 A4:1 | B4:2 A4:1 G4:1
 G              D/F#         Em
 아침이 열리는 이 자리에서
-♪ C5:1 B4:1 A4:1 G4:1 A4:1 B4:1 A4:1 G4:2 G4:2
+♪ C5:1 B4:1 A4:1 G4:1 | A4:1 B4:1 A4:1 G4:1 | A4:1 B4:1 C5:1 B4:1 | A4:2 G4:2
 C              G/B          Am7    D
 나의 마음을 드립니다
 
 [Chorus]
-♪ G4:1 A4:1 B4:1 D5:1 D5:1 D5:1 B4:2
+♪ G4:1 A4:1 B4:1 D5:1 | D5:1 D5:1 C5:1 B4:1 | B4:1 A4:1 G4:2 | A4:1 B4:1 C5:2
 G       D       Em7     C
 주가 나의 노래 되시니
-♪ G4:1 A4:1 B4:1 A4:1 G4:1 A4:1 B4:1 G4:2
+♪ G4:1 A4:1 B4:1 A4:1 | G4:1 A4:1 B4:1 D5:1 | D5:1 C5:1 B4:1 A4:1 | B4:1 A4:1 G4:2 | A4:2 G4:2
 G       D/F#    C       D    G
 내 입술이 잠잠할 수 없네`;
 
@@ -1204,11 +1327,11 @@ function renderChartStaff(){
   /* 구간(절/후렴) 안에서는 원문 줄 구분과 무관하게 마디를 이어붙여
      한 줄에 4마디씩 보이도록 한다 — [Verse]/[Chorus] 같은 구간 표시나
      곡 끝에서만 끊는다. */
-  let accMel=[], accCh=[], accLy={};
+  let accMel=[], accCh=[], accLy={}, accFit=[];
   const flush=()=>{
     if(!accMel.length)return;
     const verses=Object.keys(accLy).map(Number).sort((a,b)=>a-b);
-    const {svgs,count}=renderStaffSection(accMel,accCh,accLy,verses,measureNo);
+    const {svgs,count}=renderStaffSection(accMel,accCh,accLy,verses,measureNo,accFit);
     measureNo+=count;
     if(svgs.length){
       const box=document.createElement('div');
@@ -1216,17 +1339,17 @@ function renderChartStaff(){
       box.innerHTML=svgs.join('');
       el.appendChild(box);
     }
-    accMel=[]; accCh=[]; accLy={};
+    accMel=[]; accCh=[]; accLy={}; accFit=[];
   };
   for(const b of blocks){
     if(b.k==='mel'){ pendMel=b; continue; }
     if(b.k==='blank'){ continue; }
     if(b.k==='sec'){ flush(); const d=document.createElement('div');d.className='section';d.textContent=b.text;el.appendChild(d);continue; }
-    const {melM,chM,lyM,verses,N}=measuresOfBlock(pendMel,b);
+    const {melM,chM,lyM,verses,N,fitM}=measuresOfBlock(pendMel,b);
     pendMel=null;
     if(!N)continue;
     const priorLen=accMel.length;
-    accMel=accMel.concat(melM); accCh=accCh.concat(chM);
+    accMel=accMel.concat(melM); accCh=accCh.concat(chM); accFit=accFit.concat(fitM);
     const known=new Set(Object.keys(accLy).map(Number)); verses.forEach(v=>known.add(v));
     known.forEach(v=>{
       if(!accLy[v])accLy[v]=new Array(priorLen).fill(0).map(()=>[]);
@@ -1364,7 +1487,7 @@ function saveLast(){
       t:$('title').value, raw:S.raw, semis:S.semis, verse:S.verse, flat:S.flat,
       num:S.num, capo:S.capo, font:S.font, col:S.col, mode:S.mode,
       bpm:P.bpm, insts:P.insts, melInst:P.melInst, pattern:P.pattern,
-      beats:P.beats, genre:P.genre, loop:P.loop, click:P.click, melody:P.melody,
+      beats:P.beats, genre:P.genre, loop:P.loop, click:P.click, melody:P.melody, realInst:P.realInst,
       at:Date.now()
     }));
   }catch(e){}
@@ -1383,6 +1506,7 @@ function restoreLast(){
   if(r.melInst)P.melInst=r.melInst;
   if(r.pattern)P.pattern=r.pattern; if(r.beats)P.beats=r.beats;
   P.genre=r.genre||''; P.loop=r.loop!==false; P.click=!!r.click; P.melody=r.melody!==false;
+  P.realInst=r.realInst!==false;
   if(r.t)$('title').value=r.t;
   return true;
 }
@@ -1542,8 +1666,16 @@ function makePrompt(withMel){
    - 못갖춘마디로 시작하면 첫 | 앞에 그 음들만 적습니다.
    - 음이름 + 옥타브 숫자. 가온다는 C4. 임시표는 # 또는 b 를 음이름 바로 뒤에.
    - 조표를 반영해 실제로 소리나는 음을 씁니다. ♭이 2개면 B와 E는 Bb, Eb 입니다.
-   - 콜론 뒤는 박수. 4분음표 1, 8분음표 0.5, 16분음표 0.25, 2분음표 2, 점4분음표 1.5, 온음표 4.
-   - 쉼표는 r:박수.
+   - 콜론 뒤는 박수. 아래 표를 그대로 따르세요:
+     온음표=4, 점2분음표=3, 2분음표=2, 점4분음표=1.5, 4분음표=1,
+     점8분음표=0.75, 8분음표=0.5, 16분음표=0.25.
+   - 쉼표(소리가 안 나는 구간)도 음표와 똑같은 박수 단위로 셉니다. r:박수 로 적으세요:
+     온쉼표=r:4, 2분쉼표=r:2, 4분쉼표=r:1, 8분쉼표=r:0.5, 16분쉼표=r:0.25.
+     ★ 음표들 사이에 소리가 안 나는 구간이 보이면 절대 건너뛰지 말고 반드시 r:박수 를 넣으세요.
+   ★★ 각 마디(| 로 구분된 구간)의 박수 합(음표+쉼표)은 반드시 박자표와 정확히 같아야 합니다.
+      예를 들어 4/4박자면 모든 마디는 정확히 4박이어야 합니다 — 3.5박이나 4.5박처럼
+      모자라거나 넘치면 안 됩니다. 다 적은 뒤 각 마디를 스스로 박수 합산해서 검산하고,
+      맞지 않으면 놓친 음표나 쉼표가 있는지 다시 확인해 고치세요. (못갖춘마디는 예외)
 `:``)+`5. 2절 가사가 없으면 그 줄은 생략합니다. 2절에는 코드를 끼워 넣지 않습니다.
 6. 확실하지 않은 코드는 추측하지 말고 [?] 로 남깁니다.
 7. 설명, 인사말, 코드블록 표시를 붙이지 말고 결과만 출력합니다.`;
@@ -1565,6 +1697,7 @@ async function prepImage(f){
 async function onPickFile(e){
   const files=[...(e.target.files||[])];
   if(!files.length)return;
+  S.importMode='photo';
   let bad=0;
   for(const f of files){
     try{ S.photos.push(await prepImage(f)); }catch(err){ bad++; }
@@ -1577,6 +1710,7 @@ document.addEventListener('paste',ev=>{
   const it=[...(ev.clipboardData&&ev.clipboardData.items||[])].find(i=>i.type.startsWith('image/'));
   if(!it)return;
   const f=it.getAsFile(); if(!f)return;
+  S.importMode='photo';
   prepImage(f).then(p=>{S.photos.push(p);openPanel('scan')}).catch(()=>toast('이미지를 열지 못했습니다.'));
 });
 
@@ -1782,55 +1916,62 @@ function wordsToChart(words){
   }
   return out.join('\n');
 }
+async function ensureOcrWorkers(say){
+  if(!window.Tesseract){
+    say&&say('OCR 엔진을 내려받는 중…');
+    await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js');
+  }
+  const SPARSE=(window.Tesseract&&Tesseract.PSM&&Tesseract.PSM.SPARSE_TEXT)||'11';
+  if(!wChord){
+    say&&say('코드 인식 준비 중…');
+    wChord=await Tesseract.createWorker('eng',1,{logger:m=>{if(m.progress!==undefined)say&&say('코드 인식 준비 '+Math.round(m.progress*100)+'%')}});
+    await wChord.setParameters({
+      tessedit_pageseg_mode:SPARSE,
+      tessedit_char_whitelist:'ABCDEFGabdgijmosu#/0123456789'
+    });
+  }
+  if(!wLyric){
+    say&&say('한글 인식 데이터를 내려받는 중… 처음 한 번만 오래 걸립니다.');
+    wLyric=await Tesseract.createWorker(['kor','eng'],1,{logger:m=>{if(m.progress!==undefined)say&&say('한글 준비 '+Math.round(m.progress*100)+'%')}});
+  }
+}
+/* 사진 여러 장을 OCR로 읽어 "코드+가사" 초안 텍스트를 만든다(음표는 못 읽음).
+   - 단독으로 쓰면 키 없는 OCR 결과
+   - runScan()에서 API 프롬프트에 참고 힌트로 얹으면 AI 채보 정확도를 보정하는 용도로도 쓴다 */
+async function ocrDraft(photoUrls,say){
+  await ensureOcrWorkers(say);
+  const pages=[]; let chordN=0, lyricN=0;
+  for(let i=0;i<photoUrls.length;i++){
+    const tag=photoUrls.length>1?(i+1)+'/'+photoUrls.length+'쪽 ':'';
+    say&&say(tag+'오선을 지우는 중…');
+    const clean=await stripStaff(photoUrls[i],2);
+    say&&say(tag+'코드 심볼을 읽는 중…');
+    const rc=await wChord.recognize(clean,{},{blocks:true,text:false});
+    const chordWords=wordsFrom(rc.data)
+      .filter(w=>w.text&&w.text.trim()&&(w.confidence===undefined||w.confidence>40))
+      .filter(w=>parseChord(fixChordToken(w.text.trim())))
+      .map(w=>({text:w.text,bbox:w.bbox,kind:'c'}));
+    say&&say(tag+'가사를 읽는 중…');
+    const rl=await wLyric.recognize(clean,{},{blocks:true,text:false});
+    const lyricWords=wordsFrom(rl.data)
+      .filter(w=>w.text&&/[가-힣]/.test(w.text))
+      .map(w=>({text:w.text,bbox:w.bbox,kind:'l'}));
+    chordN+=chordWords.length; lyricN+=lyricWords.length;
+    const txt=wordsToChart(chordWords.concat(lyricWords));
+    if(txt.trim())pages.push(txt);
+  }
+  return {text:pages.join('\n\n'),chordN,lyricN};
+}
 async function runOCR(){
   if(!S.photos.length)return;
   const box=$('scanstate');
   const say=m=>{box.className='callout work';box.innerHTML='<span class="spin"></span> '+m;};
   try{
-    say('사진에서 오선을 지우는 중…');
-    const cleans=[];
-    for(let i=0;i<S.photos.length;i++){
-      say((S.photos.length>1?(i+1)+'/'+S.photos.length+'쪽 ':'')+'오선을 지우는 중…');
-      cleans.push(await stripStaff(S.photos[i].url,2));
-    }
-    if(!window.Tesseract){
-      say('OCR 엔진을 내려받는 중…');
-      await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js');
-    }
-    const SPARSE=(window.Tesseract&&Tesseract.PSM&&Tesseract.PSM.SPARSE_TEXT)||'11';
-
-    /* 1차: 코드 심볼만. 영문 + 코드에 쓰이는 글자만 허용 */
-    if(!wChord){
-      say('코드 인식 준비 중…');
-      wChord=await Tesseract.createWorker('eng',1,{logger:m=>{if(m.progress!==undefined)say('코드 인식 준비 '+Math.round(m.progress*100)+'%')}});
-      await wChord.setParameters({
-        tessedit_pageseg_mode:SPARSE,
-        tessedit_char_whitelist:'ABCDEFGabdgijmosu#/0123456789'
-      });
-    }
-    say('코드 심볼을 읽는 중…');
-    const rc=await wChord.recognize(cleans[0],{},{blocks:true,text:false});
-    const chordWords=wordsFrom(rc.data)
-      .filter(w=>w.text&&w.text.trim()&&(w.confidence===undefined||w.confidence>40))
-      .filter(w=>parseChord(fixChordToken(w.text.trim())))
-      .map(w=>({text:w.text,bbox:w.bbox,kind:'c'}));
-
-    /* 2차: 한글 가사 */
-    if(!wLyric){
-      say('한글 인식 데이터를 내려받는 중… 처음 한 번만 오래 걸립니다.');
-      wLyric=await Tesseract.createWorker(['kor','eng'],1,{logger:m=>{if(m.progress!==undefined)say('한글 준비 '+Math.round(m.progress*100)+'%')}});
-    }
-    say('가사를 읽는 중…');
-    const rl=await wLyric.recognize(cleans[0],{},{blocks:true,text:false});
-    const lyricWords=wordsFrom(rl.data)
-      .filter(w=>w.text&&/[가-힣]/.test(w.text))
-      .map(w=>({text:w.text,bbox:w.bbox,kind:'l'}));
-
-    const txt=wordsToChart(chordWords.concat(lyricWords));
+    const {text:txt,chordN,lyricN}=await ocrDraft(S.photos.map(p=>p.url),say);
     if(!txt.trim())throw new Error('읽어낸 내용이 없습니다');
     S.raw=txt; S.semis=0; S.verse=1; stopPlay(); reparse(); renderAll(); addHistory();
     box.className='callout ok';
-    box.innerHTML='<b>코드 '+chordWords.length+'개, 가사 '+lyricWords.length+'덩어리를 읽었습니다.</b> '
+    box.innerHTML='<b>코드 '+chordN+'개, 가사 '+lyricN+'덩어리를 읽었습니다'+(S.photos.length>1?' ('+S.photos.length+'쪽)':'')+'.</b> '
       +'키 없이 읽은 것이라 빠지거나 틀린 게 많습니다. 원본과 비교하며 <b>직접 입력</b>에서 고쳐 주세요. '
       +'멜로디(음표)는 읽지 못합니다.';
   }catch(err){
@@ -1943,6 +2084,17 @@ async function runScan(){
   const say=m=>{box.className='callout work';box.innerHTML='<span class="spin"></span> '+m;};
   LAST_TRUNCATED=false; P._retried=false;
   try{
+    /* OCR로 먼저 코드·가사 초안을 훑어서, AI가 헷갈리기 쉬운 코드 기호·글자를
+       구분할 때 참고하도록 프롬프트에 힌트로 얹는다. 실패해도 API 채보 자체는 그대로 진행한다. */
+    let ocrHint='';
+    if(P.ocrBoost!==false){
+      try{
+        const d=await ocrDraft(S.photos.map(p=>p.url),m=>say('OCR로 초안 대조 중… '+m));
+        if(d.text.trim())ocrHint='\n\n참고용 OCR 초안(문자 인식 결과라 오타·오류가 있을 수 있습니다. '
+          +'코드 기호나 헷갈리는 글자를 구분할 때만 참고하고, 실제 내용은 항상 사진 이미지를 기준으로 판단하세요):\n---\n'
+          +d.text+'\n---';
+      }catch(e){ /* OCR 보정은 실패해도 무시하고 API만으로 진행 */ }
+    }
     /* 한 장을 단 단위로 쪼개면 인식이 정확해진다 */
     let shots=S.photos;
     if(P.bySystem!==false){
@@ -1960,7 +2112,7 @@ async function runScan(){
       const tag=NN>1?(i+1)+'/'+NN+'단 ':'';
       say(tag+'악보를 읽는 중입니다…');
       const b64=shots[i].b64;
-      const usePrompt=P.readMel===false?makePrompt(false):PROMPT;
+      const usePrompt=(P.readMel===false?makePrompt(false):PROMPT)+ocrHint;
       let t='';
       if(hosted){
         const r=await fetch(SCAN_ENDPOINT,{method:'POST',headers:{'content-type':'application/json'},
@@ -1988,7 +2140,7 @@ async function runScan(){
       if(LAST_TRUNCATED&&P.readMel!==false&&!hosted){
         say(tag+'길이가 넘쳐 멜로디 없이 다시 읽는 중…');
         LAST_TRUNCATED=false;
-        const p2=makePrompt(false);
+        const p2=makePrompt(false)+ocrHint;
         if(prov==='gemini')t=await geminiScan(getGKey(),p2,b64,m=>say(tag+m));
       }
       t=t.trim().replace(/^```[a-z]*\n?/i,'').replace(/```\s*$/,'').trim();
@@ -2010,17 +2162,202 @@ async function runScan(){
   }
 }
 
+/* ============ 음악 파일 → 채보(베타) ============
+   서버 없이 브라우저 안에서만 동작: 가사는 Whisper(transformers.js, CDN에서 모델을 받아옴),
+   멜로디는 자기상관(autocorrelation) 기반 단음 피치 추적으로 뽑는다.
+   합주곡(여러 음이 겹치는 곡)에는 안 맞고, 보컬이 뚜렷한 단선율 위주로만 그럭저럭 동작한다. */
+function audioToMono(buffer){
+  if(buffer.numberOfChannels===1)return buffer.getChannelData(0).slice();
+  const L=buffer.getChannelData(0), R=buffer.getChannelData(1), out=new Float32Array(L.length);
+  for(let i=0;i<L.length;i++)out[i]=(L[i]+R[i])/2;
+  return out;
+}
+async function resampleTo(buffer,rate){
+  const len=Math.max(1,Math.ceil(buffer.duration*rate));
+  const off=new OfflineAudioContext(1,len,rate);
+  const src=off.createBufferSource(); src.buffer=buffer; src.connect(off.destination); src.start();
+  const rendered=await off.startRendering();
+  return rendered.getChannelData(0).slice();
+}
+/* 프레임마다 RMS(소리 크기)와 자기상관으로 얻은 기본주파수를 구해 반음 단위로 묶는다 */
+function detectMelodyNotes(mono,sr){
+  const frame=1024, hop=512;
+  const minLag=Math.floor(sr/1000), maxLag=Math.floor(sr/70);
+  const hopSec=hop/sr, runs=[]; let cur=null;
+  for(let i=0;i+frame<=mono.length;i+=hop){
+    let rms=0; for(let j=0;j<frame;j++)rms+=mono[i+j]*mono[i+j];
+    rms=Math.sqrt(rms/frame);
+    let midi=null;
+    if(rms>0.012){
+      let bestLag=-1,bestVal=0;
+      for(let lag=minLag;lag<=maxLag;lag++){
+        let sum=0; for(let j=0;j<frame-lag;j++)sum+=mono[i+j]*mono[i+j+lag];
+        if(sum>bestVal){bestVal=sum;bestLag=lag;}
+      }
+      if(bestLag>0){ const f0=sr/bestLag; midi=Math.round(69+12*Math.log2(f0/440)); }
+    }
+    const rest=(midi===null);
+    if(cur&&((rest&&cur.rest)||(!rest&&!cur.rest&&midi===cur.midi))){ cur.dur+=hopSec; continue; }
+    if(cur)runs.push(cur);
+    cur=rest?{rest:true,dur:hopSec}:{midi,dur:hopSec};
+  }
+  if(cur)runs.push(cur);
+  const MIN=hopSec*3, merged=[];               // 3프레임 미만 잡음은 앞 음에 흡수
+  for(const n of runs){
+    if(n.dur<MIN&&merged.length){ merged[merged.length-1].dur+=n.dur; continue; }
+    merged.push(n);
+  }
+  return merged;                                // [{midi|rest,dur(초)}]
+}
+/* 초 단위 길이를 주어진 BPM 기준 박수로 바꾸고 16분음표 단위로 반올림 */
+function quantizeToBeats(runs,bpm){
+  return runs.map(n=>{
+    let b=Math.max(0.25,Math.round((n.dur*(bpm/60))/0.25)*0.25);
+    return n.rest?{rest:true,beats:b}:{midi:n.midi,beats:b};
+  });
+}
+/* 마디 경계(beatsPerBar)에서 음을 잘라 마디선을 끼워 넣는다 */
+function barSplitNotes(notes,beatsPerBar){
+  const out=[]; let pos=0;
+  for(const n of notes){
+    let remain=n.beats;
+    while(remain>0.001){
+      const take=Math.min(remain,beatsPerBar-pos);
+      out.push(n.rest?{rest:true,beats:take}:{midi:n.midi,beats:take});
+      pos+=take; remain-=take;
+      if(pos>=beatsPerBar-0.001){ out.push({bar:true}); pos=0; }
+    }
+  }
+  while(out.length&&out[out.length-1].bar)out.pop();
+  return out;
+}
+function barCountOf(notes){ return notes.filter(n=>n.bar).length+1; }
+/* Whisper 단어 타임스탬프를 같은 마디 구간에 떨어지는 것끼리 묶어 가사 줄을 만든다 */
+function wordsToBarredLyric(chunks,barCount,beatsPerBar,bpm){
+  const secPerBeat=60/bpm, barSec=beatsPerBar*secPerBeat;
+  const buckets=new Array(barCount).fill(0).map(()=>[]);
+  (chunks||[]).forEach(c=>{
+    const t=(c.timestamp&&c.timestamp[0])||0;
+    const bi=Math.min(barCount-1,Math.max(0,Math.floor(t/barSec)));
+    const w=(c.text||'').trim(); if(w)buckets[bi].push(w);
+  });
+  // 가사가 없는 마디(간주 등)를 빈 문자열로 두면 파서(withBars)가 그 마디선을 지워버려
+  // 멜로디 마디 수와 어긋난다 — 자리표시자를 넣어 마디 개수를 지킨다.
+  return buckets.map(b=>b.length?b.join(' '):'·').join('|');
+}
+let TFJS=null;
+async function loadWhisper(onProg){
+  if(!TFJS){
+    const mod=await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2');
+    mod.env.allowLocalModels=false;
+    TFJS=mod;
+  }
+  return TFJS.pipeline('automatic-speech-recognition','Xenova/whisper-base',{progress_callback:onProg});
+}
+/* 전체 파이프라인: 파일 → 멜로디(오선) + 가사(마디 정렬), S.raw에 새 곡으로 써 넣는다 */
+async function runAudioTranscribe(setStatus){
+  const ab=S.audioFile&&S.audioFile.buf; if(!ab)throw new Error('no-buffer');
+  const beatsPerBar=P.beats||4, bpm0=P.bpm;   // 처리 중 사용자가 BPM/박자표를 바꿔도 흔들리지 않도록 시작 시점 값을 고정
+
+  setStatus('멜로디 분석 중… (곡 길이에 따라 오래 걸릴 수 있어요)');
+  const mono8k=await resampleTo(ab,8000);
+  const rawNotes=detectMelodyNotes(mono8k,8000);
+  const barred=barSplitNotes(quantizeToBeats(rawNotes,bpm0),beatsPerBar);
+  const bars=barCountOf(barred);
+
+  setStatus('가사 인식 모델을 내려받는 중… (처음 한 번만, 수십MB)');
+  const asr=await loadWhisper(p=>{
+    if(p&&p.status==='progress')setStatus('모델 다운로드 중… '+Math.round(p.progress||0)+'%');
+  });
+  setStatus('가사를 텍스트로 옮기는 중…');
+  const mono16k=await resampleTo(ab,16000);
+  const result=await asr(mono16k,{chunk_length_s:30,stride_length_s:5,return_timestamps:'word',language:'korean',task:'transcribe'});
+  const lyricLine=wordsToBarredLyric(result.chunks,bars,beatsPerBar,bpm0);
+
+  const title=($('title').value||'').trim()||(S.audioFile.name||'').replace(/\.[^.]+$/,'');
+  $('title').value=title;
+  S.raw='[Verse 1]\n'+melLine(barred,0,'flat')+'\n'+(lyricLine||result.text||'');
+  S.semis=0; S.verse=1; S.mode='auto';
+  stopPlay(); reparse(); renderAll();
+}
+
 /* ============ 패널 ============ */
 function openPanel(name){
-  const s=$('sheet'),titles={scan:'사진에서 가져오기',input:'악보 편집',library:'저장된 콘티',export:'내보내기',diag:'멜로디 진단',play:'재생 설정',view:'보기 설정',staff:'오선보'};
+  const s=$('sheet');
+  const scanTitle=S.importMode==='audio'?'음악 파일에서 채보':S.importMode==='photo'?'사진에서 가져오기':'가져오기';
+  const titles={scan:scanTitle,input:'악보 편집',library:'저장된 콘티',export:'내보내기',diag:'멜로디 진단',play:'재생 설정',view:'보기 설정',staff:'오선보'};
   s.innerHTML='<div class="sheethead"><span class="eyebrow">'+titles[name]+'</span><button class="btn" id="close">닫기</button></div>';
   const body=document.createElement('div');s.appendChild(body);
   $('close').onclick=closePanel;
 
+  if(name==='scan'&&!S.importMode){
+    body.innerHTML='<p class="note" style="margin-top:0">어떤 방법으로 악보를 만들까요?</p>'
+      +'<div class="modecards">'
+      +'<button class="modecard" id="pick-photo"><span class="ico">📷</span><span>'
+      +'<span class="tt">사진으로 코드차트 인식</span>'
+      +'<span class="ds">종이 악보·코드차트 사진을 찍으면 코드·가사·멜로디를 텍스트로 옮겨 적습니다.</span></span></button>'
+      +'<button class="modecard" id="pick-audio"><span class="ico">🎵</span><span>'
+      +'<span class="tt">음악 파일로 자동 채보<span class="badge">베타</span></span>'
+      +'<span class="ds">mp3·m4a 같은 음악 파일을 넣으면 브라우저 안에서(서버 없이, 무료) 가사(음성 인식)와 멜로디(오디오→악보)를 뽑아냅니다. 느릴 수 있습니다.</span></span></button>'
+      +'</div>';
+    $('pick-photo').onclick=()=>{S.importMode='photo';openPanel('scan')};
+    $('pick-audio').onclick=()=>{S.importMode='audio';openPanel('scan')};
+    $('scrim').classList.add('open');
+    return;
+  }
+
+  if(name==='scan'&&S.importMode==='audio'){
+    const busy=!!S.audioBusy;
+    body.innerHTML='<button class="backlink" id="back" '+(busy?'disabled':'')+'>‹ 다른 방법 고르기</button>'
+      +'<div class="callout work">🎵 베타 · 브라우저 안에서만 동작(서버 없음, 무료) · 인식이 완벽하지 않을 수 있어 결과를 꼭 확인·수정하세요.</div>'
+      +'<div class="btns" style="margin-top:0">'
+      +'<label class="btn lg on wide" for="afile">음악 파일 고르기</label>'
+      +'</div>'
+      +'<input type="file" id="afile" class="vh" accept="audio/*" '+(busy?'disabled':'')+'>'
+      +(S.audioFile
+        ? '<div class="rowline"><span><b>'+esc(S.audioFile.name)+'</b><small>'+S.audioFile.durText+'</small></span></div>'
+        : '<div class="drop" style="margin-top:14px">음악 파일(mp3, m4a, wav 등)을 넣으면 여기 표시됩니다.<br>지금 이 곡의 BPM(<b>'+P.bpm+'</b>)으로 박자를 맞춰 읽으니, 미리 재생 설정에서 실제 곡 빠르기에 맞춰두면 더 정확합니다.<br>유튜브 링크는 직접 지원하지 않습니다 — 다른 앱으로 오디오 파일로 저장한 뒤 여기에 올려주세요.</div>')
+      +'<div id="astate">'+(busy?'<div class="callout work"><span class="spin"></span>'+esc(S.audioStatus||'처리 중…')+'</div>':'')+'</div>'
+      +(S.audioFile&&!busy
+        ? '<div class="btns"><button class="btn lg on wide" id="go-audio">가사·멜로디 인식 시작</button></div>'
+        : '');
+    $('back').onclick=()=>{ if(busy)return; S.importMode=null;openPanel('scan')};
+    if($('afile'))$('afile').onchange=async e=>{
+      const f=e.target.files&&e.target.files[0]; if(!f)return;
+      try{
+        const buf=await f.arrayBuffer();
+        const ac=new (window.AudioContext||window.webkitAudioContext)();
+        const ab=await ac.decodeAudioData(buf);
+        const sec=Math.round(ab.duration);
+        S.audioFile={name:f.name,durText:Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0'),buf:ab};
+        ac.close&&ac.close();
+      }catch(err){ toast('음악 파일을 열지 못했습니다.'); S.audioFile=null; }
+      openPanel('scan');
+    };
+    if($('go-audio'))$('go-audio').onclick=async()=>{
+      S.audioBusy=true; S.audioStatus='시작하는 중…'; openPanel('scan');
+      try{
+        await runAudioTranscribe(msg=>{ S.audioStatus=msg;
+          const el=$('astate'); if(el)el.innerHTML='<div class="callout work"><span class="spin"></span>'+esc(msg)+'</div>';
+        });
+        S.audioBusy=false; S.importMode=null;
+        toast('가사·멜로디를 옮겨 적었습니다. 내용을 확인해 고쳐 주세요.');
+        closePanel();
+      }catch(err){
+        S.audioBusy=false;
+        toast('인식에 실패했습니다: '+(err&&err.message||err));
+        openPanel('scan');
+      }
+    };
+    $('scrim').classList.add('open');
+    return;
+  }
+
   if(name==='scan'){
     const hosted=!!SCAN_ENDPOINT, showCfg=!!S.showCfg;
     body.innerHTML=
-      (LOCAL_FILE&&!hosted
+      '<button class="backlink" id="back">‹ 다른 방법 고르기</button>'
+      +(LOCAL_FILE&&!hosted
         ? '<div class="callout err">내려받은 파일로 열면 사진 인식이 막힙니다(CORS). https 주소로 여세요.</div>' : '')
       +'<div class="btns" style="margin-top:0">'
       +'<label class="btn lg on wide" for="file">사진 고르기</label>'
@@ -2041,6 +2378,8 @@ function openPanel(name){
       +'<button class="btn '+(P.readMel!==false?'on':'')+'" id="melread">'+(P.readMel!==false?'켬':'끔')+'</button></div>'
       +'<div class="rowline"><span><b>단별로 나눠 읽기</b><small>오선 줄마다 잘라 따로 인식합니다. 느리지만 정확합니다</small></span>'
       +'<button class="btn '+(P.bySystem!==false?'on':'')+'" id="bysys">'+(P.bySystem!==false?'켬':'끔')+'</button></div>'
+      +'<div class="rowline"><span><b>OCR로 초안 대조</b><small>문자 인식(무료, 키 없음)으로 먼저 훑어본 걸 참고해 코드·가사를 보정합니다. 처음 쓸 때 조금 더 걸릴 수 있습니다</small></span>'
+      +'<button class="btn '+(P.ocrBoost!==false?'on':'')+'" id="ocrboost">'+(P.ocrBoost!==false?'켬':'끔')+'</button></div>'
       +'<div id="scanstate"></div>'
       +(S.photos.length
         ? '<div class="btns"><button class="btn lg on wide" id="go">코드 차트로 바꾸기'
@@ -2061,12 +2400,14 @@ function openPanel(name){
               +'<input class="field" id="apikey" type="password" placeholder="sk-ant-... (Claude 키)" value="'+esc(getKey())+'">')
         : '');
 
+    $('back').onclick=()=>{S.importMode=null;openPanel('scan')};
     $('cfgtoggle').onclick=()=>{S.showCfg=!showCfg;openPanel('scan')};
     body.querySelectorAll('[data-prov]').forEach(b=>b.onclick=()=>{setLS('konti:prov',b.dataset.prov);S.showCfg=true;openPanel('scan')});
     if($('apikey'))$('apikey').onchange=e=>setLS('konti:apikey',e.target.value.trim());
     if($('gkey'))$('gkey').onchange=e=>setLS('konti:gkey',e.target.value.trim());
     if($('melread'))$('melread').onclick=()=>{P.readMel=P.readMel===false;openPanel('scan')};
     if($('bysys'))$('bysys').onclick=()=>{P.bySystem=P.bySystem===false;openPanel('scan')};
+    if($('ocrboost'))$('ocrboost').onclick=()=>{P.ocrBoost=P.ocrBoost===false;openPanel('scan')};
     if($('file'))$('file').onchange=onPickFile;
     if($('camopen'))$('camopen').onclick=openCam;
     if($('shoot'))$('shoot').onclick=shoot;
@@ -2266,6 +2607,8 @@ function openPanel(name){
       +Object.keys(INSTRUMENTS).map(k=>
         '<button class="btn '+(instList().indexOf(k)>=0?'on':'')+'" data-inst="'+k+'">'+INSTRUMENTS[k].label+'</button>').join('')
       +'</div><p class="note" style="margin:-6px 0 14px">여러 개를 골라 함께 울릴 수 있습니다. 현악+플루트, 피아노+첼로처럼 겹쳐 보세요.</p>'
+      +'<div class="rowline"><span><b>실제 악기음</b><small>합성음 대신 실제 녹음된 악기 소리를 씁니다. 온라인일 때만 되고, 처음 나오는 음은 받는 동안만 합성음으로 대신합니다</small></span>'
+      +'<button class="btn '+(P.realInst!==false?'on':'')+'" id="realinst">'+(P.realInst!==false?'켬':'끔')+'</button></div>'
       +(hasMelody()
         ? '<span class="lbl">멜로디</span><div class="opts">'
           +'<button class="btn '+(P.melody?'on':'')+'" id="mel">'+(P.melody?'켬':'끔')+'</button>'
@@ -2327,6 +2670,7 @@ function openPanel(name){
       P.melInst=b.dataset.minst; if(P.playing)startPlay(); openPanel('play');
     });
     if($('melfit'))$('melfit').onclick=()=>{P.melFit=P.melFit===false;if(P.playing)startPlay();openPanel('play')};
+    if($('realinst'))$('realinst').onclick=()=>{P.realInst=P.realInst===false;openPanel('play')};
     body.querySelectorAll('[data-moct]').forEach(b=>b.onclick=()=>{
       P.melOct=parseInt(b.dataset.moct,10)||0; if(P.playing)startPlay(); openPanel('play');
     });
