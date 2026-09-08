@@ -1996,10 +1996,13 @@ function wordsToChart(words){
   if(!ws.length)return '';
   const medH=ws.map(w=>w.h).sort((a,b)=>a-b)[Math.floor(ws.length/2)]||20;
   ws.sort((a,b)=>a.yc-b.yc);
+  /* 절 번호('v', 예: 전통 찬송가의 왼쪽 여백 "1." "2." "3.")는 코드('c')와는 다른 줄이지만
+     그 옆 가사('l')와는 같은 줄이다 — 묶을 때는 코드만 따로, 가사+절번호는 한 묶음으로 본다. */
+  const grp=k=>k==='c'?'c':'l';
   const lines=[];
   for(const w of ws){
     const L=lines[lines.length-1];
-    if(L&&Math.abs(w.yc-L.yc)<medH*0.7&&L.items[0].kind===w.kind){
+    if(L&&Math.abs(w.yc-L.yc)<medH*0.7&&grp(L.kind)===grp(w.kind)){
       L.items.push(w); L.yc=(L.yc*(L.items.length-1)+w.yc)/L.items.length;
     } else lines.push({yc:w.yc,items:[w],kind:w.kind});
   }
@@ -2011,7 +2014,9 @@ function wordsToChart(words){
     const isChord=L.kind==='c';
     let line='';
     for(const w of L.items){
-      const text=isChord?fixChordToken(w.t):w.t;
+      /* 절 번호 1은 표시하지 않음(코드 붙은 기본 절), 2 이상만 "2) " 형식으로 —
+         나머지 파서가 그 형식으로 다음 절 가사를 알아본다. */
+      const text=isChord?fixChordToken(w.t):(w.kind==='v'?(w.t==='1'?'':w.t+') '):w.t);
       if(!text)continue;
       const col=Math.round((w.x0-minX)/charW);
       while(line.length<col)line+=' ';
@@ -2049,22 +2054,33 @@ async function ocrDraft(photoUrls,say){
   const pages=[]; let chordN=0, lyricN=0;
   for(let i=0;i<photoUrls.length;i++){
     const tag=photoUrls.length>1?(i+1)+'/'+photoUrls.length+'쪽 ':'';
-    say&&say(tag+'오선을 지우는 중…');
-    const clean=await stripStaff(photoUrls[i],2);
-    say&&say(tag+'코드 심볼을 읽는 중…');
-    const rc=await wChord.recognize(clean,{},{blocks:true,text:false});
-    const chordWords=wordsFrom(rc.data)
-      .filter(w=>w.text&&w.text.trim()&&(w.confidence===undefined||w.confidence>40))
-      .filter(w=>parseChord(fixChordToken(w.text.trim())))
-      .map(w=>({text:w.text,bbox:w.bbox,kind:'c'}));
-    say&&say(tag+'가사를 읽는 중…');
-    const rl=await wLyric.recognize(clean,{},{blocks:true,text:false});
-    const lyricWords=wordsFrom(rl.data)
-      .filter(w=>w.text&&/[가-힣]/.test(w.text))
-      .map(w=>({text:w.text,bbox:w.bbox,kind:'l'}));
-    chordN+=chordWords.length; lyricN+=lyricWords.length;
-    const txt=wordsToChart(chordWords.concat(lyricWords));
-    if(txt.trim())pages.push(txt);
+    /* 한 장에 단이 여러 개 있으면(전통 찬송가 등) 단 단위로 잘라 한 단씩 읽는다 —
+       한 장 통째로 넣으면 밀도가 높아 코드·글자 인식이 훨씬 부정확해진다. */
+    let shots=[photoUrls[i]];
+    try{ const parts=await splitSystems(photoUrls[i]); if(parts&&parts.length)shots=parts.map(p=>p.url); }catch(e){}
+    for(let j=0;j<shots.length;j++){
+      const tag2=shots.length>1?tag+(j+1)+'/'+shots.length+'단 ':tag;
+      say&&say(tag2+'오선을 지우는 중…');
+      const clean=await stripStaff(shots[j],2);
+      say&&say(tag2+'코드 심볼을 읽는 중…');
+      const rc=await wChord.recognize(clean,{},{blocks:true,text:false});
+      const chordWords=wordsFrom(rc.data)
+        .filter(w=>w.text&&w.text.trim()&&(w.confidence===undefined||w.confidence>40))
+        .filter(w=>parseChord(fixChordToken(w.text.trim())))
+        .map(w=>({text:w.text,bbox:w.bbox,kind:'c'}));
+      say&&say(tag2+'가사를 읽는 중…');
+      const rl=await wLyric.recognize(clean,{},{blocks:true,text:false});
+      const rawLyric=wordsFrom(rl.data).filter(w=>w.text&&w.text.trim());
+      const lyricWords=rawLyric.filter(w=>/[가-힣]/.test(w.text))
+        .map(w=>({text:w.text,bbox:w.bbox,kind:'l'}));
+      /* 전통 찬송가는 절 가사 왼쪽에 "1. 2. 3. 4."로 번호가 붙어 있다.
+         한글이 없어 위 필터에서 빠지므로, 홀로 있는 한 자리 숫자(+점)만 절 번호 후보로 따로 챙긴다. */
+      const verseWords=rawLyric.filter(w=>/^[1-9][.).]?$/.test(w.text.trim())&&(w.confidence===undefined||w.confidence>40))
+        .map(w=>({text:w.text.trim().replace(/[.).]/g,''),bbox:w.bbox,kind:'v'}));
+      chordN+=chordWords.length; lyricN+=lyricWords.length;
+      const txt=wordsToChart(chordWords.concat(lyricWords).concat(verseWords));
+      if(txt.trim())pages.push(txt);
+    }
   }
   return {text:pages.join('\n\n'),chordN,lyricN};
 }
