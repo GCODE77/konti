@@ -2075,7 +2075,12 @@ async function ocrDraft(photoUrls,say){
         .map(w=>({text:w.text,bbox:w.bbox,kind:'l'}));
       /* 전통 찬송가는 절 가사 왼쪽에 "1. 2. 3. 4."로 번호가 붙어 있다.
          한글이 없어 위 필터에서 빠지므로, 홀로 있는 한 자리 숫자(+점)만 절 번호 후보로 따로 챙긴다. */
-      const verseWords=rawLyric.filter(w=>/^[1-9][.).]?$/.test(w.text.trim())&&(w.confidence===undefined||w.confidence>40))
+      const verseWords=rawLyric.filter(w=>{
+          const t=w.text.trim();
+          if(!/^[1-9][.).]?$/.test(t))return false;
+          if(w.confidence!==undefined&&w.confidence<70)return false;   // 잘못 읽은 낱자 숫자(페이지 번호·연도 조각 등)를 절 번호로 오인하지 않도록 엄격하게
+          return +t.replace(/[.).]/g,'')<=6;   // 찬송가 절이 6개를 넘는 경우는 거의 없다
+        })
         .map(w=>({text:w.text.trim().replace(/[.).]/g,''),bbox:w.bbox,kind:'v'}));
       chordN+=chordWords.length; lyricN+=lyricWords.length;
       const txt=wordsToChart(chordWords.concat(lyricWords).concat(verseWords));
