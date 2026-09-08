@@ -374,17 +374,36 @@ function parseChart(raw){
       const nx=lines[i+1];
       const ly=(nx!==undefined&&nx.trim()&&!isChordLine(nx)&&!isSection(nx)&&!MEL_RE.test(nx))?nx:null;
       if(ly!==null)i++;
+      const idx=pos.map(p=>ly?colToIndex(ly,p.col):p.col);
       const pairs=[];
-      if(pos.length&&pos[0].col>0)pairs.push({chord:null,raw:'',text:ly?ly.slice(0,pos[0].col):''});
+      if(pos.length&&idx[0]>0)pairs.push({chord:null,raw:'',text:ly?ly.slice(0,idx[0]):''});
       pos.forEach((p,j)=>{
-        const end=j+1<pos.length?pos[j+1].col:undefined;
-        pairs.push({chord:parseChord(p.raw),raw:p.raw,text:ly?ly.slice(p.col,end):''});
+        const end=j+1<pos.length?idx[j+1]:undefined;
+        pairs.push({chord:parseChord(p.raw),raw:p.raw,text:ly?ly.slice(idx[j],end):''});
       });
       out.push({k:'pairs',pairs:withBars(pairs)}); continue;
     }
     out.push({k:'pairs',pairs:withBars([{chord:null,raw:'',text:line}])});
   }
   return out;
+}
+/* 코드 줄의 칸(col)은 모노스페이스 폰트 기준 '보이는 너비'다.
+   한글/한자 등 동아시아 문자는 그 폰트에서 2칸을 차지하지만 JS 문자열
+   인덱스로는 1칸이라, col을 가사 문자열 인덱스로 그대로 쓰면 뒤로 갈수록
+   밀려서 결국 문자열 길이를 넘어가 뒤쪽 코드에 가사가 하나도 안 붙는
+   버그가 났었다. 보이는 너비를 누적해서 실제 인덱스로 변환해야 함. */
+function dispW(c){
+  const cp=c.codePointAt(0);
+  if((cp>=0x1100&&cp<=0x115F)||(cp>=0x2E80&&cp<=0xA4CF)||(cp>=0xAC00&&cp<=0xD7A3)
+    ||(cp>=0xF900&&cp<=0xFAFF)||(cp>=0xFF00&&cp<=0xFF60)||(cp>=0xFFE0&&cp<=0xFFE6)
+    ||(cp>=0x20000&&cp<=0x3FFFD))return 2;
+  return 1;
+}
+function strDispW(s){let w=0;for(const c of s)w+=dispW(c);return w;}
+function colToIndex(str,col){
+  let w=0,i=0;
+  for(;i<str.length;i++){ if(w>=col)break; w+=dispW(str[i]); }
+  return i;
 }
 function splitByCounts(src,counts){
   const out=[]; let i=0;
@@ -1307,19 +1326,15 @@ function togglePlay(){ P.playing?stopPlay():startPlay(); }
 /* ============ 상태 ============ */
 const SAMPLE=`[Verse 1]
 ♪ G4:1 A4:1 B4:1 A4:1 | B4:1 A4:1 G4:1 A4:1 | B4:2 A4:1 G4:1
-G              D/F#         Em
-아침이 열리는 이 자리에서
+|[G]아침이 |[D/F#]열리는 이 |[Em]자리에서
 ♪ C5:1 B4:1 A4:1 G4:1 | A4:1 B4:1 A4:1 G4:1 | A4:1 B4:1 C5:1 B4:1 | A4:2 G4:2
-C              G/B          Am7    D
-나의 마음을 드립니다
+|[C]나의 |[G/B]마음을 |[Am7]드립|[D]니다
 
 [Chorus]
 ♪ G4:1 A4:1 B4:1 D5:1 | D5:1 D5:1 C5:1 B4:1 | B4:1 A4:1 G4:2 | A4:1 B4:1 C5:2
-G       D       Em7     C
-주가 나의 노래 되시니
+|[G]주가 |[D]나의 노래 |[Em7]되시|[C]니
 ♪ G4:1 A4:1 B4:1 A4:1 | G4:1 A4:1 B4:1 D5:1 | D5:1 C5:1 B4:1 A4:1 | B4:1 A4:1 G4:2 | A4:2 G4:2
-G       D/F#    C       D    G
-내 입술이 잠잠할 수 없네`;
+|[G]내 입술이 |[D/F#]잠잠할 |[C]수 |[D]없|[G]네`;
 
 const S={raw:SAMPLE,semis:0,flat:null,num:false,capo:false,font:20,staffScale:.7,col:false,photos:[],verse:1,mode:'auto'};
 let blocks=[], origKey={pc:0,minor:false};
@@ -2030,16 +2045,20 @@ function wordsToChart(words){
   for(const L of lines){
     L.items.sort((a,b)=>a.x0-b.x0);
     const isChord=L.kind==='c';
-    let line='';
+    let line='',vcol=0;
+    /* line.length(문자 수)가 아니라 vcol(보이는 너비 누적)로 위치를 맞춘다 —
+       한글 단어는 chord 폰트 기준 charW 단위보다 넓어서, 문자 수 기준으로
+       칸을 세면 한글이 쌓일수록 실제 픽셀 위치보다 뒤처져 다음 코드와
+       어긋난다(parseChart의 colToIndex와 같은 단위를 써야 함). */
     for(const w of L.items){
       /* 절 번호 1은 표시하지 않음(코드 붙은 기본 절), 2 이상만 "2) " 형식으로 —
          나머지 파서가 그 형식으로 다음 절 가사를 알아본다. */
       const text=isChord?fixChordToken(w.t):(w.kind==='v'?(w.t==='1'?'':w.t+') '):w.t);
       if(!text)continue;
       const col=Math.round((w.x0-minX)/charW);
-      while(line.length<col)line+=' ';
-      if(line.length&&line[line.length-1]!==' ')line+=' ';
-      line+=text;
+      while(vcol<col){line+=' ';vcol++;}
+      if(line.length&&line[line.length-1]!==' '){line+=' ';vcol++;}
+      line+=text;vcol+=strDispW(text);
     }
     if(line.trim())out.push(line.replace(/\s+$/,''));
   }
