@@ -1788,17 +1788,24 @@ function makePrompt(withMel){
 }
 const PROMPT=makePrompt(true);
 
-async function prepImage(f){
-  const dataUrl=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f)});
-  const img=await new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=dataUrl});
-  const sc=Math.min(1,1600/Math.max(img.width,img.height));
+/* 캔버스 하나를 원하는 최대 변 길이로 맞춰 만든다(그레이스케일·대비 보정 포함) */
+function fitCanvas(img,cap){
+  const sc=Math.min(1,cap/Math.max(img.width,img.height));
   const cv=document.createElement('canvas');
   cv.width=Math.round(img.width*sc); cv.height=Math.round(img.height*sc);
   const c=cv.getContext('2d');
   c.filter='grayscale(1) contrast(1.25) brightness(1.05)';
   c.drawImage(img,0,0,cv.width,cv.height);
-  const out=cv.toDataURL('image/jpeg',.9);
-  return {url:out,b64:out.split(',')[1]};
+  return cv.toDataURL('image/jpeg',.9);
+}
+async function prepImage(f){
+  const dataUrl=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f)});
+  const img=await new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=dataUrl});
+  const out=fitCanvas(img,1600);
+  /* OCR(무료·키 없이 읽기)은 AI 인식과 달리 이미지 크기 제한이 없다 — 작은 글자가 많은
+     찬송가 등은 해상도가 정확도를 크게 좌우해서, 원본을 덜 줄인 별도 사본을 하나 더 만들어 둔다. */
+  const ocrOut=fitCanvas(img,2200);
+  return {url:out,b64:out.split(',')[1],ocrUrl:ocrOut};
 }
 async function onPickFile(e){
   const files=[...(e.target.files||[])];
@@ -1822,7 +1829,7 @@ document.addEventListener('paste',ev=>{
 
 /* 오선이 모인 줄(단)을 찾아 한 단씩 잘라낸다.
    한 번에 보는 음표가 줄면 음높이 인식이 훨씬 정확해진다. */
-function splitSystems(url){
+function splitSystems(url,targetW){
   return new Promise((res)=>{
     const img=new Image();
     img.onload=()=>{
@@ -1861,7 +1868,7 @@ function splitSystems(url){
           const top=Math.max(0,Math.floor((good[i][0]+prevEnd)/2)-6);
           const bot=Math.min(H,Math.ceil((good[i][1]+nextStart)/2)+6);
           const hh=bot-top; if(hh<20)continue;
-          const sc=Math.min(2.4,1400/W);
+          const sc=Math.min(3,(targetW||1400)/W);
           const c2=document.createElement('canvas');
           c2.width=Math.round(W*sc); c2.height=Math.round(hh*sc);
           const x2=c2.getContext('2d');
@@ -1899,15 +1906,18 @@ async function openCam(){
 }
 function shoot(){
   const v=$('cam'); if(!v||!v.videoWidth){toast('아직 화면이 준비되지 않았습니다.');return;}
-  const sc=Math.min(1,1600/Math.max(v.videoWidth,v.videoHeight));
-  const cv=document.createElement('canvas');
-  cv.width=Math.round(v.videoWidth*sc); cv.height=Math.round(v.videoHeight*sc);
-  const c=cv.getContext('2d');
-  c.filter='grayscale(1) contrast(1.25) brightness(1.05)';
-  c.drawImage(v,0,0,cv.width,cv.height);
-  const out=cv.toDataURL('image/jpeg',.9);
+  const fit=cap=>{
+    const sc=Math.min(1,cap/Math.max(v.videoWidth,v.videoHeight));
+    const cv=document.createElement('canvas');
+    cv.width=Math.round(v.videoWidth*sc); cv.height=Math.round(v.videoHeight*sc);
+    const c=cv.getContext('2d');
+    c.filter='grayscale(1) contrast(1.25) brightness(1.05)';
+    c.drawImage(v,0,0,cv.width,cv.height);
+    return cv.toDataURL('image/jpeg',.9);
+  };
+  const out=fit(1600), ocrOut=fit(2200);
   closeCam();
-  S.photos.push({url:out,b64:out.split(',')[1]});
+  S.photos.push({url:out,b64:out.split(',')[1],ocrUrl:ocrOut});
   openPanel('scan');
 }
 
@@ -2065,11 +2075,15 @@ async function ocrDraft(photoUrls,say){
     /* 한 장에 단이 여러 개 있으면(전통 찬송가 등) 단 단위로 잘라 한 단씩 읽는다 —
        한 장 통째로 넣으면 밀도가 높아 코드·글자 인식이 훨씬 부정확해진다. */
     let shots=[photoUrls[i]];
-    try{ const parts=await splitSystems(photoUrls[i]); if(parts&&parts.length)shots=parts.map(p=>p.url); }catch(e){}
+    /* 단 단위로 자르면 그 조각 안에서 다시 확대할 여유가 생긴다(전체 페이지를 한 번에 키우는
+       것보다 훨씬 싸다) — 그래서 여기서는 목표 해상도를 크게 잡는다. */
+    try{ const parts=await splitSystems(photoUrls[i],2200); if(parts&&parts.length)shots=parts.map(p=>p.url); }catch(e){}
     for(let j=0;j<shots.length;j++){
       const tag2=shots.length>1?tag+(j+1)+'/'+shots.length+'단 ':tag;
       say&&say(tag2+'오선을 지우는 중…');
-      const clean=await stripStaff(shots[j],2);
+      /* 단 단위로 잘랐으면 이미 위에서 충분히 확대했으니 그대로, 통째로(단 분리 실패) 넣을 땐
+         한 번 더 키운다 — 어느 쪽이든 작은 글자가 인식 가능한 크기가 되도록. */
+      const clean=await stripStaff(shots[j],shots.length>1?1:1.4);
       say&&say(tag2+'코드 심볼을 읽는 중…');
       const rc=await wChord.recognize(clean,{},{blocks:true,text:false});
       const chordWords=wordsFrom(rc.data)
@@ -2105,7 +2119,7 @@ async function runOCR(){
   const say=m=>{const b=$('scanstate'); if(b){b.className='callout work';b.innerHTML='<span class="spin"></span> '+m;} setWork(m);};
   say('OCR로 읽는 중…');
   try{
-    const {text:txt,chordN,lyricN}=await ocrDraft(S.photos.map(p=>p.url),say);
+    const {text:txt,chordN,lyricN}=await ocrDraft(S.photos.map(p=>p.ocrUrl||p.url),say);
     if(!txt.trim())throw new Error('읽어낸 내용이 없습니다');
     S.raw=txt; S.semis=0; S.verse=1; stopPlay(); reparse(); renderAll(); addHistory();
     const box=$('scanstate');
@@ -2234,7 +2248,7 @@ async function runScan(){
     let ocrHint='';
     if(P.ocrBoost!==false){
       try{
-        ocrResult=await ocrDraft(S.photos.map(p=>p.url),m=>say('OCR로 초안 대조 중… '+m));
+        ocrResult=await ocrDraft(S.photos.map(p=>p.ocrUrl||p.url),m=>say('OCR로 초안 대조 중… '+m));
         if(ocrResult.text.trim())ocrHint='\n\n참고용 OCR 초안(문자 인식 결과라 오타·오류가 있을 수 있습니다. '
           +'코드 기호나 헷갈리는 글자를 구분할 때만 참고하고, 실제 내용은 항상 사진 이미지를 기준으로 판단하세요):\n---\n'
           +ocrResult.text+'\n---';
@@ -2312,7 +2326,7 @@ async function runScan(){
 async function ocrFallback(existing,say,fail){
   try{
     say('무료 한도 소진 — 대신 OCR로 읽는 중…');
-    const {text:txt,chordN,lyricN}=(existing&&existing.text)?existing:await ocrDraft(S.photos.map(p=>p.url),say);
+    const {text:txt,chordN,lyricN}=(existing&&existing.text)?existing:await ocrDraft(S.photos.map(p=>p.ocrUrl||p.url),say);
     if(!txt||!txt.trim())throw new Error('OCR로도 읽어낸 내용이 없습니다');
     S.raw=txt; S.semis=0; S.verse=1; stopPlay(); reparse(); renderAll(); addHistory();
     clearWork();
