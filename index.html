@@ -1979,6 +1979,14 @@ function fixChordToken(t){
   if(/^[A-G]/.test(x))x=x[0].toUpperCase()+x.slice(1);
   return x;
 }
+/* OCR 가사 낱말에서 흔한 잡음만 가볍게 정리한다(사전 대조 없는 규칙 기반).
+   실제 한글 사전으로 오타를 고치는 건 별도 작업 — 이건 "글자 아닌 것"만 걷어낸다. */
+function cleanOcrLyricToken(t){
+  return t
+    .replace(/[|Il~`^*_<>{}\[\]0-9]/g,'')     // 오선·바코드성 잡음이 섞여 들어온 자리(가사에 나올 일 없는 문자)
+    .replace(/[.,·•‥…]+$/,'')                  // 끝에 붙은 구두점 잡음
+    .trim();
+}
 function wordsFrom(data){
   if(data.words&&data.words.length)return data.words;
   const out=[];
@@ -2071,8 +2079,11 @@ async function ocrDraft(photoUrls,say){
       say&&say(tag2+'가사를 읽는 중…');
       const rl=await wLyric.recognize(clean,{},{blocks:true,text:false});
       const rawLyric=wordsFrom(rl.data).filter(w=>w.text&&w.text.trim());
-      const lyricWords=rawLyric.filter(w=>/[가-힣]/.test(w.text))
-        .map(w=>({text:w.text,bbox:w.bbox,kind:'l'}));
+      const lyricWords=rawLyric
+        .filter(w=>w.confidence===undefined||w.confidence>40)   // 확신도 낮은 잡음 토큰은 애초에 버린다(코드 인식과 동일 기준)
+        .filter(w=>/[가-힣]/.test(w.text))
+        .map(w=>({text:cleanOcrLyricToken(w.text),bbox:w.bbox,kind:'l'}))
+        .filter(w=>w.text);
       /* 전통 찬송가는 절 가사 왼쪽에 "1. 2. 3. 4."로 번호가 붙어 있다.
          한글이 없어 위 필터에서 빠지므로, 홀로 있는 한 자리 숫자(+점)만 절 번호 후보로 따로 챙긴다. */
       const verseWords=rawLyric.filter(w=>{
