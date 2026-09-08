@@ -2183,9 +2183,10 @@ async function geminiScan(gkey,prompt,b64,say){
         for(let w=25;w>0;w--){ if(say)say('무료 한도에 걸렸습니다. '+w+'초 뒤 자동으로 다시 시도합니다…'); await new Promise(z=>setTimeout(z,1000)); }
         return await geminiScan(gkey,prompt,b64,say);
       }
-      throw new Error('무료 한도를 다 썼습니다. 분당 한도라면 1~2분 뒤 됩니다. '
+      { const qe=new Error('무료 한도를 다 썼습니다. 분당 한도라면 1~2분 뒤 됩니다. '
         +'몇 시간째 안 되면 하루 한도까지 쓴 것이고, 태평양 시간 자정(한국 시간 오후 4~5시)에 초기화됩니다. '
         +'그때까지는 아래 OCR이나 직접 입력을 쓰세요');
+        qe.quota=true; throw qe; }
     }
     lastErr=msg;
   }
@@ -2210,17 +2211,18 @@ async function runScan(){
   const say=m=>{const b=$('scanstate'); if(b){b.className='callout work';b.innerHTML='<span class="spin"></span> '+m;} setWork(m);};
   say('시작하는 중…');
   LAST_TRUNCATED=false; P._retried=false;
+  let ocrResult=null;   // Gemini 무료 한도를 다 쓰면 이걸(또는 새로 돌린 OCR을) 그대로 결과로 쓴다
   try{
     /* OCR로 먼저 코드·가사 초안을 훑어서, AI가 헷갈리기 쉬운 코드 기호·글자를
        구분할 때 참고하도록 프롬프트에 힌트로 얹는다. 실패해도 API 채보 자체는 그대로 진행한다. */
     let ocrHint='';
     if(P.ocrBoost!==false){
       try{
-        const d=await ocrDraft(S.photos.map(p=>p.url),m=>say('OCR로 초안 대조 중… '+m));
-        if(d.text.trim())ocrHint='\n\n참고용 OCR 초안(문자 인식 결과라 오타·오류가 있을 수 있습니다. '
+        ocrResult=await ocrDraft(S.photos.map(p=>p.url),m=>say('OCR로 초안 대조 중… '+m));
+        if(ocrResult.text.trim())ocrHint='\n\n참고용 OCR 초안(문자 인식 결과라 오타·오류가 있을 수 있습니다. '
           +'코드 기호나 헷갈리는 글자를 구분할 때만 참고하고, 실제 내용은 항상 사진 이미지를 기준으로 판단하세요):\n---\n'
-          +d.text+'\n---';
-      }catch(e){ /* OCR 보정은 실패해도 무시하고 API만으로 진행 */ }
+          +ocrResult.text+'\n---';
+      }catch(e){ ocrResult=null; /* OCR 보정은 실패해도 무시하고 API만으로 진행 */ }
     }
     /* 한 장을 단 단위로 쪼개면 인식이 정확해진다 */
     let shots=S.photos;
@@ -2284,7 +2286,33 @@ async function runScan(){
       +(LAST_TRUNCATED?' 길이 제한으로 뒷부분이 잘렸을 수 있어요 — 악보를 반씩 나눠 찍으면 더 잘 됩니다.':''));
     closePanel();
   }catch(err){
+    if(err.quota&&!hosted&&prov==='gemini'){ await ocrFallback(ocrResult,say,fail); return; }
     fail((err.message||'변환 실패')+' — 다시 시도하거나 <b>직접 입력</b>에 옮겨 주세요.');
+  }
+}
+/* Gemini 무료 한도를 다 쓰면 사용자가 따로 누를 필요 없이 OCR 결과로 대신 채워 넣는다.
+   그리고 반드시 "무료 한도 때문에 OCR로만 처리했다"는 걸 결과 화면에 밝힌다 — 왜 멜로디가
+   없는지, 왜 정확도가 떨어지는지 사용자가 헷갈리지 않게. */
+async function ocrFallback(existing,say,fail){
+  try{
+    say('무료 한도 소진 — 대신 OCR로 읽는 중…');
+    const {text:txt,chordN,lyricN}=(existing&&existing.text)?existing:await ocrDraft(S.photos.map(p=>p.url),say);
+    if(!txt||!txt.trim())throw new Error('OCR로도 읽어낸 내용이 없습니다');
+    S.raw=txt; S.semis=0; S.verse=1; stopPlay(); reparse(); renderAll(); addHistory();
+    clearWork();
+    toast('Gemini 무료 한도를 다 써서 OCR로만 옮겼습니다. 내용을 확인해 고쳐 주세요.');
+    const box=$('scanstate');
+    if(box){
+      box.className='callout ok';
+      box.innerHTML='<b>Gemini 무료 한도를 다 써서 대신 OCR(문자 인식)로만 옮겼습니다.</b> '
+        +'코드 '+chordN+'개, 가사 '+lyricN+'덩어리를 읽었습니다'+(S.photos.length>1?' ('+S.photos.length+'쪽)':'')+'. '
+        +'키 없이 읽은 것이라 빠지거나 틀린 게 많고 <b>멜로디(음표)는 읽지 못합니다</b> — 원본과 비교하며 '
+        +'<b>직접 입력</b>에서 고쳐 주세요. 한도는 태평양 시간 자정(한국 시간 오후 4~5시)에 초기화됩니다.';
+    }
+    /* AI로 성공했을 때와 달리 여기서는 패널을 자동으로 닫지 않는다 — 결과 질이 떨어진 이유를
+       사용자가 위 안내에서 직접 읽고 확인한 뒤 스스로 닫게 한다. */
+  }catch(err2){
+    fail('Gemini 무료 한도를 다 썼고, OCR로도 실패했습니다: '+(err2.message||'알 수 없는 오류')+' — <b>직접 입력</b>에 옮겨 주세요.');
   }
 }
 
