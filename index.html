@@ -58,6 +58,22 @@ main{flex:1;padding:16px 8px 182px;font-family:var(--mono);line-height:1.5}
 .ch{display:block;color:var(--brass);font-weight:800;letter-spacing:.01em;padding-right:9px;white-space:pre;line-height:1.3;cursor:pointer;transition:transform .12s}
 .ch.plain{cursor:default}
 .ly{display:block;white-space:pre-wrap}
+/* 원본 사진 보기. 인식 결과를 못 믿을 때 결국 눈으로 보는 건 원본이다 —
+   그래서 사진을 그대로 띄우고, 재생 위치를 사진 위에 하이라이트로 얹는다. */
+.origwrap{margin:0 0 6px}
+.origpg{position:relative;margin:0 auto 14px;max-width:1000px;line-height:0}
+.origpg img{width:100%;height:auto;display:block;border-radius:8px}
+.origsys{position:absolute;left:0;right:0;cursor:pointer;border-radius:5px;
+  transition:background .18s linear,box-shadow .18s linear}
+.origsys:hover{background:rgba(240,185,94,.14)}
+.origsys.on{background:rgba(240,185,94,.26);box-shadow:inset 0 0 0 2px var(--brass)}
+.origsys .lab{position:absolute;left:4px;top:2px;font-size:10px;line-height:1;color:var(--ink);
+  background:var(--brass);border-radius:4px;padding:2px 5px;font-weight:700;opacity:0;transition:opacity .15s}
+.origsys.on .lab,.origsys:hover .lab{opacity:.95}
+.origline{position:absolute;top:0;bottom:0;width:3px;background:var(--ribbon);
+  box-shadow:0 0 7px var(--ribbon);display:none;pointer-events:none}
+.origsys.on .origline{display:block}
+.orignote{font-size:13px;line-height:1.55;color:var(--dim);margin:0 0 12px;padding:0 2px}
 .staffline{overflow-x:auto;margin:0 0 14px;padding:2px 0 0}
 .suspect{border:1px solid var(--ribbon);border-radius:10px;padding:8px 11px;margin:0 0 12px;
   font-size:13px;line-height:1.5;color:var(--paper);background:color-mix(in srgb,var(--ribbon) 12%,transparent)}
@@ -164,10 +180,27 @@ body.focus #focusout{display:block}
   padding:8px 14px;font-size:12.5px;font-weight:700;display:none;align-items:center;gap:8px;
   cursor:pointer;border:none;width:100%;text-align:left;font-family:var(--ui)}
 #workbar.show{display:flex}
+/* 인식 결과 알림. 누를 때까지 사라지지 않는다 — toast 는 2.4초 뒤 없어져서
+   사용자가 놓치면 성공했는지 실패했는지 알 방법이 아예 없었다. */
+#result{position:fixed;left:0;right:0;top:0;z-index:70;display:none;padding:12px 14px;
+  border-bottom:2px solid;font-size:14px;line-height:1.55;background:var(--raise);color:var(--paper)}
+#result.show{display:block}
+#result.ok{border-color:var(--mint)}
+#result.warn{border-color:var(--brass)}
+#result.err{border-color:var(--ribbon)}
+#result .rtitle{font-weight:700;font-size:15px;display:flex;align-items:center;gap:7px;margin:0 34px 0 0}
+#result.ok .rtitle{color:var(--mint)} #result.warn .rtitle{color:var(--brass)} #result.err .rtitle{color:var(--ribbon)}
+#result .rbody{margin-top:5px;opacity:.9}
+#result .racts{margin-top:9px;display:flex;gap:7px;flex-wrap:wrap}
+#result .racts button{background:var(--ink);color:var(--paper);border:1px solid var(--line);
+  border-radius:9px;padding:7px 13px;font-size:13px;font-weight:600;cursor:pointer}
+#result .racts button.pri{background:var(--brass);color:var(--ink);border-color:var(--brass)}
+#result .rx{position:absolute;top:8px;right:9px;background:none;border:none;color:var(--dim);
+  font-size:20px;line-height:1;cursor:pointer;padding:4px 8px}
 #workbar .spin{border-color:var(--ink);border-top-color:transparent;flex:0 0 auto}
 
 @media print{
-  header,footer,#scrim,#toast,#workbar,.noprint{display:none!important}
+  header,footer,#scrim,#toast,#workbar,#result,.noprint{display:none!important}
   body{background:#fff!important;color:#000!important}
   main{padding:0!important}
   .ch{color:#000!important;font-weight:700}
@@ -205,6 +238,7 @@ body.focus #focusout{display:block}
 <nav class="scroll">
   <button class="btn" data-panel="scan">가져오기</button>
   <button class="btn" data-panel="input">편집</button>
+  <button class="btn" id="b-sheet">원본 사진</button>
   <button class="btn" id="b-mode">악보</button>
   <button class="btn" id="b-melonly">멜로디만</button>
   <button class="btn" id="b-verse">1절</button>
@@ -220,6 +254,7 @@ body.focus #focusout{display:block}
 <div id="scrim"><div id="sheet"></div></div>
 <div id="toast" role="status"></div>
 <button id="workbar" type="button" role="status"></button>
+<div id="result" role="alert" aria-live="assertive"></div>
 
 <script>
 window.onerror=function(msg,src,ln){
@@ -237,7 +272,7 @@ window.onerror=function(msg,src,ln){
    예) const SCAN_ENDPOINT = "https://konti-scan.내계정.workers.dev";
 */
 const SCAN_ENDPOINT = "";
-const APP_VER = "47";
+const APP_VER = "48";
 /* file:// 나 content:// 로 열면 브라우저가 외부 호출을 막는다(CORS). 미리 알려준다. */
 const LOCAL_FILE = !/^https?:$/.test(location.protocol);
 /* Claude 앱처럼 iframe 안에서 실행 중이면 키 없이도 인식이 통한다. */
@@ -1386,7 +1421,7 @@ function applyGenre(k){
 
 /* ---- 시퀀서 ---- */
 const P={playing:false,bpm:84,genre:'',insts:['piano'],melInst:'ep',pattern:'block',beats:4,loop:true,click:false,melody:true,accomp:true,readMel:true,bySystem:true,ocrBoost:true,realInst:true,melOct:0,melFit:true,playBass:false,
-         evs:[],total:0,k:0,cursorT:0,lastAt:0,t0:0,timer:null,marks:[],vmarks:[],vnext:1,cur:-1};
+         evs:[],total:0,k:0,cursorT:0,lastAt:0,t0:0,timer:null,uiTimer:null,marks:[],vmarks:[],vnext:1,cur:-1};
 
 function buildTimeline(){
   const evs=[], hasBar=blocks.some(b=>b.k==='pairs'&&b.pairs.some(p=>p.bar));
@@ -1507,24 +1542,33 @@ function schedule(){
     P.cursorT=t; P.lastAt=ev.at; P.k++;
   }
 }
+/* 재생 중 화면 갱신(시간 표시·코드 하이라이트·사진 하이라이트).
+   예전에는 이걸 requestAnimationFrame 하나에만 맡겼다. 그런데 RAF 는 탭이 뒤로 가거나
+   절전·저사양 상태에서 아예 멈춘다 — 그러면 소리는 계속 나는데 화면만 얼어붙어서
+   "지금 어디를 연주하는지" 표시가 죽는다(실제로 한 환경에서 RAF 가 1초에 0번 불리는 걸
+   확인했다). 그래서 같은 갱신을 느린 타이머로도 돌린다. 두 번 불려도 문제없게 만들어 뒀다. */
+function tickUI(){
+  if(!P.playing)return;
+  const ctx=actx; if(!ctx)return;
+  const now=ctx.currentTime;
+  if(now-(P.lastT||0)>0.16){
+    P.lastT=now;
+    const total=songSeconds();
+    let el=now-P.t0;
+    if(P.loop&&total>0&&el>total)el=el%total;
+    renderTime(el);
+  }
+  while(P.vmarks.length&&P.vmarks[0].t<=now){
+    const v=P.vmarks.shift().v;
+    if(S.verse!==v){S.verse=v;renderChart();renderToolbar();}
+  }
+  while(P.marks.length>1&&P.marks[1].t<=now)P.marks.shift();
+  if(P.marks.length&&P.marks[0].t<=now&&P.marks[0].idx!==P.cur)mark(P.marks[0].idx);
+  if(S.mode==='sheet')paintSheet(sheetProgress());
+}
 function frame(){
   if(!P.playing){renderTime(0);return;}
-  const ctx=actx; if(ctx){
-    const now=ctx.currentTime;
-    if(now-(P.lastT||0)>0.16){
-      P.lastT=now;
-      const total=songSeconds();
-      let el=now-P.t0;
-      if(P.loop&&total>0&&el>total)el=el%total;
-      renderTime(el);
-    }
-    while(P.vmarks.length&&P.vmarks[0].t<=now){
-      const v=P.vmarks.shift().v;
-      if(S.verse!==v){S.verse=v;renderChart();renderToolbar();}
-    }
-    while(P.marks.length>1&&P.marks[1].t<=now)P.marks.shift();
-    if(P.marks.length&&P.marks[0].t<=now&&P.marks[0].idx!==P.cur)mark(P.marks[0].idx);
-  }
+  tickUI();
   requestAnimationFrame(frame);
 }
 function mark(idx){
@@ -1548,13 +1592,18 @@ function startPlay(){
   P.cursorT=ctx.currentTime+.25;
   clearInterval(P.timer);
   P.timer=setInterval(schedule,25);
-  schedule(); requestAnimationFrame(frame);
+  clearInterval(P.uiTimer);
+  P.uiTimer=setInterval(tickUI,110);   // RAF 가 멈춰도 화면이 따라오게 하는 보험
+  schedule(); requestAnimationFrame(frame); tickUI();
   $('play').innerHTML='&#10073;&#10073;';
   wakeOn();
 }
 function stopPlay(){
-  P.playing=false; clearInterval(P.timer); P.timer=null; P.marks=[]; P.vmarks=[]; P.cur=-1;
+  P.playing=false; clearInterval(P.timer); P.timer=null;
+  clearInterval(P.uiTimer); P.uiTimer=null;
+  P.marks=[]; P.vmarks=[]; P.cur=-1;
   document.querySelectorAll('.ch.now').forEach(e=>e.classList.remove('now'));
+  document.querySelectorAll('#chart .origsys.on').forEach(e=>e.classList.remove('on'));
   $('play').innerHTML='&#9654;';
   wakeOff();
 }
@@ -1573,7 +1622,7 @@ const SAMPLE=`[Verse 1]
 ♪ G4:1 A4:1 B4:1 A4:1 | G4:1 A4:1 B4:1 D5:1 | D5:1 C5:1 B4:1 A4:1 | B4:1 A4:1 G4:2 | A4:2 G4:2
 |[G]내 입술이 |[D/F#]잠잠할 |[C]수 |[D]없|[G]네`;
 
-const S={raw:SAMPLE,semis:0,flat:null,num:false,capo:false,font:20,staffScale:1,col:false,photos:[],verse:1,mode:'auto'};
+const S={raw:SAMPLE,semis:0,flat:null,num:false,capo:false,font:20,staffScale:1,col:false,photos:[],verse:1,mode:'auto',orig:null};
 let blocks=[], origKey={pc:0,minor:false};
 function reparse(){
   blocks=parseChart(S.raw); origKey=detectKey(blocks);
@@ -1627,6 +1676,32 @@ function setWork(msg){
   w.classList.add('show');
 }
 function clearWork(){const w=$('workbar'); if(w)w.classList.remove('show');}
+/* 인식이 끝났는지·실패했는지를 반드시 눈에 보이게 알린다.
+   예전에는 성공/실패 메시지를 '가져오기' 패널 안의 #scanstate 에만 썼다. 그런데 이 앱은
+   패널을 닫아도 인식이 백그라운드로 계속되도록 일부러 만들어 놨다 — 그래서 패널을 닫아 둔
+   사이에 실패하거나 OCR로 대체되면 화면에 아무 흔적도 남지 않았고, 사용자는 끝났는지
+   실패했는지 알 수가 없었다. 이 배너는 사용자가 닫을 때까지 남는다.
+   kind: 'ok' 성공 · 'warn' 됐지만 품질이 떨어짐(OCR 대체 등) · 'err' 실패
+   acts: [{label, pri, fn}] 버튼 — 실패했을 때 바로 다음 행동으로 갈 수 있게 한다 */
+function showResult(kind,title,body,acts){
+  const r=$('result'); if(!r)return;
+  const icon=kind==='ok'?'✓':kind==='warn'?'!':'✕';
+  r.className='show '+kind;
+  r.innerHTML='<button class="rx" type="button" aria-label="닫기">&times;</button>'
+    +'<div class="rtitle"><span>'+icon+'</span><span>'+title+'</span></div>'
+    +(body?'<div class="rbody">'+body+'</div>':'')
+    +((acts&&acts.length)?'<div class="racts"></div>':'');
+  r.querySelector('.rx').onclick=clearResult;
+  const box=r.querySelector('.racts');
+  if(box)(acts||[]).forEach(a=>{
+    const b=document.createElement('button');
+    b.type='button'; b.textContent=a.label; if(a.pri)b.className='pri';
+    b.onclick=()=>{ clearResult(); a.fn&&a.fn(); };
+    box.appendChild(b);
+  });
+  try{ window.scrollTo({top:0,behavior:'smooth'}); }catch(e){ window.scrollTo(0,0); }
+}
+function clearResult(){const r=$('result'); if(r){r.className='';r.innerHTML='';}}
 if($('workbar'))$('workbar').onclick=()=>openPanel('scan');
 
 /* ============ 렌더 ============ */
@@ -1654,8 +1729,16 @@ function renderMeta(){
   }
 }
 function renderChart(){
+  if(S.mode==='sheet')return renderSheet();
   if(S.mode!=='text'&&hasMelody())return renderChartStaff();
   return renderChartText();
+}
+function hasSheet(){ return !!(S.orig&&S.orig.pages&&S.orig.pages.length); }
+/* 보기 모드를 바꾼다: 'sheet' 원본 사진 · 'staff' 오선보 · 'text' 가사 중심 */
+function setMode(m){
+  if(m==='sheet'&&!hasSheet()){ toast('원본 사진이 없습니다.'); return; }
+  S.mode=m; renderAll();
+  if(m==='sheet')toast('원본 사진 보기 — 재생하면 사진 위에서 따라갑니다');
 }
 function renderChartStaff(){
   const el=$('chart');
@@ -1724,6 +1807,73 @@ function renderChartStaff(){
     for(const bb of blocks) if(bb.k==='pairs') for(const p of bb.pairs)
       if(p.idx===i&&p.chord){ tapChord(p.chord,chordSemis()); return; }
   });
+}
+/* 원본 사진을 그대로 띄우고, 각 단(사진에서 찾아낸 오선 한 줄) 위에 하이라이트를 얹는다.
+   S.orig = {pages:[{url,sys:[{t0,t1,b0,b1}]}], total} — b0/b1 은 그 단이 곡 전체에서
+   차지하는 진행 구간(0~1). 재생할 때 frame() 이 이 값으로 하이라이트를 옮긴다. */
+function renderSheet(){
+  const el=$('chart');
+  el.style.fontSize=S.font+'px'; el.style.columnCount=1;
+  el.innerHTML='';
+  const o=S.orig;
+  if(!o||!o.pages||!o.pages.length){
+    el.innerHTML='<div class="callout err"><b>원본 사진이 없습니다.</b><br>'
+      +'<b>가져오기</b>에서 악보 사진을 다시 넣어 주세요. 직접 입력한 곡에는 원본 사진이 없습니다.</div>';
+    return;
+  }
+  const note=document.createElement('div');
+  note.className='orignote';
+  note.innerHTML='재생하면 지금 연주 중인 단이 사진 위에 표시됩니다. <b>단을 누르면 그 자리부터 재생</b>합니다.'
+    +(o.approx?' 단 구분을 못 찾은 사진은 쪽 전체를 한 덩어리로 표시합니다.':'');
+  el.appendChild(note);
+  const wrap=document.createElement('div'); wrap.className='origwrap';
+  o.pages.forEach((pg,pi)=>{
+    const d=document.createElement('div'); d.className='origpg';
+    const img=document.createElement('img');
+    img.src=pg.url; img.alt=(pi+1)+'쪽 원본 악보'; img.loading='lazy';
+    d.appendChild(img);
+    (pg.sys||[]).forEach(sy=>{
+      const b=document.createElement('div');
+      b.className='origsys';
+      b.style.top=(sy.t0*100).toFixed(3)+'%';
+      b.style.height=((sy.t1-sy.t0)*100).toFixed(3)+'%';
+      b.dataset.b0=sy.b0; b.dataset.b1=sy.b1;
+      b.innerHTML='<span class="lab">'+(sy.n||'')+'</span><div class="origline"></div>';
+      b.onclick=()=>{ const t=songSeconds()*Math.max(0,Math.min(1,sy.b0));
+        if(!P.playing)startPlay(); seekTo(t); };
+      d.appendChild(b);
+    });
+    wrap.appendChild(d);
+  });
+  el.appendChild(wrap);
+  paintSheet(P.playing?sheetProgress():-1);
+}
+/* 지금 재생 위치를 0~1 진행도로 (절 반복은 무시하고 한 절 안에서의 위치) */
+function sheetProgress(){
+  const total=songSeconds(); if(!(total>0)||!actx)return -1;
+  let el=actx.currentTime-P.t0;
+  if(P.loop&&el>total)el=el%total;
+  return Math.max(0,Math.min(1,el/total));
+}
+/* 진행도에 맞춰 하이라이트와 재생선을 옮긴다. p<0 이면 전부 끈다. */
+function paintSheet(p){
+  const boxes=document.querySelectorAll('#chart .origsys');
+  if(!boxes.length)return;
+  let cur=null;
+  boxes.forEach(b=>{
+    const b0=+b.dataset.b0, b1=+b.dataset.b1;
+    const on=p>=0&&p>=b0&&p<b1;
+    b.classList.toggle('on',on);
+    if(on){ cur=b;
+      const f=(b1>b0)?(p-b0)/(b1-b0):0;
+      const h=b.querySelector('.origline');
+      if(h)h.style.left=(f*100).toFixed(2)+'%';
+    }
+  });
+  if(cur&&P.playing){
+    const r=cur.getBoundingClientRect();
+    if(r.top<80||r.bottom>window.innerHeight-190)cur.scrollIntoView({block:'center',behavior:'smooth'});
+  }
 }
 function renderChartText(){
   const el=$('chart'),sm=chordSemis(),p=pref(),ci=capoInfo();
@@ -1820,6 +1970,8 @@ function renderToolbar(){
       +(L.length>1?INSTRUMENTS[L[0]].label+' 외 '+(L.length-1):INSTRUMENTS[L[0]].label);
   }
   if($('v-size'))$('v-size').textContent=S.font;
+  const sb=$('b-sheet');
+  if(sb){ sb.hidden=!hasSheet(); sb.classList.toggle('on',S.mode==='sheet'); }
   const md=$('b-mode');
   if(md){
     const useStaff=(S.mode!=='text'&&hasMelody());
@@ -1846,10 +1998,23 @@ function saveLast(){
       num:S.num, capo:S.capo, font:S.font, staffScale:S.staffScale, col:S.col, mode:S.mode,
       bpm:P.bpm, insts:P.insts, melInst:P.melInst, pattern:P.pattern,
       beats:P.beats, genre:P.genre, loop:P.loop, click:P.click, melody:P.melody, realInst:P.realInst,
-      playBass:P.playBass,
+      playBass:P.playBass, orig:S.orig,
       at:Date.now()
     }));
-  }catch(e){}
+  }catch(e){
+    /* 사진까지 넣으면 localStorage 한도를 넘길 수 있다 — 그때는 사진만 빼고 다시 저장한다.
+       사진 보기는 있으면 좋은 기능이고, 곡 자체를 못 저장하는 건 훨씬 큰 손해다. */
+    try{
+      setLS('konti:last',JSON.stringify({
+        t:$('title').value, raw:S.raw, semis:S.semis, verse:S.verse, flat:S.flat,
+        num:S.num, capo:S.capo, font:S.font, staffScale:S.staffScale, col:S.col,
+        mode:S.mode==='sheet'?'auto':S.mode,
+        bpm:P.bpm, insts:P.insts, melInst:P.melInst, pattern:P.pattern,
+        beats:P.beats, genre:P.genre, loop:P.loop, click:P.click, melody:P.melody,
+        realInst:P.realInst, playBass:P.playBass, at:Date.now()
+      }));
+    }catch(e2){}
+  }
 }
 function restoreLast(){
   let r=null;
@@ -1859,7 +2024,9 @@ function restoreLast(){
   S.semis=r.semis||0; S.verse=r.verse||1; S.flat=r.flat||null;
   S.num=!!r.num; S.capo=!!r.capo; S.font=r.font||20;
   S.staffScale=(typeof r.staffScale==='number')?Math.max(.5,Math.min(2,r.staffScale)):1;
-  S.col=!!r.col; S.mode=(r.mode==='text')?'text':'auto';
+  S.col=!!r.col;
+  S.orig=(r.orig&&r.orig.pages&&r.orig.pages.length)?r.orig:null;
+  S.mode=(r.mode==='text')?'text':(r.mode==='sheet'&&S.orig)?'sheet':'auto';
   if(r.bpm)P.bpm=r.bpm;
   if(Array.isArray(r.insts)&&r.insts.length)P.insts=r.insts.filter(k=>INSTRUMENTS[k]);
   else if(r.inst&&INSTRUMENTS[r.inst])P.insts=[r.inst];
@@ -2118,7 +2285,16 @@ async function prepImage(f){
      그림에서 오려낸 것이라 오선 간격이 몇 픽셀밖에 안 남아 음높이를 볼 수가 없었다.
      음높이 인식은 "음표 머리가 어느 줄/칸에 놓였나"를 보는 일이라 이 해상도가 곧 정확도다. */
   const hiOut=fitCanvas(img,3000);
-  return {url:out,b64:out.split(',')[1],ocrUrl:ocrOut,hiUrl:hiOut};
+  /* 화면에 그대로 비춰 줄 사본. 보내는 사본(url)은 흑백·고대비로 만들어 놓은 것이라
+     사람이 보기엔 원본이 낫다. localStorage 에 넣을 수 있는 크기로 줄여 둔다. */
+  const showOut=(()=>{
+    const sc=Math.min(1,1400/Math.max(img.width,img.height));
+    const cv=document.createElement('canvas');
+    cv.width=Math.round(img.width*sc); cv.height=Math.round(img.height*sc);
+    cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
+    return cv.toDataURL('image/jpeg',.72);
+  })();
+  return {url:out,b64:out.split(',')[1],ocrUrl:ocrOut,hiUrl:hiOut,showUrl:showOut,w:img.width,h:img.height};
 }
 async function onPickFile(e){
   const files=[...(e.target.files||[])];
@@ -2191,7 +2367,9 @@ function splitSystems(url,targetW){
           x2.filter='grayscale(1) contrast(1.2)';
           x2.drawImage(img,0,top,W,hh,0,0,c2.width,c2.height);
           const u=c2.toDataURL('image/jpeg',.92);
-          out.push({url:u,b64:u.split(',')[1]});
+          /* t0/t1: 이 단이 원본 사진에서 차지한 세로 구간(0~1). 원본을 어떤 크기로 보여 주든
+             비율은 그대로라, 사진 위에 하이라이트를 얹을 때 이 값을 그대로 쓴다. */
+          out.push({url:u,b64:u.split(',')[1],t0:top/H,t1:bot/H});
         }
         res(out.length>=2?out:null);
       }catch(e){ res(null); }
@@ -2534,6 +2712,44 @@ function melScore(txt){
   if(bigLeap)why.push('옥타브를 넘는 도약이 '+bigLeap+'군데 있습니다');
   return {score:Math.max(0,1-barBad-pitchBad*1.5),why:why.join('. ')};
 }
+/* 단 기록(sysRec)을 원본 사진 보기용 구조로 바꾼다.
+   각 단에 곡 전체 진행도 구간 [b0,b1) 을 붙여, 재생 위치 → 어느 단인지 바로 찾게 한다.
+   길이는 sysWeight 로 잰 박수 비율이라 재생 엔진의 계산과 완전히 같지는 않다 —
+   눈으로 따라가는 보조 표시라 한 마디 정도 오차는 문제되지 않는다. */
+function buildOrig(sysRec){
+  const recs=(sysRec||[]).filter(r=>r&&S.photos[r.page]);
+  if(!recs.length)return null;
+  const tot=recs.reduce((a,r)=>a+Math.max(0,r.w||0),0);
+  const pages=S.photos.map(ph=>({url:ph.showUrl||ph.url,sys:[]}));
+  let acc=0, n=0;
+  recs.forEach(r=>{
+    const w=Math.max(0,r.w||0);
+    const b0=tot>0?acc/tot:0; acc+=w;
+    const b1=tot>0?acc/tot:1;
+    pages[r.page].sys.push({t0:r.t0,t1:r.t1,b0,b1,n:++n+'단'});
+  });
+  const out={pages:pages.filter(p=>p.url&&p.sys.length),approx:recs.some(r=>r.whole)};
+  return out.pages.length?out:null;
+}
+/* 이 단(사진 한 줄)이 곡 전체에서 차지하는 길이를 박 단위로 어림한다.
+   원본 사진 위 하이라이트를 재생 위치에 맞춰 옮기려면 단마다 "몇 박짜리인가"가 필요하다.
+   멜로디를 읽었으면 그 박수가 곧 정답이고, 못 읽었으면 마디·코드 개수로 어림한다.
+   재생 엔진과 완전히 같은 계산은 아니다 — 눈으로 따라가는 보조 표시라 이 정도면 충분하다. */
+function sysWeight(txt){
+  let beats=0;
+  for(const l of (txt||'').split('\n')){
+    if(!/^\s*♪/.test(l))continue;
+    for(const n of parseMelody(l))if(!n.bar)beats+=(n.beats||1);
+  }
+  if(beats>0.5)return beats;
+  let ch=0,bars=0;
+  for(const b of parseChart(txt||'')){
+    if(b.k!=='pairs')continue;
+    ch+=b.pairs.filter(x=>x.chord).length;
+    bars+=b.pairs.filter(x=>x.bar).length;
+  }
+  return Math.max(1,bars||ch||1)*(P.beats||4);
+}
 /* 채보한 멜로디의 마지막 음이름 — 다음 단을 읽을 때 옥타브 기준으로 알려 준다 */
 function stripFence(t){ return (t||'').trim().replace(/^```[a-z]*\n?/i,'').replace(/```\s*$/,'').trim(); }
 function lastMelNote(txt){
@@ -2597,7 +2813,16 @@ async function geminiScan(gkey,prompt,b64,say){
 async function runScan(){
   if(!S.photos.length)return;
   const hosted=!!SCAN_ENDPOINT, prov=getProv();
-  const fail=html=>{const b=$('scanstate'); if(b){b.className='callout err';b.innerHTML=html;} clearWork();};
+  /* 패널이 닫혀 있어도 보이도록 배너에도 같이 띄운다 */
+  const fail=(html,title)=>{
+    const b=$('scanstate'); if(b){b.className='callout err';b.innerHTML=html;}
+    clearWork();
+    showResult('err',title||'악보를 옮기지 못했습니다',html,[
+      {label:'다시 시도',pri:true,fn:()=>{openPanel('scan');runScan();}},
+      {label:'직접 입력',fn:()=>openPanel('input')},
+      {label:'설정 열기',fn:()=>openPanel('scan')}
+    ]);
+  };
 
   if(!hosted&&prov==='gemini'&&!getGKey())
     return fail('<b>무료 Gemini 키를 먼저 넣어 주세요.</b><br>'
@@ -2628,15 +2853,20 @@ async function runScan(){
     if(P.bySystem!==false){
       say('악보를 단 단위로 나누는 중…');
       const acc=[];
-      for(const ph of S.photos){
+      for(let pi=0;pi<S.photos.length;pi++){
+        const ph=S.photos[pi];
         const parts=await splitSystems(ph.hiUrl||ph.url);
-        if(parts&&parts.length)acc.push(...parts); else acc.push(ph);
+        /* page/t0/t1 을 같이 들고 다닌다 — 나중에 원본 사진 위에 하이라이트를 얹으려면
+           "이 단이 몇 쪽의 어느 구간이었나"를 알아야 한다. */
+        if(parts&&parts.length)parts.forEach(x=>acc.push(Object.assign({},x,{page:pi})));
+        else acc.push(Object.assign({},ph,{page:pi,t0:0,t1:1,whole:true}));
       }
       if(acc.length)shots=acc;   // 쪽이 많아도 단 단위로 쪼갠 쪽이 정확도가 훨씬 높다
     }
     const NN=shots.length;
     const pages=[];
     let carryNote='', rechecked=0;   // 앞 단의 마지막 음(옥타브 기준), 다시 읽은 단 수
+    const sysRec=[];                 // 원본 사진 위 하이라이트용: 단마다 {page,t0,t1,w}
     for(let i=0;i<NN;i++){
       const tag=NN>1?(i+1)+'/'+NN+'단 ':'';
       say(tag+'악보를 읽는 중입니다…');
@@ -2703,16 +2933,26 @@ async function runScan(){
       const tm=t.match(/^TITLE:\s*(.+)$/m);
       if(tm){ if(i===0)$('title').value=tm[1].trim(); t=t.replace(/^TITLE:\s*.+$/m,'').trim(); }
       if(t)pages.push(t);
+      sysRec.push({page:shots[i].page||0,t0:shots[i].t0||0,t1:(shots[i].t1===undefined?1:shots[i].t1),
+                   w:t?sysWeight(t):0,whole:!!shots[i].whole});
       if(i<NN-1)await new Promise(r=>setTimeout(r,1100));   // 무료 등급 분당 한도 배려
     }
     let text=pages.join('\n\n');
     if(!text)throw new Error('읽어낸 내용이 없습니다 — 사진을 더 밝고 반듯하게 찍어 보세요');
-    S.raw=text; S.semis=0; S.verse=1; stopPlay(); reparse(); renderAll(); addHistory();
+    S.raw=text; S.semis=0; S.verse=1; stopPlay();
+    S.orig=buildOrig(sysRec);
+    reparse(); renderAll(); addHistory();
     clearWork();
-    toast('옮겼습니다. 원본과 비교해 확인해 주세요.'
-      +(rechecked?' '+rechecked+'단은 음높이가 이상해서 다시 읽었습니다.':'')
-      +(SUSPECT?' 확인이 필요한 음 '+SUSPECT+'개를 동그라미로 표시했어요.':'')
-      +(LAST_TRUNCATED?' 길이 제한으로 뒷부분이 잘렸을 수 있어요 — 악보를 반씩 나눠 찍으면 더 잘 됩니다.':''));
+    const bits=[];
+    bits.push('코드 '+blocks.reduce((a,b)=>a+(b.k==='pairs'?b.pairs.filter(p=>p.chord).length:0),0)+'개'
+      +', 가사 '+ (S.raw.match(/[가-힣]/g)||[]).length +'자'
+      + (hasMelody()?', 멜로디 '+blocks.filter(b=>b.k==='mel').reduce((a,b)=>a+b.notes.filter(n=>!n.bar&&!n.rest).length,0)+'개':', 멜로디는 못 읽었습니다'));
+    if(rechecked)bits.push(rechecked+'단은 음높이가 이상해서 다시 읽었습니다');
+    if(SUSPECT)bits.push('확인이 필요한 음 '+SUSPECT+'개를 동그라미로 표시했습니다');
+    if(LAST_TRUNCATED)bits.push('길이 제한으로 뒷부분이 잘렸을 수 있습니다 — 악보를 반씩 나눠 찍으면 더 잘 됩니다');
+    showResult('ok','악보를 옮겼습니다',bits.join('. ')+'.<br>원본과 비교해 확인해 주세요.',
+      [{label:'원본 사진과 비교',pri:!!(S.orig&&S.orig.pages.length),fn:()=>setMode('sheet')},
+       {label:'직접 고치기',fn:()=>openPanel('input')}]);
     closePanel();
   }catch(err){
     if(err.quota&&!hosted&&prov==='gemini'){ await ocrFallback(ocrResult,say,fail); return; }
@@ -2727,9 +2967,19 @@ async function ocrFallback(existing,say,fail){
     say('무료 한도 소진 — 대신 OCR로 읽는 중…');
     const {text:txt,chordN,lyricN}=(existing&&existing.text)?existing:await ocrDraft(S.photos.map(p=>p.ocrUrl||p.url),say);
     if(!txt||!txt.trim())throw new Error('OCR로도 읽어낸 내용이 없습니다');
-    S.raw=txt; S.semis=0; S.verse=1; stopPlay(); reparse(); renderAll(); addHistory();
+    S.raw=txt; S.semis=0; S.verse=1; stopPlay();
+    /* OCR로 대체됐어도 원본 사진은 그대로 보여 준다 — 깨진 글자보다 원본이 훨씬 쓸모 있다.
+       단 구분 정보가 없으니 쪽 전체를 한 덩어리로 잡는다. */
+    S.orig=buildOrig(S.photos.map((ph,pi)=>({page:pi,t0:0,t1:1,w:1,whole:true})));
+    reparse(); renderAll(); addHistory();
     clearWork();
-    toast('Gemini 무료 한도를 다 써서 OCR로만 옮겼습니다. 내용을 확인해 고쳐 주세요.');
+    showResult('warn','무료 한도를 다 써서 OCR로만 옮겼습니다',
+      '<b>결과 품질이 많이 떨어집니다.</b> 키 없이 글자만 인식한 것이라 <b>멜로디(음표)는 아예 읽지 못하고</b>, '
+      +'가사도 깨져 나오는 경우가 많습니다(코드 '+chordN+'개, 가사 '+lyricN+'덩어리).<br>'
+      +'Gemini 무료 한도는 <b>태평양 시간 자정(한국 시간 오후 4~5시)</b>에 초기화됩니다. '
+      +'그때 다시 인식하시면 멜로디까지 제대로 나옵니다.',
+      [{label:'원본 사진 보기',pri:!!(S.orig&&S.orig.pages.length),fn:()=>setMode('sheet')},
+       {label:'직접 입력으로 고치기',fn:()=>openPanel('input')}]);
     const box=$('scanstate');
     if(box){
       box.className='callout ok';
@@ -3373,6 +3623,7 @@ function setFocus(on){
   $('b-focus').classList.toggle('on',on);
   if(on)wakeOn(); else wakeOff();
 }
+$('b-sheet').onclick=()=>setMode(S.mode==='sheet'?(hasMelody()?'staff':'text'):'sheet');
 $('b-mode').onclick=()=>{
   if(!hasMelody()){toast('멜로디가 있어야 악보로 볼 수 있습니다.');return;}
   S.mode=(S.mode==='text')?'staff':'text';
