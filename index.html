@@ -628,12 +628,21 @@ const LET=['C','D','E','F','G','A','B'];
 const LET_SEMI={C:0,D:2,E:4,F:5,G:7,A:9,B:11};
 const SHARP_ORD=['F','C','G','D','A','E','B'];
 const FLAT_ORD=['B','E','A','D','G','C','F'];
-/* 조표: 장조 으뜸음(pc) → [기호, 개수] */
-function keySig(pc){
+/* 조표를 셀 때 쓰는 으뜸음 — 단조는 나란한 장조로 바꿔 센다(단조 으뜸음 +3반음).
+   Gm 의 조표는 G장조의 #1개가 아니라 Bb장조의 b2개다. #/b 취향(PREF)도 같은 음으로
+   골라야 조표와 음이름이 어긋나 마디마다 임시표가 붙는 일이 없다. */
+function sigPc(pc,minor){ return mod(pc+(minor?3:0)); }
+/* 조표: 장조 으뜸음(pc) → [기호, 개수].
+   같은 소리를 #조·b조 두 가지로 적을 수 있는 자리(C#/Db, F#/Gb, B/Cb)는 조표가 적은
+   쪽을 쓰고, 개수까지 같으면(F#6개 = Gb6개) #/b 취향을 따른다. 여기서 취향과 어긋난
+   쪽을 고르면 조표는 #인데 음이름은 b로 적혀 음마다 임시표가 붙어 버린다. */
+function keySig(pc,pref){
   const SH={7:1,2:2,9:3,4:4,11:5,6:6,1:7};
   const FL={5:1,10:2,3:3,8:4,1:5,6:6,11:7};
-  if(SH[pc])return['#',SH[pc]];
-  if(FL[pc])return['b',FL[pc]];
+  const sh=SH[pc], fl=FL[pc];
+  if(sh&&fl)return (fl<sh||(fl===sh&&(pref||PREF[pc])==='flat'))?['b',fl]:['#',sh];
+  if(sh)return['#',sh];
+  if(fl)return['b',fl];
   return['',0];
 }
 /* 미디 음 → 오선 위치(온음 단계)와 임시표 */
@@ -659,8 +668,8 @@ function renderStaff(sel){
     +'사진 화면에서 <b>멜로디까지 읽기</b>를 켜고 다시 인식하거나, '
     +'<b>편집</b>에서 <code>♪ 1:1 5:0.5</code> 처럼 직접 넣으세요.</div>';
 
-  const pc=mod(origKey.pc+S.semis), pref=S.flat||PREF[pc];
-  const [sgn,cnt]=keySig(pc);
+  const pc=sigPc(origKey.pc+S.semis,origKey.minor), pref=S.flat||PREF[pc];
+  const [sgn,cnt]=keySig(pc,pref);
   const sigSet={}; const ord=sgn==='#'?SHARP_ORD:FLAT_ORD;
   for(let i=0;i<cnt;i++)sigSet[ord[i]]=sgn;
 
@@ -813,8 +822,8 @@ function sylsOf(grp){ return [...(grp||[]).map(p=>p.text||'').join('')].filter(c
 
 function renderStaffSection(melM,chM,lyM,verses,measureStart,fitM,bassM,W){
   fitM=fitM||[]; bassM=bassM||[]; W=Math.max(320,Math.round(W||1000));
-  const pc=mod(origKey.pc+S.semis), pref=S.flat||PREF[pc];
-  const [sgn,cnt]=keySig(pc), ord=sgn==='#'?SHARP_ORD:FLAT_ORD;
+  const pc=sigPc(origKey.pc+S.semis,origKey.minor), pref=S.flat||PREF[pc];
+  const [sgn,cnt]=keySig(pc,pref), ord=sgn==='#'?SHARP_ORD:FLAT_ORD;
   const sigSet={}; for(let i=0;i<cnt;i++)sigSet[ord[i]]=sgn;
   const N=melM.length;
   if(!N)return {svgs:[],count:0};
@@ -2936,7 +2945,7 @@ function keySigSet(chord){
   if(!chord)return {};
   /* detectKey 와 같은 규칙(첫 코드를 으뜸음으로 본다). 단조는 나란한 장조로 바꿔 센다 —
      Gm 의 조표는 G장조의 #1개가 아니라 Bb장조의 b2개다. */
-  const pc=mod(chord.root+(/^m(?!aj)/.test(chord.suffix||'')?3:0));
+  const pc=sigPc(chord.root,/^m(?!aj)/.test(chord.suffix||''));
   const [sgn,cnt]=keySig(pc);
   const ord=sgn==='#'?SHARP_ORD:FLAT_ORD, out={};
   for(let i=0;i<cnt;i++)out[ord[i]]=sgn;
