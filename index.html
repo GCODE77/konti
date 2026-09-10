@@ -272,7 +272,7 @@ window.onerror=function(msg,src,ln){
    예) const SCAN_ENDPOINT = "https://konti-scan.내계정.workers.dev";
 */
 const SCAN_ENDPOINT = "";
-const APP_VER = "50";
+const APP_VER = "51";
 /* file:// 나 content:// 로 열면 브라우저가 외부 호출을 막는다(CORS). 미리 알려준다. */
 const LOCAL_FILE = !/^https?:$/.test(location.protocol);
 /* Claude 앱처럼 iframe 안에서 실행 중이면 키 없이도 인식이 통한다. */
@@ -2921,6 +2921,71 @@ function applyGeomDur(text,notes,perBar){
   return {text:lines.join('\n'),changed,matched:true,why:fitsBar?'마디가 딱 맞음':'AI와 합계 일치'};
 }
 
+/* ============ AI 없이 멜로디 만들기 (v51) ============
+   staffGeom/headDur 은 픽셀을 재는 계산이라 AI 와 아무 상관이 없다. 그런데 v50 까지는
+   그 결과를 "AI가 적어 온 ♪ 줄을 덮어쓰는" 데만 썼다 — 그래서 Gemini 가 없거나
+   한도에 걸리면 멜로디가 통째로 사라졌다(사용자 지적: "제미나이가 없더라도 완료가
+   되어야 하는데 안 되어 있다"). 맞는 지적이다. 잰 값만으로 ♪ 줄을 직접 만든다.
+
+   솔직히 밝혀 둘 한계 두 가지 — 둘 다 AI가 채워 주던 것이다:
+     1) 조표·임시표: 오선 위 '자리'만 잰 것이라 #/b 를 모른다. 조표는 OCR로 읽은
+        첫 코드에서 추정해 입힌다(keySigSet). 마디 안 임시표는 알 길이 없다.
+     2) 쉼표: 소리가 없는 자리라 잴 대상이 없다. 그래서 마디선은 길이를 전부 확신하고
+        합계가 마디에 딱 떨어질 때만 넣는다 — 틀린 마디선은 없느니만 못하다. */
+function keySigSet(chord){
+  if(!chord)return {};
+  /* detectKey 와 같은 규칙(첫 코드를 으뜸음으로 본다). 단조는 나란한 장조로 바꿔 센다 —
+     Gm 의 조표는 G장조의 #1개가 아니라 Bb장조의 b2개다. */
+  const pc=mod(chord.root+(/^m(?!aj)/.test(chord.suffix||'')?3:0));
+  const [sgn,cnt]=keySig(pc);
+  const ord=sgn==='#'?SHARP_ORD:FLAT_ORD, out={};
+  for(let i=0;i<cnt;i++)out[ord[i]]=sgn;
+  return out;
+}
+function geomMelodyLine(geo,perBar,sig){
+  if(!geo||!geo.notes||geo.notes.length<3)return '';
+  const per=perBar||4;
+  const nts=geo.notes.map(n=>{
+    const m=/^([A-G])(-?\d+)$/.exec(n.name||'');
+    return {tok:m?(m[1]+((sig&&sig[m[1]])||'')+m[2]):String(n.name||''),
+            beats:(n.beats>0?n.beats:1)};
+  });
+  const total=+nts.reduce((a,n)=>a+n.beats,0).toFixed(4);
+  const k=Math.round(total/per);
+  const bars=!!geo.durSure&&k>=1&&Math.abs(total-k*per)<=0.13;
+  const out=[]; let acc=0;
+  for(const n of nts){
+    out.push(n.tok+':'+n.beats);
+    if(bars){
+      acc=+(acc+n.beats).toFixed(4);
+      if(acc>=per-1e-6){ out.push('|'); acc=Math.max(0,+(acc-per).toFixed(4)); }
+    }
+  }
+  while(out.length&&out[out.length-1]==='|')out.pop();
+  return out.length?'♪ '+out.join(' '):'';
+}
+/* OCR 초안(코드·가사)에 픽셀로 잰 멜로디를 얹는다. Tesseract 를 다시 돌리지 않고
+   ocrDraft 가 이미 잘라 둔 단 그림만 다시 재므로 싸다(추가 API 호출 0회). */
+async function addGeomMelody(draft,say){
+  if(!draft||!draft.sys||!draft.sys.length)return draft;
+  const N=draft.sys.length;
+  for(let i=0;i<N;i++){
+    const s=draft.sys[i];
+    if(!s.url||s.whole)continue;   // 단 분리에 실패한 쪽은 첫 단만 재게 되어 뜻이 없다
+    say&&say((N>1?(i+1)+'/'+N+'단 ':'')+'음표 자리와 길이를 재는 중…');
+    try{ const geo=await staffGeom(s.url); if(geo&&geo.notes.length>=3)s.geo=geo; }
+    catch(e){ /* 한 단을 못 재도 나머지는 그대로 간다 */ }
+  }
+  const sig=keySigSet(draft.key);
+  let melN=0, melSys=0, melSure=0;
+  const pages=draft.sys.map(s=>{
+    const mel=s.geo?geomMelodyLine(s.geo,P.beats,sig):'';
+    if(mel){ melN+=s.geo.notes.length; melSys++; if(s.geo.durSure)melSure++; }
+    return [mel,s.txt].filter(t=>t&&t.trim()).join('\n');
+  }).filter(t=>t.trim());
+  return Object.assign({},draft,{text:pages.join('\n\n'),melN,melSys,melSure,sigN:Object.keys(sig).length});
+}
+
 /* 오선이 모인 줄(단)을 찾아 한 단씩 잘라낸다.
    한 번에 보는 음표가 줄면 음높이 인식이 훨씬 정확해진다.
    반드시 가장 큰 사본(prepImage 의 hiUrl)에서 잘라야 한다 — 줄여 놓은 그림에서 오려내면
@@ -3171,21 +3236,24 @@ async function ensureOcrWorkers(say){
    - runScan()에서 API 프롬프트에 참고 힌트로 얹으면 AI 채보 정확도를 보정하는 용도로도 쓴다 */
 async function ocrDraft(photoUrls,say){
   await ensureOcrWorkers(say);
-  const pages=[]; let chordN=0, lyricN=0;
+  /* sys: 단마다 {txt, url, page, t0, t1, whole} — 나중에 addGeomMelody 가 이 그림을
+     다시 재서 ♪ 줄을 얹고, 폴백 화면이 원본 사진 위 하이라이트 구간으로도 쓴다. */
+  const sys=[]; let chordN=0, lyricN=0, key1=null;
   for(let i=0;i<photoUrls.length;i++){
     const tag=photoUrls.length>1?(i+1)+'/'+photoUrls.length+'쪽 ':'';
     /* 한 장에 단이 여러 개 있으면(전통 찬송가 등) 단 단위로 잘라 한 단씩 읽는다 —
        한 장 통째로 넣으면 밀도가 높아 코드·글자 인식이 훨씬 부정확해진다. */
-    let shots=[photoUrls[i]];
+    let shots=[{url:photoUrls[i],t0:0,t1:1,whole:true}];
     /* 단 단위로 자르면 그 조각 안에서 다시 확대할 여유가 생긴다(전체 페이지를 한 번에 키우는
        것보다 훨씬 싸다) — 그래서 여기서는 목표 해상도를 크게 잡는다. */
-    try{ const parts=await splitSystems(photoUrls[i],2200); if(parts&&parts.length)shots=parts.map(p=>p.url); }catch(e){}
+    try{ const parts=await splitSystems(photoUrls[i],2200);
+         if(parts&&parts.length)shots=parts.map(p=>({url:p.url,t0:p.t0,t1:p.t1,whole:false})); }catch(e){}
     for(let j=0;j<shots.length;j++){
       const tag2=shots.length>1?tag+(j+1)+'/'+shots.length+'단 ':tag;
       say&&say(tag2+'오선을 지우는 중…');
       /* 단 단위로 잘랐으면 이미 위에서 충분히 확대했으니 그대로, 통째로(단 분리 실패) 넣을 땐
          한 번 더 키운다 — 어느 쪽이든 작은 글자가 인식 가능한 크기가 되도록. */
-      const clean=await stripStaff(shots[j],shots.length>1?1:1.4);
+      const clean=await stripStaff(shots[j].url,shots.length>1?1:1.4);
       say&&say(tag2+'코드 심볼을 읽는 중…');
       const rc=await wChord.recognize(clean,{},{blocks:true,text:false});
       const chordWords=wordsFrom(rc.data)
@@ -3210,26 +3278,38 @@ async function ocrDraft(photoUrls,say){
         })
         .map(w=>({text:w.text.trim().replace(/[.).]/g,''),bbox:w.bbox,kind:'v'}));
       chordN+=chordWords.length; lyricN+=lyricWords.length;
+      /* 맨 처음 나온 코드를 조 추정에 쓴다(detectKey 와 같은 규칙). 픽셀로 잰 음이름에는
+         조표가 없어서, 이게 없으면 Bb 조 찬송가의 멜로디가 전부 B 로 나온다. */
+      if(!key1&&chordWords.length){
+        const first=chordWords.slice().sort((a,b)=>a.bbox.x0-b.bbox.x0)[0];
+        key1=parseChord(fixChordToken(first.text.trim()))||null;
+      }
       const txt=wordsToChart(chordWords.concat(lyricWords).concat(verseWords));
-      if(txt.trim())pages.push(txt);
+      sys.push({txt,url:shots[j].url,page:i,t0:shots[j].t0,t1:shots[j].t1,whole:shots[j].whole});
     }
   }
-  return {text:pages.join('\n\n'),chordN,lyricN};
+  return {text:sys.map(s=>s.txt).filter(t=>t.trim()).join('\n\n'),chordN,lyricN,sys,key:key1};
 }
 async function runOCR(){
   if(!S.photos.length)return;
   const say=m=>{const b=$('scanstate'); if(b){b.className='callout work';b.innerHTML='<span class="spin"></span> '+m;} setWork(m);};
   say('OCR로 읽는 중…');
   try{
-    const {text:txt,chordN,lyricN}=await ocrDraft(S.photos.map(p=>p.ocrUrl||p.url),say);
+    /* 멜로디는 OCR(글자 인식)이 아니라 오선을 픽셀로 재서 얻는다 — 키가 없어도 나온다(v51) */
+    const {text:txt,chordN,lyricN,melN,melSys}=await addGeomMelody(
+      await ocrDraft(S.photos.map(p=>p.ocrUrl||p.url),say),say);
     if(!txt.trim())throw new Error('읽어낸 내용이 없습니다');
     S.raw=txt; S.semis=0; S.verse=1; stopPlay(); reparse(); renderAll(); addHistory();
     const box=$('scanstate');
     if(box){
       box.className='callout ok';
-      box.innerHTML='<b>코드 '+chordN+'개, 가사 '+lyricN+'덩어리를 읽었습니다'+(S.photos.length>1?' ('+S.photos.length+'쪽)':'')+'.</b> '
-        +'키 없이 읽은 것이라 빠지거나 틀린 게 많습니다. 원본과 비교하며 <b>직접 입력</b>에서 고쳐 주세요. '
-        +'멜로디(음표)는 읽지 못합니다.';
+      box.innerHTML='<b>코드 '+chordN+'개, 가사 '+lyricN+'덩어리'
+        +(melN?', 멜로디 '+melN+'음('+melSys+'단)':'')+'을 읽었습니다'
+        +(S.photos.length>1?' ('+S.photos.length+'쪽)':'')+'.</b> '
+        +'코드·가사는 키 없이 글자만 읽은 것이라 빠지거나 틀린 게 많습니다. 원본과 비교하며 <b>직접 입력</b>에서 고쳐 주세요.'
+        +(melN?' 멜로디는 오선 위 음표 자리를 픽셀로 잰 것이라 자리·길이는 정확하지만, '
+              +'<b>조표는 첫 코드로 추정</b>했고 마디 안 임시표(#/b)와 쉼표는 반영되지 않습니다.'
+              :' 오선을 찾지 못해 멜로디(음표)는 읽지 못했습니다.');
     }
     toast('OCR로 읽었습니다. 내용을 확인해 고쳐 주세요.');
   }catch(err){
@@ -3249,6 +3329,8 @@ document.addEventListener('paste',ev=>{
 
 /* 모델 이름은 자주 바뀐다. 추측하지 말고 계정에서 실제 목록을 받아온다. */
 let GMODELS=null, LAST_TRUNCATED=false;
+/* 이번 인식에서 실제로 쓴 모델들 — 라운드로빈이 돌고 있는지 사용자가 결과에서 확인할 수 있게 */
+let GEM_USED=[];
 async function geminiModels(gkey){
   if(GMODELS)return GMODELS;
   try{
@@ -3270,7 +3352,9 @@ async function geminiModels(gkey){
         return s;
       };
       ok.sort((x,y)=>score(y)-score(x));
-      if(ok.length){GMODELS=ok.slice(0,6);return GMODELS;}
+      /* 라운드로빈으로 하루 한도를 나눠 쓰므로 후보는 넉넉할수록 좋다(6 → 10).
+         무료 등급은 모델마다 하루 20회라 10개면 하루 200회다. */
+      if(ok.length){GMODELS=ok.slice(0,10);return GMODELS;}
     }else if(r.status===403){
       throw new Error('키가 거부되었습니다. AI Studio에서 키를 다시 확인해 주세요');
     }
@@ -3365,50 +3449,188 @@ function lastMelNote(txt){
   }
   return '';
 }
+/* Gemini 의 429 에는 성격이 아주 다른 두 가지가 섞여 있다.
+     · 분당 한도(RPM) — 잠깐 기다리면 그대로 풀린다. 이 앱은 한 곡에서 단 수만큼
+       요청을 보내므로 **여기에 걸리는 게 정상에 가깝다.**
+     · 하루 한도(RPD) — 태평양 시간 자정까지 정말로 못 쓴다.
+   v50 까지는 이 둘을 구분하지 않고 429 를 한 번 더 맞으면 무조건 "하루 한도 소진"으로
+   단정하고 OCR 폴백으로 내려갔다. 그래서 **한도를 거의 안 쓴 사용자가 "무료 한도를 다
+   썼습니다"를 보고 멜로디 없는 결과를 받았다.** 응답 body 의 QuotaFailure 에 어느
+   쪽인지가 적혀 있으니 그걸 읽는다(없으면 메시지 문구로 추정하되, 기본은 분당으로 본다 —
+   덜 위험한 쪽으로 틀리는 게 낫다). RetryInfo 에는 서버가 알려주는 대기 시간도 있다. */
+function quotaKind(d){
+  const det=(d&&d.error&&d.error.details)||[];
+  let perDay=false, perMin=false, delay=0;
+  for(const x of det){
+    const t=String(x['@type']||'');
+    if(/QuotaFailure/i.test(t))for(const v of (x.violations||[])){
+      const s=(v.quotaId||'')+' '+(v.quotaMetric||'');
+      if(/per_?day/i.test(s))perDay=true;
+      if(/per_?min/i.test(s))perMin=true;
+    }
+    if(/RetryInfo/i.test(t)){ const m=String(x.retryDelay||'').match(/([\d.]+)\s*s/); if(m)delay=parseFloat(m[1]); }
+  }
+  if(!perDay&&!perMin){
+    const msg=String((d&&d.error&&d.error.message)||'');
+    if(/per day|daily|PerDay/i.test(msg))perDay=true; else perMin=true;
+  }
+  return {perDay:perDay&&!perMin,perMin:perMin||!perDay,delay};
+}
+/* ============ 무료 한도를 실제 수치에 맞춰 다룬다 (v51) ============
+   사용자가 AI Studio '비율 제한' 화면을 찍어 보내 줘서 실제 숫자를 처음 알았다.
+   **무료 등급은 모델마다 따로 분당 5회(RPM) · 하루 20회(RPD) 다.**
+   그 화면에서 실제로 벌어진 일:
+     Gemini 3.8 Flash  RPM 6/5(초과) · RPD 24/20(초과)   ← 앱이 늘 이것만 골라 썼다
+     Gemini 3.5 Flash  RPM 1/5       · RPD  2/20         ← 거의 안 씀
+     Gemini 3.6 Flash  RPM 1/5       · RPD  2/20         ← 거의 안 씀
+     Gemini 3.7 Flash  RPM 1/5       · RPD  4/20         ← 거의 안 씀
+   즉 **한도가 남아 있는 모델이 셋이나 있는데 앱이 한 모델만 두들기다 죽었다.**
+   찬송가 한 장이 12단이면 요청 12회다 — 한 모델(하루 20회)로는 하루 한 곡 반이지만,
+   네 모델을 돌려 쓰면 80회, 여섯 모델이면 120회다. 그래서 두 가지를 한다.
+
+   1) **모델 라운드로빈** — 요청마다 다음 모델로 넘긴다(실패했을 때만이 아니라 평소에).
+      하루 한도가 모델별로 따로 세지므로 이게 곧 하루 한도를 네 배로 늘리는 일이고,
+      분당 한도도 모델별이라 전체 속도도 같이 빨라진다.
+   2) **모델별 간격 지키기 + 지수 백오프** — 분당 5회는 모델당 12초에 한 번이다.
+      한 번이라도 분당 한도에 걸리면 그 뒤로는 무료 등급 간격으로 스스로 늦추고,
+      재시도 간격은 서버가 알려 준 retryDelay 를 우선하되 없으면 2배씩 늘린다.
+      "무료 키였다"는 사실은 localStorage 에 남겨 다음에 처음부터 지키게 한다. */
+const GEM_FAST_GAP=1200;          // 유료 키를 처음부터 느리게 만들지 않기 위한 기본 간격
+const GEM_FREE_GAP=12500;         // 무료 등급 분당 5회 = 모델당 12초에 한 번
+const GEM_RETRY=4;                // 같은 모델 재시도 횟수(지수 백오프)
+const GEM_STATE={};               // 모델 → {last, until, dayOut}
+let GEM_RR=0;                     // 라운드로빈 위치
+let GEM_GAP=(()=>{ try{ return localStorage.getItem('konti.gemfree')?GEM_FREE_GAP:GEM_FAST_GAP; }catch(e){ return GEM_FAST_GAP; } })();
+function gemFreeTier(){ GEM_GAP=Math.max(GEM_GAP,GEM_FREE_GAP); try{ localStorage.setItem('konti.gemfree','1'); }catch(e){} }
+/* 하루 한도는 태평양 시간 자정에 풀린다 — 그 날짜를 도장처럼 찍어 두면 새로고침해도
+   이미 소진된 모델에 요청을 또 낭비하지 않는다(요청 한 번이 하루 20회 중 하나다). */
+const gemToday=()=>{ try{ return new Date().toLocaleDateString('en-CA',{timeZone:'America/Los_Angeles'}); }catch(e){ return new Date().toISOString().slice(0,10); } };
+function gemDayOut(model,set){
+  let m={}; try{ m=JSON.parse(localStorage.getItem('konti.gemday')||'{}')||{}; }catch(e){}
+  if(set){ m[model]=gemToday(); try{ localStorage.setItem('konti.gemday',JSON.stringify(m)); }catch(e){} }
+  return m[model]===gemToday();
+}
+/* 살아 있는 모델부터, 쉬는 중인 모델, 오늘 다 쓴 모델 순으로 늘어놓는다.
+   살아 있는 것들 안에서는 라운드로빈으로 시작점을 옮긴다. */
+function gemOrder(models){
+  const now=Date.now(), live=[], cool=[], dead=[];
+  models.forEach(m=>{
+    const s=GEM_STATE[m]||(GEM_STATE[m]={});
+    if(s.dayOut||gemDayOut(m))dead.push(m);
+    else if((s.until||0)>now)cool.push(m);
+    else live.push(m);
+  });
+  if(live.length>1)live.push(...live.splice(0,GEM_RR%live.length));
+  /* 오늘 다 쓴 게 확실한 모델에는 요청을 보내지 않는다 — 거절당하는 것도 요청이다.
+     다만 살아 있는 모델이 하나도 없으면 도장이 낡았을 수 있으니 그때는 다시 두드려 본다. */
+  const order=live.concat(cool);
+  return order.length?{order,dead:dead.length}:{order:dead,dead:0};
+}
+async function gemPace(model,say){
+  const s=GEM_STATE[model]||(GEM_STATE[model]={});
+  const wait=GEM_GAP-(Date.now()-(s.last||0));
+  if(wait>0){
+    if(wait>2500&&say)say('무료 분당 한도(모델당 5회/분)를 지키려고 '+Math.ceil(wait/1000)+'초 쉬는 중…');
+    await new Promise(z=>setTimeout(z,wait));
+  }
+  s.last=Date.now();
+}
 async function geminiScan(gkey,prompt,b64,say){
   const models=await geminiModels(gkey);
-  let lastErr='';
-  for(const model of models){
-    if(say)say('읽는 중… ('+model+')');
-    const url='https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent?key='+encodeURIComponent(gkey);
-    let r;
-    try{
-      r=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},
-        body:JSON.stringify({
-          contents:[{role:'user',parts:[
-            {inline_data:{mime_type:'image/jpeg',data:b64}},
-            {text:prompt}
-          ]}],
-          generationConfig:{temperature:0,maxOutputTokens:8192,thinkingConfig:{thinkingBudget:0}}
-        })});
-    }catch(e){ throw new Error('네트워크 오류 — 인터넷 연결을 확인해 주세요'); }
+  const {order,dead}=gemOrder(models);
+  if(!order.length){
+    const qe=new Error('무료 키로 쓸 수 있는 모델이 모두 오늘 하루 한도(모델당 20회)를 다 썼습니다. '
+      +'태평양 시간 자정(한국 시간 오후 4~5시)에 초기화됩니다');
+    qe.quota=true; qe.perDay=true; throw qe;
+  }
+  GEM_RR++;                                  // 다음 요청은 다음 모델부터 — 하루 한도를 고루 쓴다
+  let lastErr='', dayOut=0, minOut=0;
+  /* ★ 순서가 중요하다: **먼저 모델을 전부 한 바퀴 돌고, 그래도 안 되면 그때 기다린다.**
+     분당 한도는 모델마다 따로 세므로 옆 모델로 옮기는 건 공짜이고 즉시 되는데,
+     한 모델을 붙들고 5→10→20→40초를 먼저 태우면 75초를 버리고 나서야 옆 모델을 본다.
+     그래서 바깥 고리 = 재시도 라운드(지수 백오프), 안쪽 고리 = 모델 한 바퀴. */
+  for(let round=1;round<=GEM_RETRY;round++){
+    let tried=0; minOut=0;
+    const live=order.filter(m=>!(GEM_STATE[m]||{}).dayOut);
+    if(!live.length)break;
+    for(const model of live){
+      tried++;
+      const tag=live.length>1?' ('+model+', '+tried+'/'+live.length+'번째 모델)':' ('+model+')';
+      if(say)say('읽는 중…'+tag+(round>1?' · '+round+'번째 시도':''));
+      await gemPace(model,say);
+      const url='https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent?key='+encodeURIComponent(gkey);
+      let r;
+      try{
+        r=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},
+          body:JSON.stringify({
+            contents:[{role:'user',parts:[
+              {inline_data:{mime_type:'image/jpeg',data:b64}},
+              {text:prompt}
+            ]}],
+            generationConfig:{temperature:0,maxOutputTokens:8192,thinkingConfig:{thinkingBudget:0}}
+          })});
+      }catch(e){ throw new Error('네트워크 오류 — 인터넷 연결을 확인해 주세요'); }
 
-    let d=null;
-    try{ d=await r.json(); }catch(e){}
-    if(r.ok){
-      const cand=(d&&d.candidates&&d.candidates[0])||null;
-      const txt=(cand&&cand.content&&cand.content.parts)
-        ? cand.content.parts.map(x=>x.text||'').join('') : '';
-      if(txt.trim()){
-        if(cand.finishReason==='MAX_TOKENS')LAST_TRUNCATED=true;
-        return txt;
+      let d=null;
+      try{ d=await r.json(); }catch(e){}
+      if(r.ok){
+        const cand=(d&&d.candidates&&d.candidates[0])||null;
+        const txt=(cand&&cand.content&&cand.content.parts)
+          ? cand.content.parts.map(x=>x.text||'').join('') : '';
+        if(txt.trim()){
+          if(cand.finishReason==='MAX_TOKENS')LAST_TRUNCATED=true;
+          if(GEM_USED.indexOf(model)<0)GEM_USED.push(model);
+          return txt;
+        }
+        lastErr='빈 응답'+(cand&&cand.finishReason?' ('+cand.finishReason+')':'');
+        continue;
       }
-      lastErr='빈 응답'+(cand&&cand.finishReason?' ('+cand.finishReason+')':'');
-      continue;
-    }
-    const msg=(d&&d.error&&d.error.message)||('서버 응답 '+r.status);
-    if(r.status===403) throw new Error('키가 거부되었습니다: '+msg);
-    if(r.status===429){
-      if(!P._retried){ P._retried=true;
-        for(let w=25;w>0;w--){ if(say)say('무료 한도에 걸렸습니다. '+w+'초 뒤 자동으로 다시 시도합니다…'); await new Promise(z=>setTimeout(z,1000)); }
-        return await geminiScan(gkey,prompt,b64,say);
+      const msg=(d&&d.error&&d.error.message)||('서버 응답 '+r.status);
+      if(r.status===403) throw new Error('키가 거부되었습니다: '+msg);
+      if(r.status===429){
+        const q=quotaKind(d);
+        gemFreeTier();               // 429 를 봤다는 건 무료 등급이라는 뜻이다 — 이제부터 간격을 지킨다
+        const st=GEM_STATE[model]||(GEM_STATE[model]={});
+        if(q.perDay){
+          /* 이 모델은 오늘 끝이다. 도장을 찍어 두고 **다음 모델로 넘어간다** —
+             v50 은 여기서 바로 포기했다. 실제로는 다른 모델에 한도가 남아 있었다. */
+          st.dayOut=true; gemDayOut(model,true);
+          dayOut++; lastErr='하루 한도 소진('+model+')';
+          continue;
+        }
+        st.until=Date.now()+Math.max(15000,(q.delay||0)*1000);
+        st.retry=Math.max(st.retry||0,q.delay||0);
+        minOut++; lastErr='분당 한도('+model+')';
+        continue;                    // 기다리지 말고 곧바로 다음 모델 — 분당 한도는 모델별이다
       }
-      { const qe=new Error('무료 한도를 다 썼습니다. 분당 한도라면 1~2분 뒤 됩니다. '
-        +'몇 시간째 안 되면 하루 한도까지 쓴 것이고, 태평양 시간 자정(한국 시간 오후 4~5시)에 초기화됩니다. '
-        +'그때까지는 아래 OCR이나 직접 입력을 쓰세요');
-        qe.quota=true; throw qe; }
+      lastErr=msg;
     }
-    lastErr=msg;
+    /* 한 바퀴를 다 돌았는데 전부 분당 한도였다면, 그때 비로소 기다린다(지수 백오프).
+       분당 한도가 아닌 이유로 실패한 것이 섞여 있으면 기다려도 소용없으므로 그만둔다. */
+    if(!minOut||minOut<tried)break;
+    if(round>=GEM_RETRY)break;
+    const hint=Math.max.apply(null,live.map(m=>(GEM_STATE[m]||{}).retry||0));
+    const back=5*Math.pow(2,round-1)+Math.random()*2;   // 5 → 10 → 20 → 40초, 지터 포함
+    let w=Math.min(75,Math.max(5,Math.ceil(hint?hint+1:back)));
+    for(;w>0;w--){
+      if(say)say('무료 <b>분당</b> 한도에 걸렸습니다 — <b>하루 한도가 아닙니다.</b> '
+        +'모델 '+tried+'개가 다 막혀서 '+w+'초 뒤 다시 시도합니다… ('+round+'/'+(GEM_RETRY-1)+')');
+      await new Promise(z=>setTimeout(z,1000));
+    }
+  }
+  /* 여기까지 왔으면 쓸 수 있는 모델이 전부 실패했다. 한도 때문이면 quota 를 달아 폴백으로
+     넘기되, 하루 한도인지 분당 한도인지를 반드시 구분한다 — 안내 문구가 완전히 달라지고,
+     사용자가 "1~2분 뒤 다시 하면 되는 일"을 "오늘은 끝"으로 오해하면 안 된다. */
+  if(minOut){
+    const qe=new Error('무료 분당 한도(모델당 5회/분)에 계속 걸립니다'
+      +(dayOut?'(모델 '+dayOut+'개는 하루 한도까지 소진했습니다)':'(하루 한도는 아직 남아 있습니다)')
+      +'. 1~2분 뒤에 다시 시도하면 대개 그대로 됩니다');
+    qe.quota=true; qe.perMin=true; throw qe;
+  }
+  if(dayOut){
+    const qe=new Error('무료 키로 쓸 수 있는 모델 '+(dayOut+dead)+'개가 모두 오늘 하루 한도(모델당 20회)를 다 썼습니다. '
+      +'태평양 시간 자정(한국 시간 오후 4~5시)에 초기화됩니다');
+    qe.quota=true; qe.perDay=true; throw qe;
   }
   if(/no longer available|not found|deprecated/i.test(lastErr))
     throw new Error('시도한 모델이 전부 더는 지원되지 않습니다. 새로고침 후 다시 시도해 보세요('+lastErr+')');
@@ -3439,7 +3661,7 @@ async function runScan(){
   const N=S.photos.length;
   const say=m=>{const b=$('scanstate'); if(b){b.className='callout work';b.innerHTML='<span class="spin"></span> '+m;} setWork(m);};
   say('시작하는 중…');
-  LAST_TRUNCATED=false; P._retried=false;
+  LAST_TRUNCATED=false; GEM_USED=[];
   let ocrResult=null;   // Gemini 무료 한도를 다 쓰면 이걸(또는 새로 돌린 OCR을) 그대로 결과로 쓴다
   try{
     /* OCR로 먼저 코드·가사 초안을 훑어서, AI가 헷갈리기 쉬운 코드 기호·글자를
@@ -3563,7 +3785,8 @@ async function runScan(){
       if(t)pages.push(t);
       sysRec.push({page:shots[i].page||0,t0:shots[i].t0||0,t1:(shots[i].t1===undefined?1:shots[i].t1),
                    w:t?sysWeight(t):0,whole:!!shots[i].whole});
-      if(i<NN-1)await new Promise(r=>setTimeout(r,1100));   // 무료 등급 분당 한도 배려
+      /* Gemini 는 gemPace 가 요청 직전에 간격을 지키므로 여기서 또 쉬면 두 번 쉰다 */
+      if(i<NN-1&&!(prov==='gemini'&&!hosted))await new Promise(r=>setTimeout(r,1100));
     }
     let text=pages.join('\n\n');
     if(!text)throw new Error('읽어낸 내용이 없습니다 — 사진을 더 밝고 반듯하게 찍어 보세요');
@@ -3585,6 +3808,9 @@ async function runScan(){
     if(durSys)bits.push(durSys+'단은 음표 길이(박자)까지 재서 확정했습니다'
       +(durFixed?'(AI가 잘못 본 '+durFixed+'음 교정)':''));
     if(rechecked)bits.push(rechecked+'단은 음높이가 이상해서 다시 읽었습니다');
+    /* 무료 등급은 모델마다 하루 20회씩 따로 세므로 여러 모델을 돌려 쓴다 —
+       한도 걱정이 있는 사용자가 이걸 눈으로 확인할 수 있어야 한다(v51) */
+    if(GEM_USED.length>1)bits.push('무료 하루 한도를 나눠 쓰려고 모델 '+GEM_USED.length+'개를 돌려 썼습니다('+GEM_USED.join(', ')+')');
     if(SUSPECT)bits.push('확인이 필요한 음 '+SUSPECT+'개를 동그라미로 표시했습니다');
     if(LAST_TRUNCATED)bits.push('길이 제한으로 뒷부분이 잘렸을 수 있습니다 — 악보를 반씩 나눠 찍으면 더 잘 됩니다');
     showResult('ok','악보를 옮겼습니다',bits.join('. ')+'.<br>'
@@ -3594,44 +3820,61 @@ async function runScan(){
        {label:'직접 고치기',fn:()=>openPanel('input')}]);
     closePanel();
   }catch(err){
-    if(err.quota&&!hosted&&prov==='gemini'){ await ocrFallback(ocrResult,say,fail); return; }
+    if(err.quota&&!hosted&&prov==='gemini'){ await ocrFallback(ocrResult,say,fail,err); return; }
     fail((err.message||'변환 실패')+' — 다시 시도하거나 <b>직접 입력</b>에 옮겨 주세요.');
   }
 }
-/* Gemini 무료 한도를 다 쓰면 사용자가 따로 누를 필요 없이 OCR 결과로 대신 채워 넣는다.
-   그리고 반드시 "무료 한도 때문에 OCR로만 처리했다"는 걸 결과 화면에 밝힌다 — 왜 멜로디가
-   없는지, 왜 정확도가 떨어지는지 사용자가 헷갈리지 않게. */
-async function ocrFallback(existing,say,fail){
+/* Gemini 한도에 걸리면 사용자가 따로 누를 필요 없이 대신 채워 넣는다.
+   코드·가사는 OCR(문자 인식)로, **멜로디는 오선을 픽셀로 재서**(v51) 얻는다 —
+   음표를 재는 일에는 AI가 필요 없다. 그리고 왜 이 결과가 됐는지(분당 한도인지
+   하루 한도인지)를 결과 화면에 정확히 밝힌다. */
+async function ocrFallback(existing,say,fail,err){
+  const perDay=!!(err&&err.perDay);
+  const why=perDay
+    ? '오늘 쓸 수 있는 <b>하루 한도</b>를 다 썼습니다(태평양 시간 자정, 한국 시간 오후 4~5시에 초기화됩니다)'
+    : '무료 <b>분당 한도</b>에 계속 걸렸습니다 — <b>하루 한도가 남아 있어도 이렇게 됩니다.</b> '
+      +'1~2분 뒤 다시 인식하면 대개 그대로 됩니다';
   try{
-    say('무료 한도 소진 — 대신 OCR로 읽는 중…');
-    const {text:txt,chordN,lyricN}=(existing&&existing.text)?existing:await ocrDraft(S.photos.map(p=>p.ocrUrl||p.url),say);
-    if(!txt||!txt.trim())throw new Error('OCR로도 읽어낸 내용이 없습니다');
+    say((perDay?'하루 한도 소진':'분당 한도에 걸림')+' — AI 없이 읽는 중…');
+    let draft=(existing&&existing.sys&&existing.sys.length)?existing
+             :await ocrDraft(S.photos.map(p=>p.ocrUrl||p.url),say);
+    draft=await addGeomMelody(draft,say);
+    const {text:txt,chordN,lyricN,melN,melSys}=draft;
+    if(!txt||!txt.trim())throw new Error('AI 없이도 읽어낸 내용이 없습니다');
     S.raw=txt; S.semis=0; S.verse=1; stopPlay();
-    /* OCR로 대체됐어도 원본 사진은 그대로 보여 준다 — 깨진 글자보다 원본이 훨씬 쓸모 있다.
-       단 구분 정보가 없으니 쪽 전체를 한 덩어리로 잡는다. */
-    S.orig=buildOrig(S.photos.map((ph,pi)=>({page:pi,t0:0,t1:1,w:1,whole:true})));
-    if(hasSheet())S.mode='sheet';   // OCR 결과가 깨져도 사진은 정확하다 — 사진을 기본 화면으로
+    /* 폴백이어도 원본 사진은 그대로 보여 준다 — 깨진 글자보다 원본이 훨씬 쓸모 있다.
+       OCR 이 이미 단 단위로 잘라 봤으므로 그 구간을 그대로 하이라이트에 쓴다
+       (예전엔 단 정보가 없다고 보고 쪽 전체를 한 덩어리로 잡았다). */
+    const rec=(draft.sys||[]).filter(s=>s.txt&&s.txt.trim())
+      .map(s=>({page:s.page||0,t0:s.t0||0,t1:(s.t1===undefined?1:s.t1),w:sysWeight(s.txt),whole:!!s.whole}));
+    S.orig=buildOrig(rec.length?rec:S.photos.map((ph,pi)=>({page:pi,t0:0,t1:1,w:1,whole:true})));
+    if(hasSheet())S.mode='sheet';   // 인식이 깨져도 사진은 정확하다 — 사진을 기본 화면으로
     reparse(); renderAll(); addHistory();
     clearWork();
-    showResult('warn','무료 한도를 다 써서 OCR로만 옮겼습니다',
-      '<b>결과 품질이 많이 떨어집니다.</b> 키 없이 글자만 인식한 것이라 <b>멜로디(음표)는 아예 읽지 못하고</b>, '
-      +'가사도 깨져 나오는 경우가 많습니다(코드 '+chordN+'개, 가사 '+lyricN+'덩어리).<br>'
-      +'Gemini 무료 한도는 <b>태평양 시간 자정(한국 시간 오후 4~5시)</b>에 초기화됩니다. '
-      +'그때 다시 인식하시면 멜로디까지 제대로 나옵니다.',
-      [{label:'직접 입력으로 고치기',pri:true,fn:()=>openPanel('input')},
+    const melTxt=melN
+      ? '<b>멜로디 '+melN+'음('+melSys+'단)은 AI 없이 오선을 픽셀로 재서 넣었습니다</b> — '
+        +'음 자리와 길이는 정확한 편이지만 조표는 첫 코드로 추정했고, 마디 안 임시표(#/b)와 쉼표는 빠집니다.'
+      : '오선을 찾지 못해 <b>멜로디(음표)는 넣지 못했습니다.</b>';
+    showResult('warn','한도에 걸려 AI 없이 옮겼습니다',
+      why+'.<br>코드·가사는 키 없이 글자만 인식한 것이라 <b>깨져 나오는 경우가 많습니다</b>'
+      +'(코드 '+chordN+'개, 가사 '+lyricN+'덩어리). '+melTxt+'<br>'
+      +(perDay?'한도가 풀린 뒤':'1~2분 뒤')+' 다시 인식하시면 가사·코드까지 제대로 나옵니다.',
+      [{label:(perDay?'직접 입력으로 고치기':'다시 시도'),pri:true,
+        fn:()=>{ if(perDay)openPanel('input'); else {openPanel('scan');runScan();} }},
        {label:'옮겨 적은 글자 보기',fn:()=>setMode('text')}]);
     const box=$('scanstate');
     if(box){
       box.className='callout ok';
-      box.innerHTML='<b>Gemini 무료 한도를 다 써서 대신 OCR(문자 인식)로만 옮겼습니다.</b> '
-        +'코드 '+chordN+'개, 가사 '+lyricN+'덩어리를 읽었습니다'+(S.photos.length>1?' ('+S.photos.length+'쪽)':'')+'. '
-        +'키 없이 읽은 것이라 빠지거나 틀린 게 많고 <b>멜로디(음표)는 읽지 못합니다</b> — 원본과 비교하며 '
-        +'<b>직접 입력</b>에서 고쳐 주세요. 한도는 태평양 시간 자정(한국 시간 오후 4~5시)에 초기화됩니다.';
+      box.innerHTML='<b>'+why+'.</b> 대신 코드·가사는 OCR(문자 인식)로, 멜로디는 오선을 재서 옮겼습니다 — '
+        +'코드 '+chordN+'개, 가사 '+lyricN+'덩어리'+(melN?', 멜로디 '+melN+'음':'')
+        +(S.photos.length>1?' ('+S.photos.length+'쪽)':'')+'. '
+        +'코드·가사는 빠지거나 틀린 게 많으니 원본과 비교하며 <b>직접 입력</b>에서 고쳐 주세요.';
     }
     /* AI로 성공했을 때와 달리 여기서는 패널을 자동으로 닫지 않는다 — 결과 질이 떨어진 이유를
        사용자가 위 안내에서 직접 읽고 확인한 뒤 스스로 닫게 한다. */
   }catch(err2){
-    fail('Gemini 무료 한도를 다 썼고, OCR로도 실패했습니다: '+(err2.message||'알 수 없는 오류')+' — <b>직접 입력</b>에 옮겨 주세요.');
+    fail(why+'. 그래서 AI 없이 읽어 봤지만 그것도 실패했습니다: '
+      +(err2.message||'알 수 없는 오류')+' — <b>직접 입력</b>에 옮겨 주세요.');
   }
 }
 
