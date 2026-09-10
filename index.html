@@ -1420,7 +1420,7 @@ function applyGenre(k){
 }
 
 /* ---- 시퀀서 ---- */
-const P={playing:false,bpm:84,genre:'',insts:['piano'],melInst:'ep',pattern:'block',beats:4,loop:true,click:false,melody:true,accomp:true,readMel:true,bySystem:true,ocrBoost:true,realInst:true,melOct:0,melFit:true,playBass:false,
+const P={playing:false,bpm:84,genre:'',insts:['piano'],melInst:'ep',pattern:'block',beats:4,loop:true,click:false,melody:true,accomp:true,readMel:true,bySystem:true,ocrBoost:true,geomPitch:true,realInst:true,melOct:0,melFit:true,playBass:false,
          evs:[],total:0,k:0,cursorT:0,lastAt:0,t0:0,timer:null,uiTimer:null,marks:[],vmarks:[],vnext:1,cur:-1};
 
 function buildTimeline(){
@@ -2008,7 +2008,7 @@ function saveLast(){
       setLS('konti:last',JSON.stringify({
         t:$('title').value, raw:S.raw, semis:S.semis, verse:S.verse, flat:S.flat,
         num:S.num, capo:S.capo, font:S.font, staffScale:S.staffScale, col:S.col,
-        mode:S.mode==='sheet'?'auto':S.mode,
+        mode:S.mode,   /* 'sheet'(원본 사진 보기)도 그대로 저장한다 — 사진에서 가져온 곡의 기본 보기다 */
         bpm:P.bpm, insts:P.insts, melInst:P.melInst, pattern:P.pattern,
         beats:P.beats, genre:P.genre, loop:P.loop, click:P.click, melody:P.melody,
         realInst:P.realInst, playBass:P.playBass, at:Date.now()
@@ -2195,7 +2195,16 @@ function makePrompt(withMel,ctx){
    예: ♪ D4:0.5 D4:0.5 | Bb4:1 C5:0.5 D5:0.5 r:1 | Eb4:2 D4:2
    - 코드 줄과 똑같은 자리에 마디선 | 을 넣습니다. 마디마다 박수 합이 박자표와 맞아야 합니다.
    - 못갖춘마디로 시작하면 첫 | 앞에 그 음들만 적습니다.
-
+`+(ctx.geom&&ctx.geom.length?`
+   ★★★ 이 단은 프로그램이 음표 머리의 위치를 픽셀로 이미 재 놓았습니다.
+       소프라노(맨 위 성부) 음표를 왼쪽부터 센 음이름 ${ctx.geom.length}개:
+         ${ctx.geom.join(' ')}
+       - 당신이 읽은 음표 개수가 이 목록과 같으면 **음이름과 옥타브는 이 목록을 그대로**
+         쓰고, 당신은 박수(길이)·쉼표·마디선만 그림에서 읽어 채우세요. 자리를 다시 세지 마세요.
+       - 개수가 다르면(이음줄·화음·쉼표 때문에 다를 수 있습니다) 이 목록은 무시하고
+         그림대로 적으세요. 억지로 개수를 맞추지 마세요.
+       - 이 목록에는 조표·임시표(#/b)가 반영돼 있지 않습니다. #/b 는 그림을 보고 붙이세요.
+`:``)+`
    ★★★ 음높이는 이렇게 정하세요 — 이 순서를 반드시 지키세요.
    (1) 먼저 자리표를 확인합니다. 𝄞 높은음자리표인지 𝄢 낮은음자리표인지.
    (2) 음표 머리(속이 빈/찬 동그라미)의 중심이 어디 놓였는지 봅니다.
@@ -2315,6 +2324,602 @@ document.addEventListener('paste',ev=>{
   S.importMode='photo';
   prepImage(f).then(p=>{S.photos.push(p);openPanel('scan')}).catch(()=>toast('이미지를 열지 못했습니다.'));
 });
+
+/* ============ 오선 자리를 픽셀로 재서 음높이를 확정한다 (v49) ============
+   AI 비전이 가장 못 하는 일이 "음표 머리가 오선 몇째 줄·칸에 놓였나 세기"다(CLAUDE.md
+   1번 항목 — 프롬프트를 아무리 조여도 3도·2도씩 틀리는 건 못 막았다). 그런데 이건
+   추론이 아니라 자로 재는 일이고, 브라우저에서 픽셀로 재면 계산 문제라 거의 틀리지
+   않는다. 반대로 AI가 잘 하는 건 박자·가사·코드·절 구분이다. 그래서 일을 나눈다 —
+   음높이는 우리가 재고, 길이·가사·코드는 AI가 읽는다.
+
+   splitSystems 가 이미 단을 잘라 놨으니 그 단 그림에서:
+     1) 가로 투영으로 오선 다섯 줄의 y 를 찾는다(줄 간격 sp 도 여기서 나온다).
+        간격이 고른 다섯 줄 묶음 중 가장 위를 쓴다 = 소프라노 보표
+        (찬송가는 그랜드 스태프라 아래에 낮은음자리표 오선이 하나 더 있다).
+     2) 오선 줄만 지운다. 그 열의 잉크가 세로로 짧게 끊기면(=줄뿐이면) 지우고,
+        길게 이어지면(=음표 머리·기둥이 걸쳐 있으면) 남긴다.
+     3) 남은 잉크에서 세로 런 길이와 가로 런 길이가 둘 다 음표 머리 크기인 픽셀만
+        고른다. 기둥은 세로로 너무 길고, 빔은 세로로 너무 얇고, 점·임시표는 너무 작다.
+     4) 속이 빈 음표(2분·온음표)는 3)에 안 걸린다 — 대신 잉크로 완전히 둘러싸인
+        흰 구멍을 찾는다. 그게 곧 머리 중심이다.
+     5) 같은 x 에 쌓인 것(SATB 화음)은 맨 위 것만 쓴다 = 소프라노 = 멜로디.
+     6) 머리 중심 y 를 맨 아래 줄 기준 반칸 단위로 세어 음이름을 바로 계산한다.
+
+   ★ 못 믿을 상황(오선 다섯 줄을 못 찾음 / 음표 3개 미만 / 반칸 격자에 잘 안 떨어짐)에는
+     반드시 null 을 돌려준다. 추측으로 덮어쓰면 지금보다 나빠진다 — 이 원칙을 깨지 말 것.
+   ★ 결과는 두 곳에 쓴다. (a) 프롬프트에 "우리가 센 음이름"으로 넣어 AI가 참고하게 하고,
+     (b) AI가 돌려준 음표 개수가 우리가 센 개수와 정확히 같을 때만 음이름을 덮어쓴다.
+     개수가 다르면 정렬 근거가 없으므로 손대지 않는다(잘못 맞추면 뒤가 전부 밀린다).
+   ★ 임시표(#/b)는 픽셀로 읽지 않는다. 음이름만 우리가 정하고, 음이름이 그대로면 AI가
+     붙인 임시표를 유지한다. 음이름이 바뀌면 그 임시표는 다른 음의 것이므로 떼어낸다. */
+const DIA_L=['C','D','E','F','G','A','B'];
+/* 맨 아래 오선 줄의 음을 "옥타브*7 + 음이름번호"로: 높은음자리표 E4, 낮은음자리표 G2 */
+const CLEF_BOTTOM={treble:4*7+2, bass:2*7+4};
+const diaName=abs=>DIA_L[((abs%7)+7)%7]+Math.floor(abs/7);
+function otsuTh(hist,total){
+  let sum=0; for(let i=0;i<256;i++)sum+=i*hist[i];
+  let wB=0,sumB=0,best=-1,th=128;
+  for(let t=0;t<256;t++){
+    wB+=hist[t]; if(!wB)continue;
+    const wF=total-wB; if(!wF)break;
+    sumB+=t*hist[t];
+    const mB=sumB/wB, mF=(sum-sumB)/wF, v=wB*wF*(mB-mF)*(mB-mF);
+    if(v>best){best=v;th=t;}
+  }
+  return th;
+}
+function imgFrom(url){
+  return new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=()=>rej(new Error('img'));i.src=url;});
+}
+/* 오선이 가장 수평에 가까워지는 기울기(라디안)를 찾는다.
+   손으로 찍은 악보 사진은 늘 조금 기울어 있고, 가로 투영으로 오선을 찾는 방식은 1도만
+   기울어도 무너진다(합성 테스트에서 1.5도에 아무것도 못 찾는 것을 확인했다).
+
+   ★ 두 가지를 조심할 것 — 둘 다 실제로 밟은 함정이다.
+   1. 판정용 사본을 너무 작게 줄이면 안 된다. 오선은 1~3px 짜리 얇은 선이라, 브라우저의
+      기본 축소(저품질 이중선형)로 1/4 이하로 줄이면 **선이 통째로 사라진다.** 실제로
+      380px 사본에서는 잉크 픽셀이 0개가 나와 모든 각도의 점수가 같아졌고, 반듯한 그림에
+      3도 회전을 걸어 버렸다. 사본 폭은 760px 이상으로 두고 고품질 축소를 켠다.
+   2. 점수를 "잉크냐 아니냐"로 세지 말 것. 얇은 선은 축소하면 회색이 되어 문턱값 하나로
+      갈리면 결과가 요동친다. 밝기(0~1)의 행 평균을 그대로 제곱해서 더한다 —
+      오선이 수평에 맞으면 어두움이 몇 행에 몰려 제곱합이 최대가 된다. */
+function bestSkew(img){
+  const W=Math.min(img.width,Math.max(760,Math.round(img.width*0.5)));
+  const H=Math.max(24,Math.round(img.height*(W/img.width)));
+  const cv=document.createElement('canvas'); cv.width=W; cv.height=H;
+  const g=cv.getContext('2d',{willReadFrequently:true});
+  g.imageSmoothingEnabled=true; g.imageSmoothingQuality='high';
+  const score=deg=>{
+    const a=deg*Math.PI/180;
+    g.setTransform(1,0,0,1,0,0);
+    g.fillStyle='#fff'; g.fillRect(0,0,W,H);
+    if(a){ g.translate(W/2,H/2); g.rotate(a); g.translate(-W/2,-H/2); }
+    g.drawImage(img,0,0,W,H);
+    g.setTransform(1,0,0,1,0,0);
+    let d; try{ d=g.getImageData(0,0,W,H).data; }catch(e){ return null; }
+    let sum=0;
+    for(let y=0;y<H;y++){
+      let dark=0; const o=y*W*4;
+      for(let x=0;x<W;x++){ const i=o+x*4; dark+=255-(d[i]*.299+d[i+1]*.587+d[i+2]*.114); }
+      const r=dark/(W*255);
+      sum+=r*r;
+    }
+    return sum;
+  };
+  const flat=score(0);
+  if(flat===null||flat<=0)return 0;
+  let best=0, bestScore=flat;
+  for(let deg=-3;deg<=3.001;deg+=0.4){
+    if(Math.abs(deg)<0.05)continue;
+    const v=score(deg); if(v===null)return 0;
+    if(v>bestScore){ bestScore=v; best=deg; }
+  }
+  /* 남은 기울기가 0.2도만 있어도 오선 줄 지우기가 양쪽 끝에서 실패해서 음표를 잃는다.
+     (합성 테스트: 1.5도 사진에서 왼쪽 세 음이 통째로 빠졌다) 그래서 곱게 다시 훑는다. */
+  if(best){
+    for(let pass=0;pass<2;pass++){
+      const step=pass?0.05:0.15, span=pass?0.12:0.36;
+      for(let deg=best-span;deg<=best+span+1e-9;deg+=step){
+        const v=score(deg); if(v===null)break;
+        if(v>bestScore){ bestScore=v; best=deg; }
+      }
+    }
+  }
+  /* 원래대로 두는 것이 기본이다. 되돌리는 게 뚜렷하게 나을 때만 돌린다 —
+     미세한 회전은 음표 머리를 세로로 번지게 해서 오히려 음을 잃는다. */
+  if(bestScore<flat*1.03)return 0;
+  const a=best*Math.PI/180;
+  return Math.abs(a)<0.003?0:a;               // 0.17도 미만은 되돌릴 필요가 없다
+}
+/* 한 단 그림에서 소프라노 음표들의 자리를 재서
+   {sp,top,bot,med,notes:[{x,cy,step,abs,name}]} 또는 null 을 돌려준다. */
+/* ============ 음표 길이(박자)를 픽셀로 재기 (v50) ============
+   음높이를 자로 재듯, 길이도 "그림에 무엇이 붙어 있나"를 세면 나온다:
+     속이 빈 머리인가 → 온음표·2분음표 · 기둥이 있나 → 온음표 구분
+     기둥 끝에 가로로 굵은 잉크(빔·꼬리)가 몇 겹인가 → 8분(1겹)·16분(2겹)
+     머리 오른쪽에 작고 동그란 점이 있나 → 점음표(×1.5)
+   ★ 박자는 하나만 틀려도 그 뒤가 전부 밀린다. 그래서 음높이 때와 똑같이
+     "모르겠으면 손대지 않는다" — 애매하면 sure:false 를 달아 돌려주고, 부르는 쪽에서
+     한 음이라도 sure 가 아니면 그 단 전체의 박자를 쓰지 않는다. */
+function headDur(ink,vr,hr,W,c,sp,y0,y1,bot,nextX0,others,lineRow){
+  const hy0=Math.round(c.cy-sp*0.55), hy1=Math.round(c.cy+sp*0.55);
+  /* 기둥 찾기.
+     ★ 처음엔 "머리 높이에서 세로 잉크 덩어리를 따라가는" 방식으로 했는데 전부 실패했다 —
+       머리와 기둥이 붙는 지점에서는 가로 잉크 폭이 머리 전체 폭이라, 기둥을 가늘다는
+       기준으로 찾으면 그 자리에서 걸러져 버린다. 그래서 **머리에서 떨어진 구간**
+       (0.9~2.4칸 위/아래)에서 그 x 칸이 얼마나 채워져 있는지로 본다. */
+  const colFill=(x,ya,yb)=>{
+    if(x<0||x>=W)return 0;
+    const a=Math.max(y0,Math.round(Math.min(ya,yb))), b=Math.min(y1,Math.round(Math.max(ya,yb)));
+    if(b<=a)return 0;
+    let n=0; for(let y=a;y<=b;y++)if(ink[y*W+x])n++;
+    return n/(b-a+1);
+  };
+  const tipOf=(x,dir)=>{                    // 머리에서 dir 방향으로 잉크를 따라간 끝
+    let y=Math.round(c.cy+dir*sp*0.6), last=y, gap=0;
+    const lim=Math.max(2,Math.round(sp*0.35));
+    while(y>=y0&&y<=y1){
+      if(ink[y*W+x]){ last=y; gap=0; } else if(++gap>lim)break;
+      y+=dir;
+    }
+    return last;
+  };
+  let stem=null;
+  const reach=Math.max(2,Math.round(sp*0.7));   // 속 빈 머리는 x 범위가 '구멍' 기준이라 넉넉히
+  const FILL=0.8;
+  for(let d=0;d<=reach&&!stem;d++){
+    const xr=Math.round(c.x1)+d;
+    if(colFill(xr,c.cy-sp*0.9,c.cy-sp*2.4)>=FILL&&colFill(xr,c.cy+sp*1.1,c.cy+sp*2.4)<0.5){
+      stem={x:xr,tip:tipOf(xr,-1),up:true}; break; }
+    const xl=Math.round(c.x0)-d;
+    if(colFill(xl,c.cy+sp*0.9,c.cy+sp*2.4)>=FILL&&colFill(xl,c.cy-sp*1.1,c.cy-sp*2.4)<0.5){
+      stem={x:xl,tip:tipOf(xl,1),up:false}; break; }
+  }
+  /* 기둥 끝에서 머리 쪽으로 훑으며 꼬리·빔이 몇 겹인지 센다.
+     ★ 처음엔 기둥 칸의 가로 런 길이(hr)로 판정했는데, 꼬리가 오선 줄과 겹치는 자리에
+       오면 줄 지우기 단계에서 그 부분이 함께 지워져 놓쳤다(높은 음의 아래 기둥에서 발생).
+       그래서 기둥 칸 한 줄이 아니라 **기둥 양옆 띠의 잉크 양**으로 센다 — 꼬리든 빔이든
+       기둥 옆으로 뻗어 나가는 잉크라는 점은 같고, 한 칸이 지워져도 살아남는다. */
+  let bands=0;
+  if(stem){
+    /* ★ 처음엔 기둥 끝(tip)에서 머리 쪽으로 훑었는데, 끝 위치를 정확히 잡는 게 생각보다
+       어려웠다(빔이 오선 줄과 겹쳐 일부가 지워지면 끝이 빔 앞에서 끊긴다). 그래서
+       **기둥 길이 전체**를 훑는다 — 기둥 가운데는 옆에 잉크가 없으니 헛집히지 않고,
+       끝 위치를 몰라도 된다. */
+    const dOut=stem.up?-1:1;
+    const ya=Math.round(c.cy+dOut*sp*0.85), yb=Math.round(c.cy+dOut*sp*4.3);
+    /* 기둥과 **이어져 있는** 가로 잉크의 폭으로 센다(hr). 창 안의 잉크를 전부 세면
+       바로 옆의 쉼표·다른 기호까지 들어와 헛집힌다 — 실측: 8분쉼표가 붙어 있는 8분음표.
+       그리고 문턱을 0.45칸에서 0.3칸으로 내렸다. 빔은 옆 음표까지 길게 뻗지만
+       **꼬리는 훨씬 얇아서**(기둥 2px + 꼬리 4px 정도) 0.45칸에서는 통째로 놓쳤다. */
+    const need=Math.max(3,Math.round(sp*0.3));
+    /* 두 줄이면 충분하다. 꼬리는 원래 얇고(6줄쯤), 그중 4줄이 오선 줄과 겹쳐 지워지면
+       두 줄만 남는다 — 실측에서 minBand=3 이라 그 꼬리를 통째로 놓쳤다.
+       기둥은 어차피 2px 라 need(0.3칸) 문턱을 절대 못 넘으므로 헛집히지 않는다. */
+    const minBand=2;
+    /* 지워진 오선 줄이 빔을 두 조각으로 끊는다. 그 끊김은 이어 붙여야 하지만,
+       빔 두 겹 사이의 빈틈(약 0.25칸)까지 이어 붙이면 16분음표가 8분음표로 읽힌다 —
+       그래서 이어 붙이는 폭을 그보다 뚜렷하게 좁게 둔다. */
+    const gapTol=Math.max(1,Math.round(sp*0.12));
+    /* 같은 x 에 다른 성부의 머리가 쌓여 있으면(SATB) 그 머리를 빔으로 오인한다 —
+       그 머리 앞에서 훑기를 멈춘다. */
+    let lim=yb;
+    if(others&&others.length)for(const oy of others){
+      if(dOut<0&&oy<c.cy-sp*0.9&&oy>lim)lim=Math.round(oy+sp*0.7);
+      if(dOut>0&&oy>c.cy+sp*0.9&&oy<lim)lim=Math.round(oy-sp*0.7);
+    }
+    const steps=Math.abs(lim-ya)+1;
+    const wide=[], dbg=[];
+    for(let k=0;k<steps;k++){
+      const y=ya+dOut*k;
+      if(y<y0||y>y1)break;
+      /* 기둥과 이어진 가로 런(hr)을 쓰되, 주변을 조금 넓혀 본다.
+         ★ 세로 ±1 · 가로 ±2 로 넓히는 이유가 각각 있다:
+           가로 — 기둥 굵기가 2px 뿐이라 찾아낸 stem.x 가 1~2px 어긋나면 빈 칸을 본다.
+           세로 — 꼬리가 붙는 부분이 **오선 줄과 정확히 겹치면** 줄 지우기가 그 행들을
+                  지워 버려 살아남는 행이 하나뿐이 된다(실측: 기둥이 아래로 뻗는 높은 음).
+         세로를 ±2 로 넓히면 안 된다 — 16분음표의 빔 두 겹 사이 빈틈(약 0.25칸)까지
+         메워져 8분음표로 읽힌다. ±1 이 두 요구의 경계다. */
+      let side=0;
+      for(let dy=-1;dy<=1;dy++){
+        const yy=y+dy; if(yy<y0||yy>y1)continue;
+        for(let dx=-2;dx<=2;dx++){
+          const xx=stem.x+dx; if(xx<0||xx>=W)continue;
+          const p2=yy*W+xx;
+          if(ink[p2]&&hr[p2]>side)side=hr[p2];
+        }
+      }
+      wide.push(side>=need);
+      if(window.__DURDBG)dbg.push(side);
+    }
+    for(let i=0;i<wide.length;i++){
+      if(wide[i])continue;
+      let j=i; while(j<wide.length&&!wide[j])j++;
+      if(i>0&&j<wide.length&&(j-i)<=gapTol)for(let k=i;k<j;k++)wide[k]=true;
+      i=j-1;
+    }
+    let run=0;
+    for(let i=0;i<=wide.length;i++){
+      if(i<wide.length&&wide[i])run++;
+      else { if(run>=minBand)bands++; run=0; }
+    }
+    /* 디버그 고리: window.__DURDBG=[] 을 먼저 두면 기둥 옆 잉크 양이 줄줄이 담긴다.
+       이 판정도 눈에 보이는 출력이 없어서, 이게 없으면 왜 꼬리를 놓쳤는지 알 수 없다. */
+    if(window.__DURDBG)window.__DURDBG.push({cx:+c.cx.toFixed(0),stemX:stem.x,up:stem.up,need,minBand,gapTol,bands,side:dbg});
+  }
+  /* 점: 머리 오른쪽의 작고 동글한 잉크 한 덩어리. 다음 음표 앞까지만 본다.
+     ★ 두 곳만 본다 — 점은 음표와 **같은 높이**(칸에 놓인 음)이거나 **반 칸 위**(줄에 놓인
+       음은 점을 위 칸에 찍는다)에 온다. 예전엔 위아래 0.65칸을 통째로 훑었는데, 오선
+       아래쪽 낮은 음에서는 바로 밑의 **가사 글자**가 그 범위에 들어왔다.
+     ★ 그리고 덩어리를 잴 때 검색창 밖으로 못 나가게 막아 뒀던 것이 진짜 원인이었다 —
+       큰 가사 글자가 창 안쪽만 잘려서 '작고 동그란 점'처럼 보였다. 지금은 창 밖까지
+       따라가 **진짜 크기**를 재고, 점보다 크면 버린다.
+       실측: 실제 찬송가 사진의 여린내기 8분음표를 점8분음표로 잘못 읽던 것이 사라졌다. */
+  let dot=false;
+  {
+    const dx0=Math.round(c.x1+sp*0.3);
+    const dx1=Math.min(Math.round(c.x1+sp*1.5),Math.round(nextX0)-1,W-1);
+    const lim=sp*0.52, minA=Math.max(3,Math.round(sp*sp*0.05)), maxA=Math.round(sp*sp*0.5);
+    /* ★ 줄/칸 판정은 반드시 **정수로 반올림한 자리 번호**로 해야 한다. 처음엔
+       `((bot-cy)/(sp/2))%2 < 0.4` 로 했는데, 실측 3.99 는 %2 가 1.99 라 짝수(줄)인데도
+       칸으로 판정됐다 — 짝수 바로 아래 값을 통째로 놓치는 검사였다. */
+    const st=Math.round((bot-c.cy)/(sp/2));
+    const onLine=(Math.abs(st)%2)===0;
+    /* 오선 바깥은 가사·글자가 사는 구역이다 — 거기서는 점을 믿지 않는다(점이 있어도
+       없다고 본다). 놓치면 합계 검사에서 걸려 그 단을 건너뛰므로 안전한 실패다. */
+    const inStaff=c.cy>=bot-4*sp-sp*0.6&&c.cy<=bot+sp*0.6;
+    const spots=inStaff?(onLine?[c.cy-sp*0.5]:[c.cy]):[];
+    const tol=Math.max(1.5,sp*0.22);
+    for(const sy0 of spots){
+      const dy0=Math.max(y0,Math.round(sy0-tol)), dy1=Math.min(y1,Math.round(sy0+tol));
+      for(let y=dy0;y<=dy1&&!dot;y++)for(let x=dx0;x<=dx1;x++){
+        const p=y*W+x;
+        if(!ink[p]||vr[p]>lim||hr[p]>lim)continue;
+        let ax0=x,ax1=x,ay0=y,ay1=y,area=0,over=false;
+        const q=[p], mark=new Set([p]);
+        while(q.length){
+          const s2=q.pop(), sy=(s2/W)|0, sx=s2-sy*W;
+          area++;
+          if(sx<ax0)ax0=sx; if(sx>ax1)ax1=sx; if(sy<ay0)ay0=sy; if(sy>ay1)ay1=sy;
+          if(area>maxA*2){ over=true; break; }
+          for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+            const nx=sx+dx, ny=sy+dy;
+            if(nx<0||nx>=W||ny<y0||ny>y1)continue;
+            const np=ny*W+nx;
+            if(ink[np]&&!mark.has(np)){ mark.add(np); q.push(np); }
+          }
+        }
+        const bw=ax1-ax0+1, bh=ay1-ay0+1;
+        if(!over&&area>=minA&&area<=maxA&&bw<=sp*0.55&&bh<=sp*0.55&&bw>=sp*0.12&&bh>=sp*0.12
+           &&Math.abs(bw-bh)<=Math.max(2,sp*0.25))dot=true;
+        if(dot)break;
+      }
+      if(dot)break;
+    }
+  }
+  let beats=null, sure=false;
+  if(c.hollow){ beats=stem?2:4; sure=true; }
+  else if(stem){
+    if(bands===0){beats=1;sure=true;}
+    else if(bands===1){beats=0.5;sure=true;}
+    else if(bands===2){beats=0.25;sure=true;}
+    else {beats=0.125;sure=false;}          // 32분음표는 찬송가에 거의 없다 — 못 믿는다
+  }
+  else { beats=1; sure=false; }             // 속이 찬데 기둥이 없다 = 뭔가 잘못 봤다
+  if(dot&&beats!==null)beats=+(beats*1.5).toFixed(4);
+  return {beats,sure,stem:!!stem,bands,dot,hollow:!!c.hollow};
+}
+
+async function staffGeom(url,clef){
+  let img; try{ img=await imgFrom(url); }catch(e){ return null; }
+  /* 사용자 요청으로 정확도를 속도보다 앞세운다(v50): 예전 1200px 로는 실제 찬송가
+     한 단에서 오선 간격이 13px 밖에 안 나와 **빔 두 겹(16분음표)을 한 겹으로** 셌다.
+     2000px 면 20px 가 되어 갈라진다. 느려지지만 호출 수는 그대로다(무료 한도 무관). */
+  const cap=2000, sc=Math.min(1,cap/Math.max(1,img.width));
+  const W=Math.max(1,Math.round(img.width*sc)), H=Math.max(1,Math.round(img.height*sc));
+  if(W<200||H<36)return null;
+  const cv=document.createElement('canvas'); cv.width=W; cv.height=H;
+  const g2=cv.getContext('2d',{willReadFrequently:true});
+  g2.fillStyle='#fff'; g2.fillRect(0,0,W,H);
+  const skew=bestSkew(img);            // 손으로 찍은 사진은 늘 조금 기울어 있다
+  if(skew){ g2.translate(W/2,H/2); g2.rotate(skew); g2.translate(-W/2,-H/2); }
+  g2.drawImage(img,0,0,W,H);
+  g2.setTransform(1,0,0,1,0,0);
+  let px; try{ px=g2.getImageData(0,0,W,H).data; }catch(e){ return null; }   // file:// 에서는 막힌다
+  const N=W*H, hist=new Uint32Array(256), gray=new Uint8Array(N);
+  for(let p=0,i=0;p<N;p++,i+=4){ const v=(px[i]*.299+px[i+1]*.587+px[i+2]*.114)|0; gray[p]=v; hist[v]++; }
+  const th=Math.min(210,Math.max(55,otsuTh(hist,N)));
+  const ink=new Uint8Array(N);
+  for(let p=0;p<N;p++)if(gray[p]<th)ink[p]=1;
+
+  /* 1) 오선 다섯 줄 찾기 */
+  const rows=new Float32Array(H); let rmax=0;
+  for(let y=0;y<H;y++){ let c=0; const o=y*W; for(let x=0;x<W;x++)c+=ink[o+x]; rows[y]=c/W; if(rows[y]>rmax)rmax=rows[y]; }
+  if(rmax<0.3)return null;
+  const lineTh=Math.max(0.3,rmax*0.55), thick=Math.max(4,Math.round(H*0.055));
+  const runs=[]; let st=-1;
+  for(let y=0;y<H;y++){
+    if(rows[y]>=lineTh){ if(st<0)st=y; }
+    else if(st>=0){ if(y-st<=thick)runs.push([st,y-1]); st=-1; }
+  }
+  if(st>=0&&H-st<=thick)runs.push([st,H-1]);
+  if(runs.length<5)return null;
+  const ctr=runs.map(r=>(r[0]+r[1])/2);
+  let pick=null;
+  for(let i=0;i+4<ctr.length;i++){
+    const g=[ctr[i+1]-ctr[i],ctr[i+2]-ctr[i+1],ctr[i+3]-ctr[i+2],ctr[i+4]-ctr[i+3]];
+    const mn=Math.min.apply(null,g), mx=Math.max.apply(null,g);
+    if(mn<4||mx>mn*1.35)continue;
+    const s=(ctr[i+4]-ctr[i])/4;
+    if(Math.max.apply(null,g.map(v=>Math.abs(v-s)))/s>0.16)continue;
+    pick={i,sp:s,top:ctr[i],bot:ctr[i+4]}; break;      // 위에서부터 처음 = 소프라노 보표
+  }
+  if(!pick)return null;
+  const sp=pick.sp, top=pick.top, bot=pick.bot;
+  if(sp<5)return null;                                 // 반칸이 2px 남짓이면 자리를 셀 수 없다
+
+  /* 2) 오선 줄 지우기 */
+  for(let k=0;k<5;k++){
+    const a=runs[pick.i+k][0], b=runs[pick.i+k][1];
+    const t=b-a+1, lim=Math.max(t*2+1,Math.round(sp*0.46));
+    for(let x=0;x<W;x++){
+      if(!ink[a*W+x]&&!ink[b*W+x])continue;
+      let yT=a; while(yT-1>=0&&ink[(yT-1)*W+x])yT--;
+      let yB=b; while(yB+1<H&&ink[(yB+1)*W+x])yB++;
+      if(yB-yT+1<=lim)for(let y=a;y<=b;y++)ink[y*W+x]=0;
+    }
+  }
+
+  /* 어느 행이 오선 줄인지 기억해 둔다 — 길이 판정(headDur)이 이 행을 건너뛴다 */
+  const lineRow=new Uint8Array(H);
+  for(let k=0;k<5;k++){
+    const a=runs[pick.i+k][0], b=runs[pick.i+k][1];
+    for(let y=Math.max(0,a-1);y<=Math.min(H-1,b+1);y++)lineRow[y]=1;
+  }
+
+  /* 관심 창: 위로 2.2칸(C6까지), 아래로 1.6칸(B3까지).
+     더 넓히면 찬송가에서 오선 사이에 인쇄된 가사 글자가 들어와 음표로 오인된다. */
+  const y0=Math.max(0,Math.round(top-sp*2.2)), y1=Math.min(H-1,Math.round(bot+sp*1.6));
+  if(y1-y0<sp*4)return null;
+
+  /* 세로·가로 잉크 런 길이. 아래에서 "머리 크기인 픽셀"을 고르는 기준이 된다. */
+  const vr=new Uint16Array(N), hr=new Uint16Array(N);
+  const measure=()=>{
+    vr.fill(0); hr.fill(0);
+    for(let x=0;x<W;x++){
+      let y=0;
+      while(y<H){
+        if(!ink[y*W+x]){y++;continue;}
+        let e=y; while(e+1<H&&ink[(e+1)*W+x])e++;
+        const L=e-y+1; for(let k=y;k<=e;k++)vr[k*W+x]=L;
+        y=e+1;
+      }
+    }
+    for(let y=0;y<H;y++){
+      const o=y*W; let x=0;
+      while(x<W){
+        if(!ink[o+x]){x++;continue;}
+        let e=x; while(e+1<W&&ink[o+e+1])e++;
+        const L=e-x+1; for(let k=x;k<=e;k++)hr[o+k]=L;
+        x=e+1;
+      }
+    }
+  };
+  measure();
+  /* 자리표(𝄞) 구간은 건너뛴다. 판정은 "세로로 오선 위와 아래를 **둘 다** 넘어서는
+     한 덩어리 잉크"다 — 높은음자리표는 오선 아래에서 위까지 통째로 뻗는다.
+     ★ 처음엔 그냥 "세로로 4.2칸보다 긴 잉크"로 잡았는데, SATB 악보에서 소프라노 머리→
+       기둥→알토 머리→기둥이 하나로 이어져 그 길이를 넘겼다. 그래서 왼쪽 세 음이 통째로
+       자리표 구간으로 취급돼 사라졌다. 위·아래를 둘 다 넘는지 봐야 기둥과 구분된다.
+     박자표 숫자(4, 8 처럼 속에 구멍이 있는 것)는 이 구간을 조금 넘어갈 수 있어 음표로
+     오인될 수 있다. 그건 개수가 어긋나게 만들 뿐이고, 개수가 다르면 우리는 아무것도
+     덮어쓰지 않으므로 결과가 나빠지지는 않는다(그저 이 단에서 이득을 못 본다). */
+  let clefEnd=0;
+  const xLim=Math.round(W*0.14), hiEdge=top-sp*0.5, loEdge=bot+sp*0.5;
+  for(let x=0;x<xLim;x++){
+    let y=y0, hit=false;
+    while(y<=y1){
+      if(!ink[y*W+x]){y++;continue;}
+      let e=y; while(e+1<=y1&&ink[(e+1)*W+x])e++;
+      if(y<hiEdge&&e>loEdge){hit=true;break;}
+      y=e+1;
+    }
+    if(hit)clefEnd=x;
+  }
+  if(clefEnd)clefEnd=Math.min(Math.round(W*0.2),clefEnd+Math.round(sp*1.6));
+
+  /* 3) 속이 찬 머리: 세로·가로 런이 둘 다 머리 크기인 픽셀 */
+  /* 세로 런에 상한을 두지 않는 것이 중요하다 — 머리에서 기둥으로 잉크가 이어지면 머리
+     픽셀의 세로 런이 기둥 길이만큼 길어지는데, 상한을 두면 그 픽셀들이 빠져서 머리가
+     위아래로 쪼개지고(특히 줄 위에 놓인 음) 통째로 사라진다. 기둥 자체는 가로가 얇아
+     hr 하한에서 걸러지고, 빔·마디선·쉼표는 아래 덩어리 모양 검사에서 걸러진다. */
+  const vLo=Math.max(2,Math.round(sp*0.46));
+  const hLo=Math.max(2,Math.round(sp*0.5)), hHi=Math.round(sp*2.7);
+  const head=new Uint8Array(N);
+  for(let y=y0;y<=y1;y++){ const o=y*W;
+    for(let x=clefEnd;x<W;x++){ const p=o+x;
+      if(ink[p]&&vr[p]>=vLo&&hr[p]>=hLo&&hr[p]<=hHi)head[p]=1; } }
+  const cands=[], seen=new Uint8Array(N), stk=new Int32Array(N);
+  const minArea=Math.max(6,Math.round(sp*sp*0.22));
+  for(let y=y0;y<=y1;y++)for(let x=clefEnd;x<W;x++){
+    const p0=y*W+x; if(!head[p0]||seen[p0])continue;
+    let sptr=0; stk[sptr++]=p0; seen[p0]=1;
+    let ax0=x,ax1=x,ay0=y,ay1=y,area=0,symY=0;
+    while(sptr>0){
+      const q=stk[--sptr], qy=(q/W)|0, qx=q-qy*W;
+      area++; symY+=qy;
+      if(qx<ax0)ax0=qx; if(qx>ax1)ax1=qx; if(qy<ay0)ay0=qy; if(qy>ay1)ay1=qy;
+      for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+        if(!dx&&!dy)continue;
+        const nx=qx+dx, ny=qy+dy;
+        if(nx<clefEnd||nx>=W||ny<y0||ny>y1)continue;
+        const np=ny*W+nx; if(head[np]&&!seen[np]){seen[np]=1;stk[sptr++]=np;}
+      }
+    }
+    const bw=ax1-ax0+1, bh=ay1-ay0+1;
+    /* 디버그 고리: 콘솔에서 window.__GEOMDBG=[] 을 먼저 두면 후보 덩어리 치수가 담긴다.
+       이 알고리즘은 눈에 보이는 출력이 없어서, 이게 없으면 왜 음을 놓쳤는지 알 방법이 없다. */
+    if(window.__GEOMDBG)window.__GEOMDBG.push({sp:+sp.toFixed(1),bw,bh,area,cy:+(symY/area).toFixed(1),cx:+((ax0+ax1)/2).toFixed(1),hRatio:+(bh/sp).toFixed(2),wRatio:+(bw/sp).toFixed(2),fill:+(area/(bw*bh)).toFixed(2)});
+    if(area<minArea)continue;
+    if(bh<sp*0.62||bh>sp*1.7||bw<sp*0.55||bw>sp*2.2)continue;   // 반 칸 높이는 쉼표다
+    if(bw<bh*0.8)continue;                     // 음표 머리는 세로보다 가로가 길다
+    if(area/(bw*bh)<0.5)continue;
+    cands.push({x0:ax0,x1:ax1,cx:(ax0+ax1)/2,cy:symY/area,hollow:false});
+  }
+
+  /* 4) 속이 빈 머리: 잉크로 완전히 둘러싸인 흰 구멍 */
+  const bg=new Uint8Array(N); let bptr=0;
+  const pushBg=(x,y)=>{ if(x<0||x>=W||y<y0||y>y1)return; const p=y*W+x; if(!ink[p]&&!bg[p]){bg[p]=1;stk[bptr++]=p;} };
+  for(let x=0;x<W;x++){ pushBg(x,y0); pushBg(x,y1); }
+  for(let y=y0;y<=y1;y++){ pushBg(0,y); pushBg(W-1,y); }
+  while(bptr>0){ const q=stk[--bptr], qy=(q/W)|0, qx=q-qy*W;
+    pushBg(qx-1,qy); pushBg(qx+1,qy); pushBg(qx,qy-1); pushBg(qx,qy+1); }
+  const holes=[];
+  for(let y=y0;y<=y1;y++)for(let x=clefEnd;x<W;x++){
+    const p0=y*W+x; if(ink[p0]||bg[p0])continue;
+    let sptr=0; stk[sptr++]=p0; bg[p0]=1;
+    let ax0=x,ax1=x,ay0=y,ay1=y,area=0,symY=0,symX=0;
+    while(sptr>0){
+      const q=stk[--sptr], qy=(q/W)|0, qx=q-qy*W;
+      area++; symY+=qy; symX+=qx;
+      if(qx<ax0)ax0=qx; if(qx>ax1)ax1=qx; if(qy<ay0)ay0=qy; if(qy>ay1)ay1=qy;
+      for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+        if(Math.abs(dx)+Math.abs(dy)!==1)continue;
+        const nx=qx+dx, ny=qy+dy;
+        if(nx<0||nx>=W||ny<y0||ny>y1)continue;
+        const np=ny*W+nx; if(!ink[np]&&!bg[np]){bg[np]=1;stk[sptr++]=np;}
+      }
+    }
+    const bw=ax1-ax0+1, bh=ay1-ay0+1;
+    /* 디버그 고리: window.__HOLEDBG=[] (속이 빈 머리 후보) */
+    if(window.__HOLEDBG)window.__HOLEDBG.push({cx:+(symX/area).toFixed(1),cy:+(symY/area).toFixed(1),bw,bh,area,wR:+(bw/sp).toFixed(2),hR:+(bh/sp).toFixed(2),minA:+Math.max(3,sp*sp*0.05).toFixed(0)});
+    if(area<Math.max(3,sp*sp*0.05))continue;
+    if(bw<sp*0.28||bw>sp*1.25||bh<sp*0.2||bh>sp*1.0)continue;
+    /* 음표 머리는 기울어진 타원이라 구멍이 **가로로 뚜렷하게 길다**(실측 bw/bh≈1.36).
+       16분음표의 꼬리 두 겹과 기둥 사이에 생기는 빈틈은 거의 정사각형(≈0.95)이라,
+       여기서 갈라낸다 — 예전엔 0.7 이어서 그 빈틈이 음표 머리로 잡혀 개수가 어긋났다. */
+    if(bw<bh*1.12)continue;
+    holes.push({x0:ax0,x1:ax1,cx:symX/area,cy:symY/area,hollow:true});
+  }
+  /* 오선 밖(위·아래)에 구멍이 여럿 흩어져 있으면 그건 음표가 아니라 글자다
+     (찬송가는 오선 사이에 가사를 인쇄한다). 그런 구멍은 통째로 버린다. */
+  const outside=holes.filter(h=>h.cy<top-sp*0.6||h.cy>bot+sp*0.6);
+  const useHoles=(outside.length>3)?holes.filter(h=>h.cy>=top-sp*0.6&&h.cy<=bot+sp*0.6):holes;
+  for(const h of useHoles){
+    if(cands.some(c=>Math.abs(c.cx-h.cx)<sp*0.7&&Math.abs(c.cy-h.cy)<sp*0.7))continue;
+    cands.push(h);
+  }
+  if(cands.length<3)return null;
+
+  /* 5) 같은 x 에 쌓인 것은 맨 위만 = 소프라노 */
+  cands.sort((a,b)=>a.cx-b.cx);
+  const cols=[];
+  for(const c of cands){
+    const L=cols.length?cols[cols.length-1]:null;
+    if(L){
+      const ov=Math.min(L.x1,c.x1)-Math.max(L.x0,c.x0);
+      const mw=Math.min(L.x1-L.x0,c.x1-c.x0)+1;
+      /* 위쪽 것을 고를 때 속 빈 머리인지 여부도 함께 따라가야 한다 — 길이 판정의 재료다 */
+      if(ov>mw*0.5){ L.x0=Math.min(L.x0,c.x0); L.x1=Math.max(L.x1,c.x1);
+                     L.ys.push(c.cy);
+                     if(c.cy<L.cy){L.cy=c.cy;L.hollow=c.hollow;} continue; }
+    }
+    cols.push({x0:c.x0,x1:c.x1,cx:c.cx,cy:c.cy,hollow:c.hollow,ys:[c.cy]});
+  }
+  if(cols.length<3)return null;
+
+  /* 6) 반칸 격자에 얼마나 잘 떨어지는지로 신뢰도를 판단한다 */
+  const half=sp/2, base=CLEF_BOTTOM[clef==='bass'?'bass':'treble'];
+  /* 길이를 재면서 **가짜 머리도 걸러낸다**(v50). 속이 찬 음표 머리는 기둥이 반드시
+     있다(기둥 없는 음표는 온음표뿐이고 그건 속이 비어 있다). 그래서 "속이 찬데 기둥이
+     없는 것"은 음표가 아니라 자리표·조표·글자 조각이다.
+     ★ 실측: 실제 찬송가 사진에서 단마다 앞에 가짜 음 2개(자리표 자리 x=42,58)가
+       잡혀 개수가 어긋났고, 그 때문에 음높이 보정(v49)까지 통째로 못 쓰고 있었다.
+       이 한 줄로 개수가 Audiveris 와 정확히 같아졌다. */
+  const res=[], devs=[];
+  cols.forEach((c,ci)=>{
+    const nextX0=(ci+1<cols.length)?cols[ci+1].x0:W;
+    const d=headDur(ink,vr,hr,W,c,sp,y0,y1,bot,nextX0,(c.ys||[]).filter(v=>Math.abs(v-c.cy)>sp*0.4),lineRow);
+    if(!d.hollow&&!d.stem)return;
+    const q=(bot-c.cy)/half, step=Math.round(q);
+    devs.push(Math.abs(q-step));
+    res.push({x:c.cx/sc, cy:c.cy, step, abs:base+step, name:diaName(base+step),
+              beats:d.beats, sure:d.sure, stem:d.stem, bands:d.bands, dot:d.dot, hollow:d.hollow});
+  });
+  if(res.length<3)return null;
+  devs.sort((a,b)=>a-b);
+  const med=devs[devs.length>>1];
+  if(med>0.26)return null;                     // 격자에 안 맞으면 오선을 잘못 잡은 것이다
+  const durSure=res.every(n=>n.sure);
+  const total=+res.reduce((a,n)=>a+(n.beats||0),0).toFixed(4);
+  return {sp,top,bot,med,notes:res,durSure,total};
+}
+/* AI 결과의 ♪ 줄 음이름을 우리가 센 것으로 덮어쓴다. 개수가 정확히 같을 때만 한다. */
+function applyGeomPitch(text,names){
+  if(!names||!names.length)return {text,changed:0,matched:false};
+  const lines=text.split('\n');
+  const idx=[]; lines.forEach((l,i)=>{ if(/^\s*♪/.test(l))idx.push(i); });
+  if(idx.length!==1)return {text,changed:0,matched:false};      // 줄이 쪼개졌으면 정렬 근거가 없다
+  const i0=idx[0], toks=lines[i0].replace(/^\s*♪\s*/,'').split(/\s+/).filter(Boolean);
+  const NT=/^([A-G])([#♯b♭]?)(-?\d+)(:[\d.]+)?$/;
+  const pos=[]; toks.forEach((t,k)=>{ if(NT.test(t))pos.push(k); });
+  if(pos.length!==names.length)return {text,changed:0,matched:false};
+  let changed=0;
+  pos.forEach((k,n)=>{
+    const m=toks[k].match(NT), want=names[n];
+    const wl=want[0], wo=want.slice(1);
+    const acc=(m[1].toUpperCase()===wl)?m[2]:'';
+    const nt=wl+acc+wo+(m[4]||'');
+    if(nt!==toks[k])changed++;
+    toks[k]=nt;
+  });
+  lines[i0]='♪ '+toks.join(' ');
+  return {text:lines.join('\n'),changed,matched:true};
+}
+
+/* 우리가 잰 음표 길이를 AI 결과의 ♪ 줄에 써 넣는다(v50).
+   음이름(applyGeomPitch)보다 훨씬 조심해야 한다 — 박자는 한 음만 틀려도 그 뒤가 다 밀리고,
+   음이름과 달리 "귀로 들어 이상하다"는 것도 늦게 알아차린다. 그래서 문을 세 개 둔다:
+     1) 잰 음표 개수가 AI 가 적은 음표 개수와 정확히 같아야 한다(정렬 근거)
+     2) 모든 음의 길이를 확신해야 한다(하나라도 애매하면 통째로 포기)
+     3) 합계가 말이 돼야 한다 — 박자표의 정수 배(마디가 딱 떨어짐)이거나,
+        AI 가 적은 합계와 거의 같아야 한다(서로 다른 두 방법이 같은 답을 냈다는 뜻)
+   셋 중 하나라도 어긋나면 아무것도 하지 않는다. */
+function applyGeomDur(text,notes,perBar){
+  const none={text,changed:0,matched:false,why:''};
+  if(!notes||!notes.length)return none;
+  if(!notes.every(n=>n.sure&&n.beats>0))return {...none,why:'길이가 애매한 음이 있음'};
+  const lines=text.split('\n');
+  const idx=[]; lines.forEach((l,i)=>{ if(/^\s*♪/.test(l))idx.push(i); });
+  if(idx.length!==1)return {...none,why:'♪ 줄이 하나가 아님'};
+  const i0=idx[0], toks=lines[i0].replace(/^\s*♪\s*/,'').split(/\s+/).filter(Boolean);
+  const NT=/^([A-G][#♯b♭]?-?\d+)(?::([\d.]+))?$/;
+  const RT=/^r(?::([\d.]+))?$/i;
+  const pos=[]; toks.forEach((t,k)=>{ if(NT.test(t))pos.push(k); });
+  if(pos.length!==notes.length)return {...none,why:'개수 불일치'};
+  const mine=notes.reduce((a,n)=>a+n.beats,0);
+  const rests=toks.reduce((a,t)=>{ const m=t.match(RT); return a+(m?(m[1]?parseFloat(m[1]):1):0); },0);
+  const aiTotal=toks.reduce((a,t)=>{
+    const m=t.match(NT); if(m)return a+(m[2]?parseFloat(m[2]):1);
+    const r=t.match(RT); if(r)return a+(r[1]?parseFloat(r[1]):1);
+    return a; },0);
+  const withRests=mine+rests;
+  const per=perBar||4;
+  const k=Math.round(withRests/per);
+  const fitsBar=k>=1&&Math.abs(withRests-k*per)<=0.13;
+  const fitsAI=Math.abs(withRests-aiTotal)<=0.26;
+  if(!fitsBar&&!fitsAI)
+    return {...none,why:'합계가 안 맞음('+withRests+'박)'};
+  let changed=0;
+  pos.forEach((k2,n)=>{
+    const m=toks[k2].match(NT), want=notes[n].beats;
+    const had=m[2]?parseFloat(m[2]):1;
+    if(Math.abs(had-want)>1e-6)changed++;
+    toks[k2]=m[1]+':'+want;
+  });
+  lines[i0]='♪ '+toks.join(' ');
+  return {text:lines.join('\n'),changed,matched:true,why:fitsBar?'마디가 딱 맞음':'AI와 합계 일치'};
+}
 
 /* 오선이 모인 줄(단)을 찾아 한 단씩 잘라낸다.
    한 번에 보는 음표가 줄면 음높이 인식이 훨씬 정확해진다.
@@ -2866,13 +3471,26 @@ async function runScan(){
     const NN=shots.length;
     const pages=[];
     let carryNote='', rechecked=0;   // 앞 단의 마지막 음(옥타브 기준), 다시 읽은 단 수
+    let geomSys=0, geomFixed=0;      // 오선 자리를 직접 재서 음높이를 확정한 단 수 / 고친 음 수
+    let durSys=0, durFixed=0;        // 음표 길이(박자)까지 확정한 단 수 / 고친 음 수
     const sysRec=[];                 // 원본 사진 위 하이라이트용: 단마다 {page,t0,t1,w}
     for(let i=0;i<NN;i++){
       const tag=NN>1?(i+1)+'/'+NN+'단 ':'';
-      say(tag+'악보를 읽는 중입니다…');
       const b64=shots[i].b64;
       const withMel=P.readMel!==false;
-      const mkPrompt=extra=>makePrompt(withMel,Object.assign({lastNote:carryNote},extra||{}))+ocrHint;
+      /* 음높이는 AI에 맡기지 않고 픽셀로 잰다(v49). 잰 결과를 프롬프트에 넣어 주고,
+         AI가 돌려준 음표 개수가 우리가 센 개수와 같으면 음이름을 그 값으로 덮어쓴다.
+         한 단씩 자른 그림에서만 한다 — 쪽 전체 그림에서는 첫 단만 재게 되어 뜻이 없다. */
+      let geoNames=null, geoNotes=null;
+      if(withMel&&P.geomPitch!==false&&!shots[i].whole){
+        say(tag+'오선 자리와 음표 길이를 재는 중…');
+        try{ const geo=await staffGeom(shots[i].url);
+             if(geo&&geo.notes.length>=3){ geoNames=geo.notes.map(n=>n.name);
+               if(geo.durSure)geoNotes=geo.notes; } }
+        catch(e){ geoNames=null; geoNotes=null; }
+      }
+      say(tag+'악보를 읽는 중입니다…');
+      const mkPrompt=extra=>makePrompt(withMel,Object.assign({lastNote:carryNote,geom:geoNames},extra||{}))+ocrHint;
       const usePrompt=mkPrompt();
       let t='';
       if(hosted){
@@ -2929,6 +3547,16 @@ async function runScan(){
           }catch(e){ /* 다시 읽기가 실패하면(한도 등) 첫 결과를 그대로 쓴다 */ }
         }
       }
+      /* 우리가 잰 음높이로 덮어쓴다 — 개수가 정확히 같을 때만(applyGeomPitch 안에서 검사) */
+      if(geoNames&&withMel){
+        const ap=applyGeomPitch(t,geoNames);
+        if(ap.matched){ t=ap.text; geomSys++; geomFixed+=ap.changed; }
+        /* 음높이를 확정한 단에서만 박자도 덮어쓴다 — 개수가 맞았다는 게 이미 확인된 상태다 */
+        if(ap.matched&&geoNotes){
+          const ad=applyGeomDur(t,geoNotes,P.beats);
+          if(ad.matched){ t=ad.text; durSys++; durFixed+=ad.changed; }
+        }
+      }
       carryNote=lastMelNote(t)||carryNote;
       const tm=t.match(/^TITLE:\s*(.+)$/m);
       if(tm){ if(i===0)$('title').value=tm[1].trim(); t=t.replace(/^TITLE:\s*.+$/m,'').trim(); }
@@ -2941,17 +3569,28 @@ async function runScan(){
     if(!text)throw new Error('읽어낸 내용이 없습니다 — 사진을 더 밝고 반듯하게 찍어 보세요');
     S.raw=text; S.semis=0; S.verse=1; stopPlay();
     S.orig=buildOrig(sysRec);
+    /* 사진에서 가져온 곡은 '원본 사진 보기'로 바로 들어간다(v49, 사용자 요청).
+       인식이 얼마나 잘 됐든 반주자가 실제로 보고 연주하는 건 자기가 찍은 그 사진이다 —
+       우리가 옮겨 적은 텍스트는 '지금 어디를 연주하는지'와 반주 소리를 위한 재료다.
+       그래서 첫 화면은 원본 사진이고, 옮겨 적은 악보는 보기 전환으로 확인한다. */
+    if(hasSheet())S.mode='sheet';
     reparse(); renderAll(); addHistory();
     clearWork();
     const bits=[];
     bits.push('코드 '+blocks.reduce((a,b)=>a+(b.k==='pairs'?b.pairs.filter(p=>p.chord).length:0),0)+'개'
       +', 가사 '+ (S.raw.match(/[가-힣]/g)||[]).length +'자'
       + (hasMelody()?', 멜로디 '+blocks.filter(b=>b.k==='mel').reduce((a,b)=>a+b.notes.filter(n=>!n.bar&&!n.rest).length,0)+'개':', 멜로디는 못 읽었습니다'));
+    if(geomSys)bits.push(geomSys+'단은 오선 자리를 픽셀로 재서 음높이를 확정했습니다'
+      +(geomFixed?'(AI가 잘못 본 '+geomFixed+'음 교정)':''));
+    if(durSys)bits.push(durSys+'단은 음표 길이(박자)까지 재서 확정했습니다'
+      +(durFixed?'(AI가 잘못 본 '+durFixed+'음 교정)':''));
     if(rechecked)bits.push(rechecked+'단은 음높이가 이상해서 다시 읽었습니다');
     if(SUSPECT)bits.push('확인이 필요한 음 '+SUSPECT+'개를 동그라미로 표시했습니다');
     if(LAST_TRUNCATED)bits.push('길이 제한으로 뒷부분이 잘렸을 수 있습니다 — 악보를 반씩 나눠 찍으면 더 잘 됩니다');
-    showResult('ok','악보를 옮겼습니다',bits.join('. ')+'.<br>원본과 비교해 확인해 주세요.',
-      [{label:'원본 사진과 비교',pri:!!(S.orig&&S.orig.pages.length),fn:()=>setMode('sheet')},
+    showResult('ok','악보를 옮겼습니다',bits.join('. ')+'.<br>'
+      +(hasSheet()?'<b>올린 사진을 그대로 띄웠습니다</b> — 재생하면 사진 위에서 따라갑니다.'
+                 :'원본과 비교해 확인해 주세요.'),
+      [{label:'옮겨 적은 악보 확인',pri:true,fn:()=>setMode(hasMelody()?'staff':'text')},
        {label:'직접 고치기',fn:()=>openPanel('input')}]);
     closePanel();
   }catch(err){
@@ -2971,6 +3610,7 @@ async function ocrFallback(existing,say,fail){
     /* OCR로 대체됐어도 원본 사진은 그대로 보여 준다 — 깨진 글자보다 원본이 훨씬 쓸모 있다.
        단 구분 정보가 없으니 쪽 전체를 한 덩어리로 잡는다. */
     S.orig=buildOrig(S.photos.map((ph,pi)=>({page:pi,t0:0,t1:1,w:1,whole:true})));
+    if(hasSheet())S.mode='sheet';   // OCR 결과가 깨져도 사진은 정확하다 — 사진을 기본 화면으로
     reparse(); renderAll(); addHistory();
     clearWork();
     showResult('warn','무료 한도를 다 써서 OCR로만 옮겼습니다',
@@ -2978,8 +3618,8 @@ async function ocrFallback(existing,say,fail){
       +'가사도 깨져 나오는 경우가 많습니다(코드 '+chordN+'개, 가사 '+lyricN+'덩어리).<br>'
       +'Gemini 무료 한도는 <b>태평양 시간 자정(한국 시간 오후 4~5시)</b>에 초기화됩니다. '
       +'그때 다시 인식하시면 멜로디까지 제대로 나옵니다.',
-      [{label:'원본 사진 보기',pri:!!(S.orig&&S.orig.pages.length),fn:()=>setMode('sheet')},
-       {label:'직접 입력으로 고치기',fn:()=>openPanel('input')}]);
+      [{label:'직접 입력으로 고치기',pri:true,fn:()=>openPanel('input')},
+       {label:'옮겨 적은 글자 보기',fn:()=>setMode('text')}]);
     const box=$('scanstate');
     if(box){
       box.className='callout ok';
@@ -3013,6 +3653,82 @@ async function resampleTo(buffer,rate){
   return rendered.getChannelData(0).slice();
 }
 /* 프레임마다 RMS(소리 크기)와 자기상관으로 얻은 기본주파수를 구해 반음 단위로 묶는다 */
+/* Basic Pitch 는 Float32Array 가 아니라 AudioBuffer 를 받고, 22050Hz 가 아니면 예외를 던진다 */
+async function resampleBuffer(buffer,rate){
+  const len=Math.max(1,Math.ceil(buffer.duration*rate));
+  const off=new OfflineAudioContext(1,len,rate);
+  const src=off.createBufferSource(); src.buffer=buffer; src.connect(off.destination); src.start();
+  return await off.startRendering();
+}
+
+/* ============ 오디오 → 멜로디: Spotify Basic Pitch (v49) ============
+   원래는 자기상관(detectMelodyNotes)으로 직접 기본주파수를 쫓았다. 그건 사람 목소리
+   하나만 녹음한 파일에나 통하고, 반주가 섞인 MR·음원에서는 거의 쓸 수 없다.
+   Spotify 가 공개한 Basic Pitch(Apache 2.0)는 다성(여러 음이 같이 나는) 채보용으로
+   학습된 모델이고, **TensorFlow.js 판이 따로 있어 브라우저 안에서만 돌린다** —
+   서버 없이·무료라는 이 앱의 제약을 그대로 지킨다. 모델 가중치는 0.9MB뿐이다.
+     https://github.com/spotify/basic-pitch-ts  (Apache License 2.0)
+
+   ★ 반드시 '?bundle' 을 붙여 불러야 한다. 그냥 esm.sh/@spotify/basic-pitch 로 하면
+     TensorFlow.js 의존 모듈 그래프를 브라우저가 수백 개로 쪼개 받다가 **영원히
+     끝나지 않는다**(실측: 45초 넘게 then/catch 둘 다 안 불렸다). '?bundle' 은 한 파일로
+     묶어 주고 1.8초에 끝난다.
+   ★ 문턱값 0.3 / 0.25 / 8 은 실측으로 고른 값이다. README 예시(0.25/0.25/5)보다 조금
+     올렸고, 0.5/0.3/11 로 조이면 **곡 앞부분 음들이 통째로 안 잡힌다**(합성 음원 8음 중
+     앞 3음이 빠졌다). 이 값에서는 16초 32음이 음높이·시작시각 모두 정확히 나왔다.
+   ★ 속도: 처음 한 번은 모델·백엔드 준비에 20초쯤 걸리고, 그 뒤로는 오디오 길이의
+     0.11배(16초 → 1.8초)다. 3분 곡이면 20초 남짓. */
+const BP_VER='1.0.1';
+const BP_ESM='https://esm.sh/@spotify/basic-pitch@'+BP_VER+'?bundle';
+const BP_MODEL='https://cdn.jsdelivr.net/npm/@spotify/basic-pitch@'+BP_VER+'/model/model.json';
+let BPITCH=null;
+async function loadBasicPitch(){
+  if(BPITCH)return BPITCH;
+  const mod=await import(BP_ESM);
+  BPITCH={mod, bp:new mod.BasicPitch(BP_MODEL)};
+  return BPITCH;
+}
+/* 다성으로 나온 음들 중 "그 순간 가장 높은 소리"만 남겨 단성 선율로 만든다.
+   찬양 멜로디는 거의 항상 맨 위 소리다 — 오선보에서 소프라노만 고르는 것과 같은 규칙이고,
+   그래서 사진 경로(staffGeom)와 음원 경로가 같은 것을 가리킨다(서로 검산할 수 있다). */
+function topLine(notes,dur){
+  const bnd=new Set([0]);
+  notes.forEach(n=>{ bnd.add(+n.startTimeSeconds.toFixed(3));
+                     bnd.add(+(n.startTimeSeconds+n.durationSeconds).toFixed(3)); });
+  if(dur)bnd.add(+dur.toFixed(3));
+  const ts=[...bnd].sort((a,b)=>a-b);
+  const segs=[];
+  for(let i=0;i+1<ts.length;i++){
+    const a=ts[i], b=ts[i+1]; if(b-a<0.02)continue;
+    let hi=null;
+    for(const n of notes){
+      const st=n.startTimeSeconds, en=st+n.durationSeconds;
+      if(st<=a+1e-6&&en>=b-1e-6&&(hi===null||n.pitchMidi>hi))hi=n.pitchMidi;
+    }
+    segs.push(hi===null?{rest:true,dur:b-a}:{midi:hi,dur:b-a});
+  }
+  const out=[];
+  for(const g of segs){
+    const p=out.length?out[out.length-1]:null;
+    if(p&&((g.rest&&p.rest)||(!g.rest&&!p.rest&&p.midi===g.midi))){ p.dur+=g.dur; continue; }
+    if(p&&g.dur<0.07){ p.dur+=g.dur; continue; }   // 아주 짧은 조각은 잡음이라 앞 음에 흡수
+    out.push({rest:g.rest,midi:g.midi,dur:g.dur});
+  }
+  return out;
+}
+async function bpMelody(ab,setStatus){
+  const {mod,bp}=await loadBasicPitch();
+  const buf=await resampleBuffer(ab,22050);
+  const frames=[],onsets=[],contours=[];
+  await bp.evaluateModel(buf,
+    (fr,on,co)=>{ frames.push(...fr); onsets.push(...on); contours.push(...co); },
+    p=>{ if(setStatus)setStatus('멜로디를 음표로 옮기는 중… '+Math.round((p||0)*100)+'%'); });
+  const notes=mod.noteFramesToTime(
+    mod.addPitchBendsToNoteEvents(contours, mod.outputToNotesPoly(frames,onsets,0.3,0.25,8)));
+  return topLine(notes,ab.duration);
+}
+/* 프레임마다 RMS(소리 크기)와 자기상관으로 얻은 기본주파수를 구해 반음 단위로 묶는다.
+   Basic Pitch 를 못 받았을 때(오프라인 등)만 쓰는 예비 경로다 — 반주가 섞인 음원에는 약하다. */
 function detectMelodyNotes(mono,sr){
   const frame=1024, hop=512;
   const minLag=Math.floor(sr/1000), maxLag=Math.floor(sr/70);
@@ -3092,9 +3808,17 @@ async function runAudioTranscribe(setStatus){
   const ab=S.audioFile&&S.audioFile.buf; if(!ab)throw new Error('no-buffer');
   const beatsPerBar=P.beats||4, bpm0=P.bpm;   // 처리 중 사용자가 BPM/박자표를 바꿔도 흔들리지 않도록 시작 시점 값을 고정
 
-  setStatus('멜로디 분석 중… (곡 길이에 따라 오래 걸릴 수 있어요)');
-  const mono8k=await resampleTo(ab,8000);
-  const rawNotes=detectMelodyNotes(mono8k,8000);
+  setStatus('멜로디 분석 준비 중… (처음 한 번만 모델 1MB를 내려받습니다)');
+  let rawNotes=null, melEngine='basic-pitch';
+  try{
+    rawNotes=await bpMelody(ab,setStatus);
+    if(!rawNotes.some(n=>!n.rest))rawNotes=null;      // 아무 음도 못 찾았으면 예비 경로로
+  }catch(e){ rawNotes=null; }
+  if(!rawNotes){
+    melEngine='간단 방식';
+    setStatus('멜로디 분석 중… (모델을 못 받아 간단 방식으로 대체합니다)');
+    rawNotes=detectMelodyNotes(await resampleTo(ab,8000),8000);
+  }
   const barred=barSplitNotes(quantizeToBeats(rawNotes,bpm0),beatsPerBar);
   const bars=barCountOf(barred);
 
@@ -3114,10 +3838,239 @@ async function runAudioTranscribe(setStatus){
   stopPlay(); reparse(); renderAll();
 }
 
+/* ============ MusicXML 가져오기(v50) ============
+   AI/픽셀 추정 없이 구조화된 데이터를 그대로 옮겨 적는 경로다. 사진에서 AI가 음높이를
+   "읽어 맞히는" 것과 달리, MusicXML은 음이름·박자·마디가 이미 숫자로 박혀 있어
+   옮기기만 하면 된다 — 사실상 오독이 없다(이 앱이 만들 수 있는 가장 정확한 결과다).
+   대신 사용자가 사진을 MusicXML로 바꿔 주는 무료 프로그램(Audiveris 등, 데스크톱 앱)을
+   한 번 거쳐야 한다 — "브라우저 안에서 AI 없이"라는 제약을 지키려면 이 방법뿐이다.
+   느려도 좋고 파일이 커도 좋다는 전제로, 정확도를 최우선에 두고 만들었다. */
+
+/* .mxl(압축 MusicXML)은 사실 zip이다. 알맹이(안의 .xml 하나)만 꺼내면 되므로
+   외부 라이브러리 없이 아주 작은 zip 리더를 직접 짰다. 압축 해제는 브라우저 내장
+   DecompressionStream(deflate-raw)를 쓴다 — 옛 브라우저는 못 열지만, 그때는
+   Audiveris 등에서 압축 안 된 .xml/.musicxml로 다시 내보내면 된다. */
+async function inflateRaw(bytes){
+  if(typeof DecompressionStream==='undefined')
+    throw new Error('이 브라우저는 압축 해제를 지원하지 않습니다 — 최신 Chrome/Edge를 쓰거나, 압축 안 된 .xml/.musicxml로 내보내 주세요.');
+  const ds=new DecompressionStream('deflate-raw');
+  const w=ds.writable.getWriter(); w.write(bytes); w.close();
+  const buf=await new Response(ds.readable).arrayBuffer();
+  return new Uint8Array(buf);
+}
+function readZipEntries(u8){
+  const dv=new DataView(u8.buffer,u8.byteOffset,u8.byteLength);
+  let eocd=-1;
+  const start=Math.max(0,u8.length-22-65557);
+  for(let i=u8.length-22;i>=start;i--){ if(dv.getUint32(i,true)===0x06054b50){eocd=i;break;} }
+  if(eocd<0)throw new Error('zip 구조를 찾지 못했습니다(mxl 파일이 손상되었을 수 있습니다)');
+  const count=dv.getUint16(eocd+10,true), cdOff=dv.getUint32(eocd+16,true);
+  const entries={}; let p=cdOff;
+  for(let k=0;k<count;k++){
+    if(dv.getUint32(p,true)!==0x02014b50)break;
+    const method=dv.getUint16(p+10,true), compSize=dv.getUint32(p+20,true),
+      nameLen=dv.getUint16(p+28,true), extraLen=dv.getUint16(p+30,true), commentLen=dv.getUint16(p+32,true),
+      lhOff=dv.getUint32(p+42,true);
+    const name=new TextDecoder().decode(u8.subarray(p+46,p+46+nameLen));
+    entries[name]={method,compSize,lhOff};
+    p+=46+nameLen+extraLen+commentLen;
+  }
+  return entries;
+}
+async function readZipEntry(u8,entries,name){
+  const e=entries[name]; if(!e)throw new Error('zip 안에 "'+name+'" 항목이 없습니다');
+  const dv=new DataView(u8.buffer,u8.byteOffset,u8.byteLength);
+  const nameLen=dv.getUint16(e.lhOff+26,true), extraLen=dv.getUint16(e.lhOff+28,true);
+  const dataStart=e.lhOff+30+nameLen+extraLen;
+  const raw=u8.subarray(dataStart,dataStart+e.compSize);
+  return e.method===0?raw:await inflateRaw(raw);
+}
+async function mxlToXmlText(buf){
+  const u8=new Uint8Array(buf);
+  const entries=readZipEntries(u8);
+  let rootPath=null;
+  if(entries['META-INF/container.xml']){
+    const ctxt=new TextDecoder('utf-8').decode(await readZipEntry(u8,entries,'META-INF/container.xml'));
+    const m=ctxt.match(/full-path="([^"]+)"/); if(m)rootPath=m[1];
+  }
+  /* container.xml 이 가리키는 이름이 zip 안에 실제로 없을 수도 있다(경로 표기 차이·인코딩
+     문제). 이름을 그대로 믿지 말고, 없으면 zip 안의 .xml 을 직접 찾는다.
+     ※ 실제 Audiveris 5.x 가 만든 한글 이름 .mxl 로 확인해 보니 이 경우는 정상이었다 —
+        방어용 안전장치다. */
+  if(!rootPath||!entries[rootPath])rootPath=Object.keys(entries).find(n=>/\.(musicxml|xml)$/i.test(n)&&!/^META-INF\//i.test(n));
+  if(!rootPath)throw new Error('mxl 안에서 악보 파일을 찾지 못했습니다');
+  const bytes=await readZipEntry(u8,entries,rootPath);
+  return new TextDecoder('utf-8').decode(bytes).replace(/^﻿/,'');
+}
+
+/* 코드 기호(<harmony>) 종류 → 이 앱이 쓰는 접미사. <kind text="..">에 원문 표기가
+   남아 있으면 그걸 우선한다 — OMR/편집기가 원래 악보에 적힌 그대로를 보존해 두는
+   경우가 많아서, 우리가 다시 매핑하는 것보다 원본에 더 가깝다. */
+const XML_KIND_SFX={major:'',minor:'m',dominant:'7','dominant-seventh':'7','major-seventh':'maj7',
+  'minor-seventh':'m7',augmented:'aug',diminished:'dim','diminished-seventh':'dim7',
+  'half-diminished':'m7b5','major-sixth':'6','minor-sixth':'m6','suspended-second':'sus2',
+  'suspended-fourth':'sus4','major-ninth':'maj9','dominant-ninth':'9','minor-ninth':'m9',
+  power:'5','major-minor':'m/maj7',none:''};
+function xmlStepAlterName(step,alter){
+  alter=Math.round(alter||0);
+  /* 이 앱의 음이름 정규식은 임시표를 한 글자만 받는다(##/bb 없음) — 겹올림/겹내림표는
+     드물어서 한 글자로 뭉갠다. 실제 찬양 악보에서 마주칠 일이 거의 없는 한계다. */
+  const a=alter>0?'#':alter<0?'b':'';
+  return step+a;
+}
+function parseHarmony(h){
+  const root=h.querySelector('root'); if(!root)return null;
+  const stepEl=root.querySelector('root-step'); if(!stepEl||!stepEl.textContent)return null;
+  const alter=+(root.querySelector('root-alter')?.textContent||0);
+  const rootName=xmlStepAlterName(stepEl.textContent.trim(),alter);
+  const kindEl=h.querySelector('kind');
+  const kindText=kindEl&&kindEl.getAttribute('text');
+  const kindVal=kindEl&&kindEl.textContent&&kindEl.textContent.trim();
+  let name;
+  if(kindText&&/^[A-G]/.test(kindText.trim())){ name=kindText.trim(); }   // 원문에 이미 근음까지 있음
+  else{
+    let sfx='';
+    if(kindText&&kindText.trim())sfx=kindText.trim();
+    else if(kindVal&&Object.prototype.hasOwnProperty.call(XML_KIND_SFX,kindVal))sfx=XML_KIND_SFX[kindVal];
+    name=rootName+sfx;
+  }
+  const bass=h.querySelector('bass');
+  if(bass){
+    const bstep=bass.querySelector('bass-step');
+    if(bstep&&bstep.textContent){
+      const balter=+(bass.querySelector('bass-alter')?.textContent||0);
+      name+='/'+xmlStepAlterName(bstep.textContent.trim(),balter);
+    }
+  }
+  return name;
+}
+/* MusicXML 한 파트를 이 앱의 차트 텍스트로 바꾼다.
+   - 목소리(voice)·오선(staff) 번호가 여럿이면 가장 작은 번호만 쓴다 — MusicXML 관례상
+     번호가 작을수록 위(소프라노) 목소리다. topLine(음원)·staffGeom(사진)과 같은 규칙이다.
+   - 동시에 울리는 화음(<chord/> 표시가 붙은 음)은 첫 음(맨 위)만 남긴다.
+   - 이음줄(<tie>)로 이어진 같은 음은 박수를 더해 하나로 합친다.
+   - 마디 경계마다 텍스트에 '|' 문자를 그대로 심어 둔다 — withBars()가 이 문자를
+     보고 마디를 나누므로, AI가 만든 결과와 똑같은 표기를 그대로 재사용한다.
+   - 코드/가사 줄과 멜로디 줄을 4마디씩 묶어 번갈아 내보낸다(가독성만을 위함 —
+     한 줄로 다 이어 붙여도 재생·이조·렌더는 똑같이 동작한다. 실제 화면 조판은
+     텍스트 줄바꿈과 무관하게 다시 계산된다). */
+function parseMusicXML(xmlText){
+  const doc=new DOMParser().parseFromString(xmlText,'application/xml');
+  if(doc.querySelector('parsererror'))throw new Error('MusicXML 형식이 아니거나 파일이 손상되었습니다');
+  if(!doc.querySelector('score-partwise')){
+    throw new Error(doc.querySelector('score-timewise')
+      ?'score-timewise 형식은 지원하지 않습니다 — 대부분의 프로그램은 score-partwise로도 내보낼 수 있습니다.'
+      :'<score-partwise> 악보를 찾지 못했습니다.');
+  }
+  const part=doc.querySelector('part');
+  if(!part)throw new Error('악보 안에 <part>가 없습니다');
+  const measures=[...part.querySelectorAll('measure')];
+  if(!measures.length)throw new Error('마디를 찾지 못했습니다');
+
+  let voiceFilter=null, staffFilter=null;
+  {
+    const voices=new Set(), staffs=new Set();
+    measures.forEach(ms=>ms.querySelectorAll('note').forEach(n=>{
+      const v=n.querySelector('voice'), s=n.querySelector('staff');
+      if(v&&v.textContent.trim())voices.add(v.textContent.trim());
+      if(s&&s.textContent.trim())staffs.add(s.textContent.trim());
+    }));
+    if(voices.size>1)voiceFilter=[...voices].sort((a,b)=>+a-+b)[0];
+    if(staffs.size>1)staffFilter=[...staffs].sort((a,b)=>+a-+b)[0];
+  }
+
+  let divisions=1, beatsPerBar=null, bpm=null, pendingWord='';
+  let curChord=null, curText='';
+  const noteText=n=>n.bar?'|':n.rest?('r:'+n.beats):(n.name+':'+n.beats);
+  const melLines=[], pairLines=[];
+  let melBuf=[], pairsBuf=[], mCount=0;
+
+  const pushPair=()=>{
+    if(curChord||curText.trim()||curText.includes('|'))pairsBuf.push({chord:curChord,text:curText});
+    curChord=null; curText='';
+  };
+  const flushChunk=()=>{
+    pushPair();
+    if(melBuf.length)melLines.push('♪ '+melBuf.map(noteText).join(' '));
+    if(pairsBuf.length){
+      let s=''; pairsBuf.forEach(p=>{ s+=(p.chord?'['+p.chord+']':'')+p.text; });
+      if(s.trim())pairLines.push(s);
+    }
+    melBuf=[]; pairsBuf=[];
+  };
+
+  measures.forEach((ms,mi)=>{
+    const dv=ms.querySelector(':scope > attributes > divisions');
+    if(dv)divisions=(+dv.textContent)||divisions;
+    if(beatsPerBar===null){
+      const t=ms.querySelector(':scope > attributes > time');
+      if(t){
+        const b=+((t.querySelector('beats')||{}).textContent||0);
+        const bt=+((t.querySelector('beat-type')||{}).textContent||0);
+        if(b&&bt===4)beatsPerBar=b;
+      }
+    }
+    if(bpm===null){
+      const snd=ms.querySelector('sound[tempo]');
+      if(snd)bpm=Math.round(+snd.getAttribute('tempo'))||null;
+    }
+    if(mi>0){ if(melBuf.length)melBuf.push({bar:true}); curText+='|'; }
+    for(const el of ms.children){
+      const tag=el.tagName;
+      if(tag==='harmony'){
+        const nm2=parseHarmony(el); if(!nm2)continue;
+        pushPair(); curChord=nm2; continue;
+      }
+      if(tag!=='note')continue;
+      if(el.querySelector(':scope > grace'))continue;
+      const v=el.querySelector(':scope > voice'), s=el.querySelector(':scope > staff');
+      if(voiceFilter&&v&&v.textContent.trim()!==voiceFilter)continue;
+      if(staffFilter&&s&&s.textContent.trim()!==staffFilter)continue;
+      if(el.querySelector(':scope > chord'))continue;   // 동시에 울리는 화음의 아래 음은 건너뛴다
+      const durEl=el.querySelector(':scope > duration');
+      const beats=durEl?(+durEl.textContent)/divisions:0;
+      if(!(beats>0))continue;
+      const tieStop=[...el.querySelectorAll(':scope > tie')].some(t=>t.getAttribute('type')==='stop');
+      if(el.querySelector(':scope > rest')){
+        const prev=melBuf[melBuf.length-1];
+        if(prev&&prev.rest)prev.beats=+(prev.beats+beats).toFixed(4);
+        else melBuf.push({rest:true,beats:+beats.toFixed(4)});
+      }else{
+        const pitch=el.querySelector(':scope > pitch');
+        if(pitch){
+          const step=pitch.querySelector('step').textContent.trim();
+          const alter=+(pitch.querySelector('alter')?.textContent||0);
+          const octave=+pitch.querySelector('octave').textContent;
+          const name=xmlStepAlterName(step,alter)+octave;
+          const prev=melBuf[melBuf.length-1];
+          if(tieStop&&prev&&!prev.bar&&!prev.rest&&prev.name===name)prev.beats=+(prev.beats+beats).toFixed(4);
+          else melBuf.push({name,beats:+beats.toFixed(4)});
+        }
+      }
+      const lyric=el.querySelector(':scope > lyric');
+      if(lyric){
+        const syl=(lyric.querySelector('text')||{}).textContent||'';
+        const type=(lyric.querySelector('syllable-type')||{}).textContent||'single';
+        if(type==='begin'||type==='single'){ curText+=pendingWord; pendingWord=syl; }
+        else pendingWord+=syl;
+        if(type==='end'||type==='single'){ curText+=pendingWord; pendingWord=''; }
+      }
+    }
+    if(++mCount>=4||mi===measures.length-1){ flushChunk(); mCount=0; }
+  });
+  if(pendingWord)curText+=pendingWord;
+  if(melBuf.length||pairsBuf.length||curText||curChord)flushChunk();
+
+  if(!melLines.length)throw new Error('음표를 하나도 찾지 못했습니다(다른 목소리를 골라야 할 수 있습니다)');
+  const lines=[]; const n=Math.max(melLines.length,pairLines.length);
+  for(let i=0;i<n;i++){ if(melLines[i])lines.push(melLines[i]); if(pairLines[i])lines.push(pairLines[i]); }
+  return {text:lines.join('\n'),beatsPerBar,bpm};
+}
+
 /* ============ 패널 ============ */
 function openPanel(name){
   const s=$('sheet');
-  const scanTitle=S.importMode==='audio'?'음악 파일에서 채보':S.importMode==='photo'?'사진에서 가져오기':'가져오기';
+  const scanTitle=S.importMode==='audio'?'음악 파일에서 채보':S.importMode==='photo'?'사진에서 가져오기':S.importMode==='musicxml'?'MusicXML 가져오기':'가져오기';
   const titles={scan:scanTitle,input:'악보 편집',library:'저장된 콘티',export:'내보내기',diag:'멜로디 진단',play:'재생 설정',view:'보기 설정',staff:'오선보'};
   s.innerHTML='<div class="sheethead"><span class="eyebrow">'+titles[name]+'</span><button class="btn" id="close">닫기</button></div>';
   const body=document.createElement('div');s.appendChild(body);
@@ -3131,10 +4084,14 @@ function openPanel(name){
       +'<span class="ds">종이 악보·코드차트 사진을 찍으면 코드·가사·멜로디를 텍스트로 옮겨 적습니다.</span></span></button>'
       +'<button class="modecard" id="pick-audio"><span class="ico">🎵</span><span>'
       +'<span class="tt">음악 파일로 자동 채보<span class="badge">베타</span></span>'
-      +'<span class="ds">mp3·m4a 같은 음악 파일을 넣으면 브라우저 안에서(서버 없이, 무료) 가사(음성 인식)와 멜로디(오디오→악보)를 뽑아냅니다. 느릴 수 있습니다.</span></span></button>'
+      +'<span class="ds">mp3·m4a 같은 음악 파일을 넣으면 브라우저 안에서(서버 없이, 무료) 멜로디와 가사를 뽑아냅니다. 멜로디는 Spotify가 공개한 Basic Pitch 모델로 읽어 <b>반주가 섞인 MR·음원에서도</b> 가장 높은 소리(멜로디)를 골라냅니다.</span></span></button>'
+      +'<button class="modecard" id="pick-mxl"><span class="ico">🎼</span><span>'
+      +'<span class="tt">MusicXML 파일 가져오기<span class="badge">최고 정확도</span></span>'
+      +'<span class="ds">AI가 읽어 맞히지 않고, 이미 숫자로 정리된 음이름·박자를 그대로 옮기므로 오독이 없습니다. 다만 사진을 MusicXML로 바꿔 주는 <b>무료 프로그램(Audiveris 등)</b>을 컴퓨터에서 먼저 한 번 돌려야 합니다 — 그 결과 파일(.xml/.musicxml/.mxl)을 여기 넣으세요.</span></span></button>'
       +'</div>';
     $('pick-photo').onclick=()=>{S.importMode='photo';openPanel('scan')};
     $('pick-audio').onclick=()=>{S.importMode='audio';openPanel('scan')};
+    $('pick-mxl').onclick=()=>{S.importMode='musicxml';openPanel('scan')};
     $('scrim').classList.add('open');
     return;
   }
@@ -3187,6 +4144,60 @@ function openPanel(name){
     return;
   }
 
+  if(name==='scan'&&S.importMode==='musicxml'){
+    const busy=!!S.mxlBusy;
+    body.innerHTML='<button class="backlink" id="back" '+(busy?'disabled':'')+'>‹ 다른 방법 고르기</button>'
+      +'<div class="callout work">🎼 AI를 쓰지 않습니다 — MusicXML에 이미 적힌 음이름·박자를 그대로 옮깁니다. 사진을 MusicXML로 바꾸는 무료 프로그램(예: <b>Audiveris</b>, 데스크톱 앱)을 먼저 한 번 돌려 주세요.</div>'
+      +'<div class="btns" style="margin-top:0">'
+      +'<label class="btn lg on wide" for="mxlfile">MusicXML 파일 고르기</label>'
+      +'</div>'
+      +'<input type="file" id="mxlfile" class="vh" accept=".xml,.musicxml,.mxl" '+(busy?'disabled':'')+'>'
+      +(S.mxlFile
+        ? '<div class="rowline"><span><b>'+esc(S.mxlFile.name)+'</b></span></div>'
+        : '<div class="drop" style="margin-top:14px">.xml · .musicxml · .mxl(압축) 파일을 넣으면 여기 표시됩니다.<br>여러 파트(성부)가 있으면 <b>가장 위 목소리</b>만 멜로디로 가져옵니다.</div>')
+      +'<div id="mxlstate">'+(busy?'<div class="callout work"><span class="spin"></span>'+esc(S.mxlStatus||'읽는 중…')+'</div>':'')+'</div>'
+      +(S.mxlFile&&!busy
+        ? '<div class="btns"><button class="btn lg on wide" id="go-mxl">악보로 가져오기</button></div>'
+        : '');
+    $('back').onclick=()=>{ if(busy)return; S.importMode=null;openPanel('scan')};
+    if($('mxlfile'))$('mxlfile').onchange=async e=>{
+      const f=e.target.files&&e.target.files[0]; if(!f)return;
+      try{ S.mxlFile={name:f.name,buf:await f.arrayBuffer()}; }
+      catch(err){ toast('파일을 읽지 못했습니다.'); S.mxlFile=null; }
+      openPanel('scan');
+    };
+    if($('go-mxl'))$('go-mxl').onclick=async()=>{
+      S.mxlBusy=true; S.mxlStatus='읽는 중…'; openPanel('scan'); setWork(S.mxlStatus);
+      try{
+        const u8=new Uint8Array(S.mxlFile.buf);
+        const isZip=u8.length>2&&u8[0]===0x50&&u8[1]===0x4B;
+        const xmlText=isZip?await mxlToXmlText(S.mxlFile.buf)
+          :new TextDecoder('utf-8').decode(S.mxlFile.buf).replace(/^﻿/,'');
+        const r=parseMusicXML(xmlText);
+        S.raw=r.text; S.semis=0; S.verse=1; stopPlay();
+        S.photos=[]; S.orig=null;   // 사진에서 온 게 아니므로 원본 사진 보기는 없다
+        if(r.beatsPerBar)P.beats=r.beatsPerBar;
+        if(r.bpm)P.bpm=r.bpm;
+        reparse(); renderAll(); addHistory();
+        S.mxlBusy=false; S.importMode=null; S.mxlFile=null; clearWork();
+        S.mode=hasMelody()?'staff':'text'; renderAll();
+        showResult('ok','MusicXML을 그대로 옮겼습니다',
+          '코드 '+blocks.reduce((a,b)=>a+(b.k==='pairs'?b.pairs.filter(p=>p.chord).length:0),0)+'개'
+          +(hasMelody()?', 멜로디 '+blocks.filter(b=>b.k==='mel').reduce((a,b)=>a+b.notes.filter(n=>!n.bar&&!n.rest).length,0)+'개':'')
+          +'. <b>AI가 읽어 맞힌 게 아니라 파일에 적힌 값을 그대로 옮긴 것이라 음높이·박자 오독이 없습니다.</b> 가사·코드 기호는 원본 파일에 있던 만큼만 옮겨졌으니 확인해 주세요.',
+          [{label:'옮겨 적은 악보 확인',pri:true,fn:()=>setMode(hasMelody()?'staff':'text')},
+           {label:'직접 고치기',fn:()=>openPanel('input')}]);
+        closePanel();
+      }catch(err){
+        S.mxlBusy=false; clearWork();
+        toast('가져오지 못했습니다: '+(err&&err.message||err));
+        openPanel('scan');
+      }
+    };
+    $('scrim').classList.add('open');
+    return;
+  }
+
   if(name==='scan'){
     const hosted=!!SCAN_ENDPOINT, showCfg=!!S.showCfg;
     body.innerHTML=
@@ -3210,6 +4221,8 @@ function openPanel(name){
         : '<div class="drop" style="margin-top:14px">여러 장을 한 번에 고를 수 있습니다.<br>인쇄된 악보가 손글씨보다 훨씬 잘 읽힙니다.</div>')
       +'<div class="rowline"><span><b>멜로디까지 읽기</b><small>오선보의 음표를 함께 가져옵니다</small></span>'
       +'<button class="btn '+(P.readMel!==false?'on':'')+'" id="melread">'+(P.readMel!==false?'켬':'끔')+'</button></div>'
+      +'<div class="rowline"><span><b>음높이를 직접 재기</b><small>음표 머리가 오선 몇째 줄·칸에 놓였는지 픽셀로 재서, AI 대신 음이름을 정합니다</small></span>'
+      +'<button class="btn '+(P.geomPitch!==false?'on':'')+'" id="geompitch">'+(P.geomPitch!==false?'켬':'끔')+'</button></div>'
       +'<div class="rowline"><span><b>단별로 나눠 읽기</b><small>오선 줄마다 잘라 따로 인식합니다. 느리지만 정확합니다</small></span>'
       +'<button class="btn '+(P.bySystem!==false?'on':'')+'" id="bysys">'+(P.bySystem!==false?'켬':'끔')+'</button></div>'
       +'<div class="rowline"><span><b>OCR로 초안 대조</b><small>문자 인식(무료, 키 없음)으로 먼저 훑어본 걸 참고해 코드·가사를 보정합니다. 처음 쓸 때 조금 더 걸릴 수 있습니다</small></span>'
@@ -3241,6 +4254,7 @@ function openPanel(name){
     if($('gkey'))$('gkey').onchange=e=>setLS('konti:gkey',e.target.value.trim());
     if($('melread'))$('melread').onclick=()=>{P.readMel=P.readMel===false;openPanel('scan')};
     if($('bysys'))$('bysys').onclick=()=>{P.bySystem=P.bySystem===false;openPanel('scan')};
+    if($('geompitch'))$('geompitch').onclick=()=>{P.geomPitch=P.geomPitch===false;openPanel('scan')};
     if($('ocrboost'))$('ocrboost').onclick=()=>{P.ocrBoost=P.ocrBoost===false;openPanel('scan')};
     if($('file'))$('file').onchange=onPickFile;
     if($('camopen'))$('camopen').onclick=openCam;
