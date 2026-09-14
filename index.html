@@ -311,7 +311,7 @@ window.onerror=function(msg,src,ln){
    예) const SCAN_ENDPOINT = "https://konti-scan.내계정.workers.dev";
 */
 const SCAN_ENDPOINT = "";
-const APP_VER = "54";
+const APP_VER = "55";
 /* file:// 나 content:// 로 열면 브라우저가 외부 호출을 막는다(CORS). 미리 알려준다. */
 const LOCAL_FILE = !/^https?:$/.test(location.protocol);
 /* Claude 앱처럼 iframe 안에서 실행 중이면 키 없이도 인식이 통한다. */
@@ -2649,6 +2649,78 @@ function makePrompt(withMel,ctx){
 const PROMPT=makePrompt(true);
 
 /* 캔버스 하나를 원하는 최대 변 길이로 맞춰 만든다(그레이스케일·대비 보정 포함) */
+/* 손으로 찍은 사진을 "스캔한 것처럼" 펴 준다(v55). 사진 인식의 첫 단추다.
+   ★ 왜 필요한가 — 실측: 깨끗하게 잘라 낸 악보에서는 단을 6개 다 찾는데, **책상 여백을
+     두르고 1.5도 기울이기만 해도 2개로 떨어졌고** 그 2개는 오선 측정이 전부 실패했다
+     (멜로디 0음). 사용자가 실제 사진으로 겪은 것이 정확히 이것이다. 단 찾기는
+     '가로로 긴 검은 줄'을 행마다 세는 방식이라 1~2도만 기울어도 무너진다.
+   ★ 순서가 **종이 자르기 → 기울기 재기** 여야 한다. 반대로 하면 안 된다:
+     기울기 판정(bestSkew)은 '행마다 어두운 정도의 제곱합'이라, 화면을 가득 채운 책상이
+     그 값을 좌우해 버려서 **오선이 주는 신호가 묻힌다.** 실측으로 2.5도 사진이 2.51도
+     그대로 남았다(하나도 못 편 것). 종이만 먼저 잘라 내면 그 자리에서 제대로 잡힌다.
+   ★ 여기서 한 번만 펴고 자르면, 뒤따르는 모든 사본(보내는 것·OCR·재는 것·화면용)이 같이
+     펴진다. 화면용도 같이 펴지므로 사진 위 마디 표시 자리가 저절로 맞는다. */
+function paperBox(cv){
+  const W=cv.width, H=cv.height;
+  let d; try{ d=cv.getContext('2d',{willReadFrequently:true}).getImageData(0,0,W,H).data; }catch(e){ return null; }
+  const step=Math.max(1,Math.round(Math.min(W,H)/400));
+  const hist=new Uint32Array(256); let n=0;
+  for(let y=0;y<H;y+=step)for(let x=0;x<W;x+=step){
+    const i=(y*W+x)*4; hist[(d[i]*.3+d[i+1]*.59+d[i+2]*.11)|0]++; n++;
+  }
+  /* "밝기 180 이상" 같은 고정값을 쓰면 안 된다 — 사진은 한쪽이 어둡고 한쪽이 밝은 게 보통이다.
+     그림에서 가장 밝은 축(상위 10%)을 먼저 구하고 그 비율로 종이를 본다. */
+  let acc=0, p90=255;
+  for(let v=255;v>=0;v--){ acc+=hist[v]; if(acc>=n*0.10){ p90=v; break; } }
+  const bright=Math.max(90,p90*0.72);
+  const rowOk=new Uint8Array(H), colOk=new Uint8Array(W);
+  for(let y=0;y<H;y+=step){
+    let c=0,t=0;
+    for(let x=0;x<W;x+=step){ const i=(y*W+x)*4; if((d[i]*.3+d[i+1]*.59+d[i+2]*.11)>bright)c++; t++; }
+    if(t&&c/t>0.55)for(let k=y;k<Math.min(H,y+step);k++)rowOk[k]=1;
+  }
+  let r0=-1,r1=-1; for(let y=0;y<H;y++)if(rowOk[y]){ if(r0<0)r0=y; r1=y; }
+  if(r0<0||r1-r0<H*0.25)return null;
+  for(let x=0;x<W;x+=step){
+    let c=0,t=0;
+    for(let y=r0;y<=r1;y+=step){ const i=(y*W+x)*4; if((d[i]*.3+d[i+1]*.59+d[i+2]*.11)>bright)c++; t++; }
+    if(t&&c/t>0.55)for(let k=x;k<Math.min(W,x+step);k++)colOk[k]=1;
+  }
+  let c0=-1,c1=-1; for(let x=0;x<W;x++)if(colOk[x]){ if(c0<0)c0=x; c1=x; }
+  if(c0<0||c1-c0<W*0.25)return null;
+  return [c0,r0,c1-c0+1,r1-r0+1];
+}
+function cropTo(cv,box,pad){
+  const W=cv.width,H=cv.height;
+  const x0=Math.max(0,box[0]-pad), y0=Math.max(0,box[1]-pad);
+  const x1=Math.min(W,box[0]+box[2]+pad), y1=Math.min(H,box[1]+box[3]+pad);
+  const o=document.createElement('canvas'); o.width=x1-x0; o.height=y1-y0;
+  o.getContext('2d').drawImage(cv,x0,y0,o.width,o.height,0,0,o.width,o.height);
+  return o;
+}
+async function deskewPaper(img){
+  const W0=img.width, H0=img.height;
+  let cv=document.createElement('canvas'); cv.width=W0; cv.height=H0;
+  cv.getContext('2d',{willReadFrequently:true}).drawImage(img,0,0);
+  /* 1) 종이만 남긴다(책상·어두운 배경을 걷어낸다) */
+  const pad=Math.round(Math.min(W0,H0)*0.004);
+  const box=paperBox(cv);
+  if(box&&!(box[2]>=W0*0.985&&box[3]>=H0*0.985))cv=cropTo(cv,box,pad);
+  /* 2) 그다음에 기울기를 잰다 — 배경이 빠진 뒤라야 오선의 신호가 산다 */
+  let ang=0;
+  try{ ang=bestSkew(await imgFrom(cv.toDataURL('image/jpeg',.95)),6)||0; }catch(e){ ang=0; }
+  if(!ang)return cv;
+  const W=cv.width, H=cv.height;
+  const o=document.createElement('canvas'); o.width=W; o.height=H;
+  const g=o.getContext('2d',{willReadFrequently:true});
+  g.fillStyle='#fff'; g.fillRect(0,0,W,H);
+  g.translate(W/2,H/2); g.rotate(ang); g.translate(-W/2,-H/2);
+  g.drawImage(cv,0,0);
+  g.setTransform(1,0,0,1,0,0);
+  /* 3) 돌리면 네 귀퉁이에 흰 삼각형이 생긴다 — 종이 상자를 한 번 더 잡아 잘라 낸다 */
+  const b2=paperBox(o);
+  return (b2&&!(b2[2]>=W*0.99&&b2[3]>=H*0.99))?cropTo(o,b2,0):o;
+}
 function fitCanvas(img,cap){
   const sc=Math.min(1,cap/Math.max(img.width,img.height));
   const cv=document.createElement('canvas');
@@ -2660,7 +2732,17 @@ function fitCanvas(img,cap){
 }
 async function prepImage(f){
   const dataUrl=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f)});
-  const img=await new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=dataUrl});
+  const raw=await new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=dataUrl});
+  /* ★ 먼저 사진을 펌다(v55) — 기울기를 되돌리고 책상·배경을 잘라 종이만 남긴다.
+     여기서 한 번만 하면 뒤따르는 모든 사본(보내는 것·OCR·재는 것·화면용)이 같이 펴진다.
+     화면용 사본도 같이 펴지므로 사진 위 마디 표시 자리도 저절로 맞는다. */
+  const img=await (async()=>{
+    try{
+      const cv=await deskewPaper(raw);
+      if(!cv||!cv.width||!cv.height)return raw;
+      return await imgFrom(cv.toDataURL('image/jpeg',.95));
+    }catch(e){ return raw; }
+  })();
   const out=fitCanvas(img,1600);
   /* OCR(무료·키 없이 읽기)은 AI 인식과 달리 이미지 크기 제한이 없다 — 작은 글자가 많은
      찬송가 등은 해상도가 정확도를 크게 좌우해서, 원본을 덜 줄인 별도 사본을 하나 더 만들어 둔다. */
@@ -2770,7 +2852,7 @@ function imgFrom(url){
    2. 점수를 "잉크냐 아니냐"로 세지 말 것. 얇은 선은 축소하면 회색이 되어 문턱값 하나로
       갈리면 결과가 요동친다. 밝기(0~1)의 행 평균을 그대로 제곱해서 더한다 —
       오선이 수평에 맞으면 어두움이 몇 행에 몰려 제곱합이 최대가 된다. */
-function bestSkew(img){
+function bestSkew(img,range){
   const W=Math.min(img.width,Math.max(760,Math.round(img.width*0.5)));
   const H=Math.max(24,Math.round(img.height*(W/img.width)));
   const cv=document.createElement('canvas'); cv.width=W; cv.height=H;
@@ -2796,7 +2878,8 @@ function bestSkew(img){
   const flat=score(0);
   if(flat===null||flat<=0)return 0;
   let best=0, bestScore=flat;
-  for(let deg=-3;deg<=3.001;deg+=0.4){
+  const RG=Math.max(1,range||3);
+  for(let deg=-RG;deg<=RG+0.001;deg+=0.4){
     if(Math.abs(deg)<0.05)continue;
     const v=score(deg); if(v===null)return 0;
     if(v>bestScore){ bestScore=v; best=deg; }
@@ -3041,39 +3124,138 @@ async function staffGeom(url,clef){
   let px; try{ px=g2.getImageData(0,0,W,H).data; }catch(e){ return null; }   // file:// 에서는 막힌다
   const N=W*H, hist=new Uint32Array(256), gray=new Uint8Array(N);
   for(let p=0,i=0;p<N;p++,i+=4){ const v=(px[i]*.299+px[i+1]*.587+px[i+2]*.114)|0; gray[p]=v; hist[v]++; }
-  const th=Math.min(210,Math.max(55,otsuTh(hist,N)));
+  /* ★ 문턱값 하나로 온 그림을 자르면 안 된다(v55). 손으로 찍은 사진은 한쪽이 그늘지고
+     한쪽이 밝은 게 보통이라, 전체 오츠 하나로는 **어두운 쪽이 통째로 잉크가 되고 밝은 쪽은
+     오선이 통째로 사라진다.** 실측: 조명이 기운 사진에서 단 6개 중 3개만 읽혔다.
+     그래서 '그 자리 주변보다 어두운가'로 본다(Bradley 적응 문턱값). 주변 평균은 적분영상
+     으로 한 번에 구하므로 창 크기와 상관없이 빠르다.
+     ★ 전체 오츠도 버리지 않고 **하한**으로 함께 쓴다 — 완전히 빈 여백에서는 주변 평균이
+       종이색이라, 적응 문턱값만 쓰면 종이의 얼룩까지 잉크로 본다. */
+  const otsu=Math.min(210,Math.max(55,otsuTh(hist,N)));
   const ink=new Uint8Array(N);
-  for(let p=0;p<N;p++)if(gray[p]<th)ink[p]=1;
+  {
+    const ii=new Float64Array((W+1)*(H+1));
+    for(let y=0;y<H;y++){
+      let rs=0;
+      for(let x=0;x<W;x++){ rs+=gray[y*W+x]; ii[(y+1)*(W+1)+(x+1)]=ii[y*(W+1)+(x+1)]+rs; }
+    }
+    const r=Math.max(8,Math.round(Math.min(W,H)*0.25));
+    const hi=Math.min(245,otsu+55);          // 이보다 밝으면 무조건 종이
+    for(let y=0;y<H;y++){
+      const y0b=Math.max(0,y-r), y1b=Math.min(H-1,y+r);
+      for(let x=0;x<W;x++){
+        const g0=gray[y*W+x];
+        if(g0>hi)continue;
+        const x0b=Math.max(0,x-r), x1b=Math.min(W-1,x+r);
+        const area=(x1b-x0b+1)*(y1b-y0b+1);
+        const sum=ii[(y1b+1)*(W+1)+(x1b+1)]-ii[y0b*(W+1)+(x1b+1)]-ii[(y1b+1)*(W+1)+x0b]+ii[y0b*(W+1)+x0b];
+        if(g0<(sum/area)*0.90)ink[y*W+x]=1;
+      }
+    }
+  }
+  const th=otsu;
 
-  /* 1) 오선 다섯 줄 찾기 */
+  /* 1) 오선 다섯 줄 찾기 — **두 가지 방법을 순서대로** 쓴다(v55).
+     ① 예전 방법(문턱값 + 간격이 고른 다섯 줄 묶기). 깨끗한 스캔·합성 그림에서 확실하고,
+        그랜드 스태프에서 **위 오선을 먼저 고르는** 성질이 있다(위에서부터 훑으니까).
+        지금까지 쌓은 회귀 테스트가 전부 이 동작을 지키고 있으므로 **먼저** 돌린다.
+     ② 그게 실패했을 때만 새 방법(런렝스로 간격 추정 → 배경 제거 → 빗살 정합).
+        손으로 찍은 사진처럼 오선이 흐리거나 조명이 기운 그림에서 ①이 그냥 null 을
+        돌려주던 자리를 메운다.
+     ★ 순서가 중요하다. ②를 먼저 돌리게 했더니 합성 회귀 테스트 11개가 깨졌다 —
+       ②는 곡 전체에서 '가장 잘 맞는' 자리를 고르므로 그랜드 스태프에서 아래 오선을
+       고르기도 하고, 덧줄이 많은 그림에서 한 칸 밀리기도 한다. ②는 어디까지나
+       **①이 아무것도 못 찾았을 때의 구제책**이다. */
   const rows=new Float32Array(H); let rmax=0;
   for(let y=0;y<H;y++){ let c=0; const o=y*W; for(let x=0;x<W;x++)c+=ink[o+x]; rows[y]=c/W; if(rows[y]>rmax)rmax=rows[y]; }
-  if(rmax<0.3)return null;
-  const lineTh=Math.max(0.3,rmax*0.55), thick=Math.max(4,Math.round(H*0.055));
-  const runs=[]; let st=-1;
-  for(let y=0;y<H;y++){
-    if(rows[y]>=lineTh){ if(st<0)st=y; }
-    else if(st>=0){ if(y-st<=thick)runs.push([st,y-1]); st=-1; }
+  if(rmax<0.08)return null;
+  /* ① 예전 방법 */
+  let ctr5=null;
+  if(rmax>=0.3){
+    const lineTh=Math.max(0.3,rmax*0.55), thick=Math.max(4,Math.round(H*0.055));
+    const runs=[]; let st=-1;
+    for(let y=0;y<H;y++){
+      if(rows[y]>=lineTh){ if(st<0)st=y; }
+      else if(st>=0){ if(y-st<=thick)runs.push([st,y-1]); st=-1; }
+    }
+    if(st>=0&&H-st<=thick)runs.push([st,H-1]);
+    if(runs.length>=5){
+      const ctr=runs.map(r=>(r[0]+r[1])/2);
+      for(let i=0;i+4<ctr.length;i++){
+        const g=[ctr[i+1]-ctr[i],ctr[i+2]-ctr[i+1],ctr[i+3]-ctr[i+2],ctr[i+4]-ctr[i+3]];
+        const mn=Math.min.apply(null,g), mx=Math.max.apply(null,g);
+        if(mn<4||mx>mn*1.35)continue;
+        const s2=(ctr[i+4]-ctr[i])/4;
+        if(Math.max.apply(null,g.map(v=>Math.abs(v-s2)))/s2>0.16)continue;
+        ctr5=[0,1,2,3,4].map(k=>runs[i+k]);            // [a,b] 쌍 그대로 (두께를 이미 안다)
+        break;                                          // 위에서부터 처음 = 소프라노 보표
+      }
+    }
   }
-  if(st>=0&&H-st<=thick)runs.push([st,H-1]);
-  if(runs.length<5)return null;
-  const ctr=runs.map(r=>(r[0]+r[1])/2);
-  let pick=null;
-  for(let i=0;i+4<ctr.length;i++){
-    const g=[ctr[i+1]-ctr[i],ctr[i+2]-ctr[i+1],ctr[i+3]-ctr[i+2],ctr[i+4]-ctr[i+3]];
-    const mn=Math.min.apply(null,g), mx=Math.max.apply(null,g);
-    if(mn<4||mx>mn*1.35)continue;
-    const s=(ctr[i+4]-ctr[i])/4;
-    if(Math.max.apply(null,g.map(v=>Math.abs(v-s)))/s>0.16)continue;
-    pick={i,sp:s,top:ctr[i],bot:ctr[i+4]}; break;      // 위에서부터 처음 = 소프라노 보표
+  /* ② 구제책 — 런렝스로 간격을 재고, 배경을 뺀 뒤, 그 간격으로 빗살을 맞춘다.
+     research/omr-pitch/RESULTS.md 가 실측으로 고른 방법이다:
+     "전역 최대 밀도의 45% 이상이라는 절대 임계값을 쓴 것이 실패 원인이었다." */
+  if(!ctr5){
+    let spGuess=0;
+    {
+      const black=new Uint32Array(80), white=new Uint32Array(260);
+      const xs=Math.max(1,Math.round(W/600));
+      for(let x=0;x<W;x+=xs){
+        let y=0;
+        while(y<H){
+          const v=ink[y*W+x]; let e=y;
+          while(e+1<H&&ink[(e+1)*W+x]===v)e++;
+          const L=e-y+1;
+          if(v){ if(L<80)black[L]++; } else if(L>1&&L<260)white[L]++;
+          y=e+1;
+        }
+      }
+      let bi=1,bv=0; for(let i=1;i<80;i++)if(black[i]>bv){bv=black[i];bi=i;}
+      let wi=2,wv=0; for(let i=2;i<260;i++)if(white[i]>wv){wv=white[i];wi=i;}
+      spGuess=bi+wi;
+    }
+    if(!(spGuess>=4)||spGuess>H/4)spGuess=Math.max(4,H/9);
+    const win=Math.max(3,Math.round(spGuess*2)|1), hp=new Float32Array(H);
+    {
+      const buf=new Float32Array(win);
+      for(let y=0;y<H;y++){
+        let n=0;
+        for(let k=-(win>>1);k<=(win>>1);k++){ const yy=y+k; if(yy>=0&&yy<H)buf[n++]=rows[yy]; }
+        const a2=Array.prototype.slice.call(buf.subarray(0,n)).sort((p,q)=>p-q);
+        hp[y]=Math.max(0,rows[y]-a2[n>>1]);
+      }
+    }
+    const tol=Math.max(1,Math.round(spGuess*0.2)), peak=new Float32Array(H);
+    for(let y=0;y<H;y++){ let m=0; for(let k=-tol;k<=tol;k++){const yy=y+k; if(yy>=0&&yy<H&&hp[yy]>m)m=hp[yy];} peak[y]=m; }
+    let best={sc:0,sp:0,y:-1};
+    for(let sp2=Math.max(4,spGuess*0.72);sp2<=spGuess*1.6;sp2+=0.25){
+      const span=Math.round(sp2*4); if(span>=H)break;
+      for(let y=0;y+span<H;y++){
+        const v=[peak[y],peak[Math.round(y+sp2)],peak[Math.round(y+sp2*2)],peak[Math.round(y+sp2*3)],peak[Math.round(y+sp2*4)]].sort((a,b)=>a-b);
+        if(v[2]>best.sc)best={sc:v[2],sp:sp2,y};        // 다섯 중 중간값 — 다섯이 다 있어야 높다
+      }
+    }
+    if(!(best.sc>0.02)||best.y<0)return null;
+    ctr5=[];
+    for(let k=0;k<5;k++){
+      const yg=Math.round(best.y+best.sp*k);
+      let by=yg,bv=-1;
+      for(let dy=-tol;dy<=tol;dy++){ const yy=yg+dy; if(yy<0||yy>=H)continue; if(rows[yy]>bv){bv=rows[yy];by=yy;} }
+      const halfTh=Math.max(0.1,rows[by]*0.45);
+      let a2=by,b2=by;
+      while(a2-1>=0&&rows[a2-1]>=halfTh&&by-a2<best.sp*0.35)a2--;
+      while(b2+1<H&&rows[b2+1]>=halfTh&&b2-by<best.sp*0.35)b2++;
+      ctr5.push([a2,b2]);
+    }
   }
-  if(!pick)return null;
-  const sp=pick.sp, top=pick.top, bot=pick.bot;
+  if(!ctr5)return null;
+  const ctrOf=r=>(r[0]+r[1])/2;
+  const sp=(ctrOf(ctr5[4])-ctrOf(ctr5[0]))/4, top=ctrOf(ctr5[0]), bot=ctrOf(ctr5[4]);
   if(sp<5)return null;                                 // 반칸이 2px 남짓이면 자리를 셀 수 없다
 
   /* 2) 오선 줄 지우기 */
   for(let k=0;k<5;k++){
-    const a=runs[pick.i+k][0], b=runs[pick.i+k][1];
+    const a=ctr5[k][0], b=ctr5[k][1];
     const t=b-a+1, lim=Math.max(t*2+1,Math.round(sp*0.46));
     for(let x=0;x<W;x++){
       if(!ink[a*W+x]&&!ink[b*W+x])continue;
@@ -3086,7 +3268,7 @@ async function staffGeom(url,clef){
   /* 어느 행이 오선 줄인지 기억해 둔다 — 길이 판정(headDur)이 이 행을 건너뛴다 */
   const lineRow=new Uint8Array(H);
   for(let k=0;k<5;k++){
-    const a=runs[pick.i+k][0], b=runs[pick.i+k][1];
+    const a=ctr5[k][0], b=ctr5[k][1];
     for(let y=Math.max(0,a-1);y<=Math.min(H-1,b+1);y++)lineRow[y]=1;
   }
 
@@ -4116,7 +4298,13 @@ async function runOCR(){
         +(S.photos.length>1?' ('+S.photos.length+'쪽)':'')+'. AI 없이 읽었습니다.<br>'
         +(melN?'<b>음표는 잰 것입니다</b> — 오선 위 자리와 마디선을 픽셀로 재서 정했습니다. '
               +'다만 마디 안 임시표(#/b)와 쉼표는 반영되지 않습니다.'
-              :'오선을 찾지 못해 음표는 읽지 못했습니다.')
+              /* ★ 아무것도 못 읽었을 때가 제일 중요하다 — 사용자가 다음에 뭐를 해야 하는지
+                 알게 해 줘야 한다. 예전에는 '오선을 찾지 못했습니다' 한 줄만 남기고 깨진 글자를
+                 그대로 보여 줘서, 사용자가 "인식이 하나도 안 된다"는 상태에 그대로 멈추었다. */
+              :'<b>오선을 찾지 못했습니다 — 이 사진으로는 음표를 재지 못합니다.</b><br>'
+               +'다시 찍으실 때: ① 악보를 <b>평평하게 펌 뒤 바로 위에서</b> 찍고(비스듬하면 오선이 흔들립니다), '
+               +'② <b>밝은 곳에서 그림자 없이</b>, ③ 악보가 <b>화면을 가득 채우게</b>, ④ 한 번에 <b>한 쪽씩</b>. '
+               +'오선이 흐릿하거나 손글씨 악보면 위의 <b>코드 차트로 바꾸기</b>(AI)가 더 나을 수 있습니다.')
         +(guessN?'<br><b>코드 '+guessN+'개는 멜로디를 보고 짐작한 것입니다</b>'
               +(keepN?'(글자로 읽어 낸 '+keepN+'개는 그대로 두었습니다)':'')
               +'. 그 마디 음에 어울리는 코드를 고른 것이라 <b>원보와 다를 수 있습니다</b> — '
