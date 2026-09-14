@@ -311,7 +311,7 @@ window.onerror=function(msg,src,ln){
    예) const SCAN_ENDPOINT = "https://konti-scan.내계정.workers.dev";
 */
 const SCAN_ENDPOINT = "";
-const APP_VER = "57";
+const APP_VER = "58";
 /* file:// 나 content:// 로 열면 브라우저가 외부 호출을 막는다(CORS). 미리 알려준다. */
 const LOCAL_FILE = !/^https?:$/.test(location.protocol);
 /* Claude 앱처럼 iframe 안에서 실행 중이면 키 없이도 인식이 통한다. */
@@ -3340,9 +3340,17 @@ async function staffGeom(url,clef){
     for(let y=Math.max(0,a-1);y<=Math.min(H-1,b+1);y++)lineRow[y]=1;
   }
 
-  /* 관심 창: 위로 2.2칸(C6까지), 아래로 1.6칸(B3까지).
-     더 넓히면 찬송가에서 오선 사이에 인쇄된 가사 글자가 들어와 음표로 오인된다. */
-  const y0=Math.max(0,Math.round(top-sp*2.2)), y1=Math.min(H-1,Math.round(bot+sp*1.6));
+  /* 관심 창: 위로 2.2칸(C6까지), 아래로 **2.7칸**(A3까지).
+     ★ 아래쪽이 1.6칸이었던 것이 8분·16분이 많은 단에서 음을 놓친 진짜 원인이다(v57).
+       1.6칸은 반칸으로 -3.2, 즉 **덧줄 한 개짜리 음(C4·B3)의 머리가 창 밖으로 잘린다.**
+       실측(사용자 악보 3단 첫 마디): 덧줄 위에 놓인 낮은 음 3개의 머리가 통째로 잘려
+       나가고 덧줄(19×5px)만 남아 있었다 — "원 수 를"이 통째로 사라진 것이 이것이다.
+       찬송가 멜로디는 으뜸음 아래로 자주 내려가므로 흔한 모양이다.
+     ★ 그래도 가사가 섞이지 않는 이유: 오선 밖(반칸 -2 아래) 후보는 **덧줄이 실제로
+       그어져 있어야** 음표로 인정한다(칸 묶기 전에 거른다). 조판 규칙상 -2 자리에는
+       반드시 덧줄이 있고, 가사 글자에는 그 자리에 가로줄이 없다.
+     ★ 2.7칸을 넘기면 안 된다 — 그 아래가 가사 줄이다(실측: 가사 윗선이 2.7~2.8칸). */
+  const y0=Math.max(0,Math.round(top-sp*2.2)), y1=Math.min(H-1,Math.round(bot+sp*2.7));
   if(y1-y0<sp*4)return null;
 
   /* 세로·가로 잉크 런 길이. 아래에서 "머리 크기인 픽셀"을 고르는 기준이 된다. */
@@ -3536,7 +3544,10 @@ async function staffGeom(url,clef){
     if(bh<sp*0.62||bh>sp*1.7||bw<sp*0.55||bw>sp*2.2)continue;   // 반 칸 높이는 쉼표다
     if(bw<bh*0.8)continue;                     // 음표 머리는 세로보다 가로가 길다
     if(area/(bw*bh)<0.5)continue;
-    cands.push({x0:ax0,x1:ax1,cx:(ax0+ax1)/2,cy:symY/area,hollow:false});
+    /* hs = '음표 머리처럼 생겼는가'. 들여보내는 문(위 조건)은 일부러 넉넉하게 두되,
+       같은 칸에서 누구를 대표로 삼을지 고를 때는 이걸로 가린다 — 아래 5) 참고. */
+    const hs=(bh>=sp*0.75&&bh<=sp*1.5&&bw>=sp*0.8&&bw<=sp*1.8)?1:0;
+    cands.push({x0:ax0,x1:ax1,cx:(ax0+ax1)/2,cy:symY/area,hollow:false,hs});
   }
 
   /* 4) 속이 빈 머리: 잉크로 완전히 둘러싸인 흰 구멍 */
@@ -3566,7 +3577,12 @@ async function staffGeom(url,clef){
     /* 디버그 고리: window.__HOLEDBG=[] (속이 빈 머리 후보) */
     if(window.__HOLEDBG)window.__HOLEDBG.push({cx:+(symX/area).toFixed(1),cy:+(symY/area).toFixed(1),bw,bh,area,wR:+(bw/sp).toFixed(2),hR:+(bh/sp).toFixed(2),minA:+Math.max(3,sp*sp*0.05).toFixed(0)});
     if(area<Math.max(3,sp*sp*0.05))continue;
-    if(bw<sp*0.28||bw>sp*1.25||bh<sp*0.2||bh>sp*1.0)continue;
+    /* ★ 구멍의 **높이 하한**이 중요하다(v57). 음표 머리는 한 칸 높이고 테두리가 0.2칸쯤이라
+       구멍은 최소 0.35칸은 된다. 예전 하한 0.2칸에서는 **빔과 두 기둥이 둘러싼 흰 틈**
+       (실측 0.43×0.29칸)이 속 빈 머리로 잡혔고, 그게 같은 칸의 **진짜 음표(바로 아래 덧줄
+       음)를 밀어냈다** — "같은 x 면 맨 위" 규칙 때문이다. 8분·16분을 빔으로 묶은 자리마다
+       생기는 모양이라, 빠른 음표가 많은 단에서 음이 사라지던 원인 중 하나다. */
+    if(bw<sp*0.28||bw>sp*1.25||bh<sp*0.32||bh>sp*1.0)continue;
     /* 음표 머리는 기울어진 타원이라 구멍이 **가로로 뚜렷하게 길다**(실측 bw/bh≈1.36).
        16분음표의 꼬리 두 겹과 기둥 사이에 생기는 빈틈은 거의 정사각형(≈0.95)이라,
        여기서 갈라낸다 — 예전엔 0.7 이어서 그 빈틈이 음표 머리로 잡혀 개수가 어긋났다. */
@@ -3578,8 +3594,14 @@ async function staffGeom(url,clef){
     /* 16분음표 꼬리와 기둥 사이의 빈틈도 거의 정사각이라 여기서 갈라야 한다. 두 모양은
        **얼마나 꽉 찼는지**로 뚜렷이 갈린다(실측: 음표 구멍 0.73 / 꼬리 빈틈 0.52) —
        구멍은 타원이고 빈틈은 휜 삼각형이기 때문이다. */
-    if(bw<bh*1.12&&!(bw>=bh&&area>=sp*sp*0.15&&bw>=sp*0.45&&bh>=sp*0.4&&area>=bw*bh*0.62))continue;
-    holes.push({x0:ax0,x1:ax1,cx:symX/area,cy:symY/area,hollow:true});
+    /* ★ "가로가 세로보다 길다"만으로 자르면 안 된다(v57). 작게 인쇄된 온음표·2분음표는
+       테두리가 두꺼워 구멍이 **세로로 긴 슬릿**이 된다(실측: 9×14, 즉 세로가 1.5배).
+       진짜 갈라야 할 상대는 16분음표 꼬리 빈틈과 빔 아래 빈틈인데, 그건 **얼마나 꽉 찼는지**
+       로 확실히 갈린다(실측: 음표 구멍 0.70~0.77 / 꼬리 빈틈 0.52) — 구멍은 타원이고
+       빈틈은 휜 삼각형이기 때문이다. 크기 범위와 채움 비율을 같이 보면 비율은 안 봐도 된다. */
+    if(bw<bh*1.12&&!(bw>=sp*0.35&&bh>=sp*0.35&&area>=bw*bh*0.62))continue;
+    holes.push({x0:ax0,x1:ax1,cx:symX/area,cy:symY/area,hollow:true,
+                hs:(bw>=sp*0.4&&bh>=sp*0.35)?1:0});
   }
   /* 오선 밖(위·아래)에 구멍이 여럿 흩어져 있으면 그건 음표가 아니라 글자다
      (찬송가는 오선 사이에 가사를 인쇄한다). 그런 구멍은 통째로 버린다. */
@@ -3607,6 +3629,11 @@ async function staffGeom(url,clef){
     const keep=c=>{
       const step=Math.round((bot-c.cy)/half0);
       if(step<10&&step>-2)return true;
+      /* ★ 오선 밖은 코드 글자·가사가 사는 곳이다. 덧줄만으로는 모자랐다(v57 실측):
+         빨간 코드 "D" 의 세로획이 바로 아래 **빔**을 덧줄로 착각해 통과했다.
+         오선 밖에서는 **음표 머리 모양까지** 갖춰야 음표로 본다 — 글자 획은 대개 좁다
+         (실측: "D" 의 조각 0.71칸 폭, 진짜 머리 1.05칸). */
+      if(!c.hs)return false;
       const ly=Math.round(bot-(step>=10?10:-2)*half0);
       const x0c=Math.max(0,Math.round(c.cx-sp*0.7)), x1c=Math.min(W-1,Math.round(c.cx+sp*0.7));
       let best=0;
@@ -3629,11 +3656,26 @@ async function staffGeom(url,clef){
       const ov=Math.min(L.x1,c.x1)-Math.max(L.x0,c.x0);
       const mw=Math.min(L.x1-L.x0,c.x1-c.x0)+1;
       /* 위쪽 것을 고를 때 속 빈 머리인지 여부도 함께 따라가야 한다 — 길이 판정의 재료다 */
+      /* ★ "같은 x 면 맨 위" 는 SATB(위가 소프라노)를 위한 규칙인데, 그대로 두면 **음표가
+         아닌 것**이 위에 있다는 이유로 대표가 되어 진짜 음표를 밀어낸다. 실측(사용자 악보
+         3단): 빔 조각(0.9×0.67칸)이 바로 아래 진짜 머리(1.05×1.19칸)를 밀어냈고, 그다음
+         "기둥도 구멍도 없다"로 버려지면서 **음표가 통째로 사라졌다.**
+         그래서 **머리처럼 생긴 것끼리 먼저 겨루고**, 그 안에서만 위쪽을 고른다. */
       if(ov>mw*0.5){ L.x0=Math.min(L.x0,c.x0); L.x1=Math.max(L.x1,c.x1);
                      L.ys.push(c.cy);
-                     if(c.cy<L.cy){L.cy=c.cy;L.hollow=c.hollow;} continue; }
+                     if(c.hs>(L.hs||0)||((c.hs||0)===(L.hs||0)&&c.cy<L.cy)){
+                       L.cy=c.cy; L.hollow=c.hollow; L.hs=c.hs; }
+                     continue; }
     }
-    cols.push({x0:c.x0,x1:c.x1,cx:c.cx,cy:c.cy,hollow:c.hollow,ys:[c.cy]});
+    cols.push({x0:c.x0,x1:c.x1,cx:c.cx,cy:c.cy,hollow:c.hollow,hs:c.hs||0,ys:[c.cy]});
+  }
+  if(cols.length<3)return null;
+  /* ★ 음표 머리 둘은 **한 칸보다 가까이 설 수 없다**(머리 자체가 1.3칸 폭이다). 그보다
+     가까이 붙어 있으면 둘 중 하나는 음표가 아니다 — 대개 빔 조각이다(실측: 20×14px 짜리
+     빔 토막이 0.76칸 옆의 진짜 머리와 나란히 남아 가짜 음이 하나 더 생겼다).
+     그럴 때는 **머리처럼 생긴 쪽**을 남긴다. */
+  if(cols.length>2){
+    cols=cols.filter((c,i)=>!cols.some((o,j)=>j!==i&&Math.abs(o.cx-c.cx)<sp*0.85&&(o.hs||0)>(c.hs||0)));
   }
   if(cols.length<3)return null;
 
@@ -3746,6 +3788,16 @@ async function staffGeom(url,clef){
     if(staffX1>sp*4&&!bars.some(b=>Math.abs(b*sc-staffX1)<sp*1.6))bars.push(staffX1/sc);
     bars.sort((a,b)=>a-b);
   }
+  /* ★ 마디선 자리에는 음표가 없다(v57). 겹세로줄(끝마디)은 굵어서, 오선 줄을 지우고 나면
+     토막토막 남아 음표 머리 크기의 덩어리가 된다 — 실측: 단 끝 겹세로줄이 E5 음표 하나로
+     잡혔다. 마디선을 다 찾은 **뒤**라 이 자리를 아는 것이 공짜다. */
+  if(bars.length){
+    const near=sp*0.4/sc;
+    for(let i=res.length-1;i>=0;i--)
+      if(bars.some(b=>Math.abs(b-res[i].x)<near))res.splice(i,1);
+  }
+  if(res.length<3)return null;
+
   /* w: notes[].x · bars[] 가 어떤 폭을 기준으로 한 값인지. 사진 위 비율로 바꿀 때 쓴다. */
   /* iw: top/bot/sp 가 사는 내부 캔버스 폭. 원본 그림 좌표로 되돌릴 때 쓴다(코드 띠 오려내기). */
   return {sp,top,bot,med,notes:res,durSure,total,w:img.width,iw:W,bars,keySig:ksig};

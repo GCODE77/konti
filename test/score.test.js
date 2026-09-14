@@ -25,7 +25,7 @@ function ok(name,cond,got){ T.push({name,cond}); if(cond)pass++; else {fail++; c
 /* 스캔본 흉내로 한 단을 그린다.
    sp=10 은 실제 사용자 파일에서 잰 값이다(966px 폭의 찬송가 한 쪽).
    오선은 **연한 회색(#9a9a9a) 2.2px** — 이게 이진화되면 6~7px 짜리 띠가 된다. */
-function drawScan(o){
+export function drawScan(o){
   o=o||{};
   const sp=o.sp||10, W=o.W||960, H=Math.round(sp*16);
   const c=document.createElement('canvas'); c.width=W; c.height=H;
@@ -64,9 +64,17 @@ function drawScan(o){
   bars.forEach((bar,bi)=>{
     bar.forEach(nt=>{
       const x=x0+dx*(i+0.5), cy=bot-nt.st*sp/2, hollow=nt.dur>=2;
+      /* ★ 덧줄 — 오선 밖 음은 이게 있어야 음표다(검출기도 그 규칙으로 가린다).
+         v57 이전에는 관심 창이 오선 아래 1.6칸까지라 **덧줄 음의 머리가 창 밖으로 잘렸다.**
+         찬송가 멜로디는 으뜸음 아래로 자주 내려가므로 반드시 그려 넣어야 하는 모양이다. */
+      if(nt.st<=-2){
+        g.strokeStyle='#000'; g.lineWidth=sp*0.16;
+        for(let L=-2;L>=nt.st;L-=2){ const ly=bot-L*sp/2;
+          g.beginPath(); g.moveTo(x-sp*0.85,ly); g.lineTo(x+sp*0.85,ly); g.stroke(); }
+      }
       g.save(); g.translate(x,cy); g.rotate(-0.3);
       g.beginPath(); g.ellipse(0,0,sp*0.65,sp*0.46,0,0,Math.PI*2);
-      if(hollow){ g.lineWidth=sp*0.2; g.strokeStyle='#000'; g.stroke(); }
+      if(hollow){ g.lineWidth=sp*(nt.dur>=4?0.3:0.2); g.strokeStyle='#000'; g.stroke(); }
       else { g.fillStyle='#000'; g.fill(); }
       g.restore();
       if(nt.dur<4){
@@ -78,9 +86,18 @@ function drawScan(o){
         const up=nt.st<4, sx=up?x+sp*0.6:x-sp*0.6;
         g.strokeStyle='#000'; g.lineWidth=sp*0.12;
         g.beginPath(); g.moveTo(sx,cy); g.lineTo(sx,up?cy-sp*4.1:cy+sp*3.5); g.stroke();
+        nt._sx=sx; nt._tip=up?cy-sp*4.1:cy+sp*3.5;
       }
       i++;
     });
+    /* ★ 빔 — 이웃한 두 기둥 끝을 잇는다. 빔과 두 기둥이 둘러싼 **흰 틈**이 v57 이전에
+       속 빈 음표 머리로 잡혀, 바로 아래 진짜 음표를 밀어냈다. 이 모양이 없으면 재현되지 않는다. */
+    for(let k=0;k+1<bar.length;k++){
+      if(!bar[k].beam||!bar[k+1].beam)continue;
+      if(bar[k]._sx===undefined||bar[k+1]._sx===undefined)continue;
+      g.strokeStyle='#000'; g.lineWidth=sp*0.32;
+      g.beginPath(); g.moveTo(bar[k]._sx,bar[k]._tip); g.lineTo(bar[k+1]._sx,bar[k+1]._tip); g.stroke();
+    }
     /* 마디선 */
     const bx=(bi+1<bars.length)?x0+dx*(i)+dx*0.0:x1;
     g.strokeStyle='#000'; g.lineWidth=sp*0.13;
@@ -105,9 +122,9 @@ export default async function scoreTest(){
   /* 1) 스캔본 한 단: 2분음표가 **줄 위**에 놓이고, 낮은 음은 기둥이 위로 뻗는다 */
   const BARS=[
     [{st:0,dur:2},{st:2,dur:1},{st:4,dur:1}],     // 줄 위 2분음표 + 4분음표 둘
-    [{st:4,dur:1},{st:2,dur:1},{st:0,dur:2}],
-    [{st:0,dur:2},{st:1,dur:1},{st:3,dur:1}],
-    [{st:6,dur:2},{st:4,dur:2}]
+    [{st:4,dur:1},{st:2,dur:1},{st:0,dur:1},{st:1,dur:1,beam:true},{st:0,dur:1,beam:true}],  // ★ 빔으로 묶은 둘
+    [{st:-4,dur:1},{st:-2,dur:1},{st:0,dur:1},{st:3,dur:1}],   // ★ 덧줄 음(오선 아래)
+    [{st:6,dur:2},{st:4,dur:4}]                    // ★ 온음표(기둥 없음, 두꺼운 테두리)
   ];
   const nNote=BARS.reduce((a,b)=>a+b.length,0);
   const url=drawScan({sp:10,W:960,sharps:3,bars:BARS,
@@ -121,6 +138,11 @@ export default async function scoreTest(){
   if(geo){
     ok('음표를 다 찾는다 ('+geo.notes.length+'/'+nNote+')',geo.notes.length===nNote,
        geo.notes.map(n=>n.name+':'+n.beats));
+    /* ★ 개수만 세면 안 된다. 관심 창이 좁으면 **덧줄 음의 머리가 잘려** 개수는 맞는데
+       가운데가 위로 밀려 한 칸 높게 읽힌다(실측: -4 가 -3 으로). 자리까지 봐야 잡힌다. */
+    const want=[].concat.apply([],BARS).map(n=>n.st).join(',');
+    const got=geo.notes.map(n=>n.step).join(',');
+    ok('음높이(줄·칸)가 그린 것과 같다 ('+got+')',got===want,{want,got});
     /* ★ 기둥이 마디선으로 잡히면 여기서 터진다 — 그린 마디선은 4개(끝 포함)다 */
     ok('마디선을 4개만 찾는다 (실제 '+geo.bars.length+')',geo.bars.length===4,
        geo.bars.map(b=>+(b/geo.w).toFixed(3)));
