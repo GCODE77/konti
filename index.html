@@ -311,7 +311,7 @@ window.onerror=function(msg,src,ln){
    예) const SCAN_ENDPOINT = "https://konti-scan.내계정.workers.dev";
 */
 const SCAN_ENDPOINT = "";
-const APP_VER = "52";
+const APP_VER = "53";
 /* file:// 나 content:// 로 열면 브라우저가 외부 호출을 막는다(CORS). 미리 알려준다. */
 const LOCAL_FILE = !/^https?:$/.test(location.protocol);
 /* Claude 앱처럼 iframe 안에서 실행 중이면 키 없이도 인식이 통한다. */
@@ -1480,6 +1480,11 @@ const P={playing:false,bpm:84,genre:'',insts:['piano'],melInst:'ep',pattern:'blo
          sound:[],piano:true};
 
 function buildTimeline(){
+  /* tlBars: 재생 엔진이 실제로 만든 **마디 목록**이다(v53). 사진 위 하이라이트가
+     "몇째 마디인가"를 어림하지 않고 여기서 그대로 읽어 가도록 내보낸다.
+     idx0 = 그 마디 첫 코드의 전역 번호(reparse 가 매긴 p.idx) — 단(사진 한 줄)이
+     "몇 번째 코드부터"인지만 알면 이 번호로 마디를 짝지을 수 있다. */
+  const tlBars=[];
   const evs=[], hasBar=blocks.some(b=>b.k==='pairs'&&b.pairs.some(p=>p.bar));
   let beat=0, pendingMel=null, pendingBass=null, drift=0, melNotes=0, bassNotes=0;
 
@@ -1539,6 +1544,7 @@ function buildTimeline(){
     let bar=[];
     const flush=()=>{ if(!bar.length)return;
       barStarts.push(beat);
+      tlBars.push({at:beat,beats:P.beats,idx0:bar[0].idx});
       const per=P.beats/bar.length;
       bar.forEach(x=>{evs.push({type:'c',chord:x.chord,idx:x.idx,beats:per,at:beat});beat+=per;});
       bar=[]; };
@@ -1556,13 +1562,13 @@ function buildTimeline(){
   /* 못갖춘마디가 0박 앞으로 나갔으면 전체를 밀어준다 */
   let minAt=0;
   for(const e of evs) if(e.at<minAt)minAt=e.at;
-  if(minAt<0){ for(const e of evs)e.at-=minAt; beat-=minAt; }
+  if(minAt<0){ for(const e of evs)e.at-=minAt; for(const b of tlBars)b.at-=minAt; beat-=minAt; }
 
   const total=Math.max(beat,1);
   if(P.click)for(let t=0;t<total;t+=1)
     evs.push({type:'k',at:t,strong:Math.round(t)%P.beats===0});
   evs.sort((a,b)=>a.at-b.at||(a.type==='k'?-1:1));
-  return {evs,total,hasMel:melNotes>0,melNotes,bassNotes,drift};
+  return {evs,total,hasMel:melNotes>0,melNotes,bassNotes,drift,bars:tlBars};
 }
 function hasMelody(){return blocks.some(b=>b.k==='mel');}
 function hasBassMelody(){return blocks.some(b=>b.k==='mel'&&b.clef==='bass');}
@@ -1942,33 +1948,56 @@ function renderSheet(){
   const wrap=document.createElement('div'); wrap.className='origwrap';
   const Z=Math.max(1,S.sheetZoom||1);
   if(Z>1){ wrap.classList.add('zoom'); wrap.style.setProperty('--szoom',Z); }
-  let acc=0;
+  /* 재생 타임라인에서 읽어 온 단별 구간(v53). 못 읽으면 null 이고, 그때는 예전 어림값을 쓴다. */
+  const EB=origBeats(o);
+  let acc=0, si=-1;
   o.pages.forEach((pg,pi)=>{
     const d=document.createElement('div'); d.className='origpg';
     const img=document.createElement('img');
     img.src=pg.url; img.alt=(pi+1)+'쪽 원본 악보'; img.loading='lazy';
     d.appendChild(img);
     (pg.sys||[]).forEach(sy=>{
+      si++;
+      const ex=EB?EB[si]:null;
       const b=document.createElement('div');
       b.className='origsys';
       b.style.top=(sy.t0*100).toFixed(3)+'%';
       b.style.height=((sy.t1-sy.t0)*100).toFixed(3)+'%';
-      b.dataset.b0=sy.b0; b.dataset.b1=sy.b1;
+      b.dataset.b0=ex?ex.b0:sy.b0; b.dataset.b1=ex?ex.b1:sy.b1;
       b._kx=sy.kx||null; b._kb=sy.kb||null;
+      /* 사진에서 찾은 마디 수와 재생 엔진이 만든 마디 수가 **정확히 같을 때만** 마디끼리
+         1:1 로 짝짓는다. 그러면 재생선이 마디선을 넘는 순간이 소리와 한 치도 다르지 않다.
+         하나라도 다르면 짝지을 근거가 없으므로 단 전체를 고르게 훑는 예전 방식으로 둔다. */
+      const ex1=ex&&sy.seg&&ex.bars&&sy.seg.length===ex.bars.length?ex:null;
+      const span=ex1?(ex1.b1-ex1.b0):0;
       let inner='<span class="lab">'+(sy.n||'')+'</span>';
-      (sy.seg||[]).forEach(sg=>{
+      (sy.seg||[]).forEach((sg,mi)=>{
         acc++;
+        let fa='';
+        if(ex1&&span>0){
+          const mb=ex1.bars[mi];
+          const f0=(mb.at/ex1.tot-ex1.b0)/span, f1=((mb.at+mb.beats)/ex1.tot-ex1.b0)/span;
+          fa=' data-f0="'+f0.toFixed(5)+'" data-f1="'+f1.toFixed(5)+'"';
+        }
         inner+='<div class="origbar" data-x0="'+sg.x0.toFixed(4)+'" data-x1="'+sg.x1.toFixed(4)+'"'
-          +' data-mn="'+acc+'" style="left:'+(sg.x0*100).toFixed(3)+'%;width:'
+          +fa+' data-mn="'+acc+'" style="left:'+(sg.x0*100).toFixed(3)+'%;width:'
           +((sg.x1-sg.x0)*100).toFixed(3)+'%"><span class="mno">'+acc+'</span></div>';
       });
       b.innerHTML=inner+'<div class="origline"></div>';
+      /* 마디 안에서 '몇 박째 → 가로 어디' 꺾은선을 상자에 붙여 둔다(사진에서 잰 음표 자리) */
+      if(ex1)b.querySelectorAll('.origbar').forEach((bx,mi)=>{
+        const sg=sy.seg[mi]; if(sg&&sg.pb&&sg.px){ bx._pb=sg.pb; bx._px=sg.px; }
+      });
       /* 누른 자리부터 재생 — 마디를 찾았으면 그 마디 머리로, 아니면 단 머리로 */
       b.onclick=(ev)=>{
         const r=b.getBoundingClientRect();
         const fx=r.width>0?Math.max(0,Math.min(1,(ev.clientX-r.left)/r.width)):0;
         const f=sysFrac(b,fx);
-        const t=songSeconds()*Math.max(0,Math.min(1,sy.b0+(sy.b1-sy.b0)*f));
+        /* 사진은 한 절치이므로 **지금 부르는 절 안에서** 그 자리로 간다.
+           (예전엔 곡 전체 길이에 곱해서, 2절짜리 곡이면 엉뚱하게 절반 자리로 갔다.) */
+        const b0=+b.dataset.b0, b1=+b.dataset.b1;
+        const pass=passSeconds(), vi=Math.max(0,(P.playing?S.verse:1)-1);
+        const t=pass*(vi+Math.max(0,Math.min(0.999,b0+(b1-b0)*f)));
         if(!P.playing)startPlay(); seekTo(t);
       };
       d.appendChild(b);
@@ -1978,12 +2007,27 @@ function renderSheet(){
   el.appendChild(wrap);
   paintSheet(P.playing?sheetProgress():-1);
 }
-/* 지금 재생 위치를 0~1 진행도로 (절 반복은 무시하고 한 절 안에서의 위치) */
+/* 한 절(악보 한 바퀴)의 길이. 사진은 한 절치 악보다. */
+function passSeconds(){
+  const mv=Math.max(1,maxVerse());
+  return songSeconds()/mv;
+}
+/* 지금 재생 위치를 0~1 진행도로 — **한 절 안에서의 자리**다.
+   ★ v53에서 고친 버그. 여기서 `songSeconds()` 로 나누고 있었는데 그건 **절 반복까지 포함한
+     곡 전체 길이**다(2절이면 2배). 사진은 한 절치 악보이므로, 2절짜리 곡에서 사진
+     하이라이트가 정확히 **절반 속도**로 기어갔다. 1절 끝날 무렵에는 사진이 아직 한가운데를
+     가리키고 있다 — 사용자가 *"진행 속도와 표시되는 부분이 전혀 다르다. 악보에서는 A코드를
+     가리키면서 A코드 소리가 들려야 하는데 전혀 아니다"* 라고 한 것이 정확히 이것이다.
+     바로 위 주석에는 "절 반복은 무시하고 한 절 안에서의 위치"라고 **쓰여 있었는데 코드가
+     그렇게 되어 있지 않았다** — 주석이 맞고 코드가 틀린 경우였다.
+     나머지(%)를 쓰면 절이 바뀔 때 사진이 저절로 처음으로 돌아간다(반복 재생도 같다). */
+function sheetProgressAt(el){
+  const pass=passSeconds(); if(!(pass>0))return -1;
+  if(el<0)return 0;                       // 시작 직전 준비 구간(0.25초)
+  return Math.max(0,Math.min(1,(el%pass)/pass));
+}
 function sheetProgress(){
-  const total=songSeconds(); if(!(total>0)||!actx)return -1;
-  let el=actx.currentTime-P.t0;
-  if(P.loop&&el>total)el=el%total;
-  return Math.max(0,Math.min(1,el/total));
+  return actx?sheetProgressAt(actx.currentTime-P.t0):-1;
 }
 /* 단 안에서의 진행도(f, 0~1) → 사진 가로 자리(0~1).
    ★ 고르게 나누지 않는다. staffGeom 이 음표마다 **잰 x 자리**와 **잰 길이**를 갖고 있으니
@@ -1999,8 +2043,41 @@ function sysX(b,f){
   const t=(b2>a)?(f-a)/(b2-a):0;
   return Math.max(0,Math.min(1,xa+(xb-xa)*Math.max(0,Math.min(1,t))));
 }
-/* sysX 의 반대 — 사진에서 누른 가로 자리(0~1)를 그 단 안의 진행도로 */
+/* 한 마디 안에서 '몇 박째(t, 0~1)' → 사진 가로 자리(0~1).
+   마디 안 음표 자리를 알면 그 사이를 잇고(조판은 음 길이에 비례해 벌어진다),
+   모르면 마디를 고르게 훑는다. 어느 쪽이든 **마디선에서 반드시 다시 맞춰진다.** */
+function barX(bx,t){
+  const pb=bx._pb, px=bx._px;
+  const x0=+bx.dataset.x0, x1=+bx.dataset.x1;
+  if(!pb||!px||pb.length<2)return x0+(x1-x0)*Math.max(0,Math.min(1,t));
+  let i=pb.length-1; while(i>0&&pb[i]>t)i--;
+  const a=pb[i], b2=(i+1<pb.length)?pb[i+1]:1;
+  const xa=px[i], xb=(i+1<px.length)?px[i+1]:x1;
+  const u=(b2>a)?(t-a)/(b2-a):0;
+  return Math.max(0,Math.min(1,xa+(xb-xa)*Math.max(0,Math.min(1,u))));
+}
+/* sysX 의 반대 — 사진에서 누른 가로 자리(0~1)를 그 단 안의 진행도로.
+   마디마다 박 구간이 붙어 있으면 그걸 먼저 쓴다(그래야 누른 마디가 정확히 그 마디로 간다). */
 function sysFrac(b,x){
+  const bars=b.querySelectorAll('.origbar');
+  for(const bx of bars){
+    if(bx.dataset.f0===undefined)break;
+    const x0=+bx.dataset.x0, x1=+bx.dataset.x1;
+    if(x<x0||x>=x1)continue;
+    const f0=+bx.dataset.f0, f1=+bx.dataset.f1;
+    const pb=bx._pb, px=bx._px;
+    let t=(x1>x0)?(x-x0)/(x1-x0):0;
+    if(pb&&px&&px.length>1){
+      let i=px.length-1; while(i>0&&px[i]>x)i--;
+      const xa=px[i], xb=(i+1<px.length)?px[i+1]:x1;
+      const a=pb[i], b2=(i+1<pb.length)?pb[i+1]:1;
+      t=a+(b2-a)*((xb>xa)?Math.max(0,Math.min(1,(x-xa)/(xb-xa))):0);
+    }
+    return Math.max(0,Math.min(1,f0+(f1-f0)*t));
+  }
+  return sysFracGeom(b,x);
+}
+function sysFracGeom(b,x){
   const kb=b._kb, kx=b._kx;
   if(!kb||!kx||kx.length<2)return x;
   let i=kx.length-1;
@@ -2023,15 +2100,34 @@ function paintSheet(p){
     if(!on){ bars.forEach(x=>x.classList.remove('now')); return; }
     cur=b;
     const f=(b1>b0)?(p-b0)/(b1-b0):0;
-    const x=sysX(b,f);
+    /* ★ 마디를 **박으로** 고른다(v53). 예전엔 재생선의 가로 자리(x)를 먼저 구하고 그 x 가
+       어느 마디 상자 안인지 되물었다 — 그러면 '지금 몇째 마디'가 사진에서 잰 음표 자리를
+       거쳐 나오므로, 음표 길이를 하나만 잘못 재도 마디가 한 칸 밀려 보인다.
+       지금은 마디마다 재생 엔진이 준 박 구간(f0~f1)이 붙어 있으므로 그걸로 바로 고르고,
+       가로 자리는 **고른 마디 안에서만** 구한다. 소리와 어긋날 수가 없다. */
+    let x=null, hitBar=null;
+    bars.forEach(bx=>{
+      const f0=bx.dataset.f0, f1=bx.dataset.f1;
+      const hit=(f0!==undefined&&f1!==undefined)?(f>=+f0&&f<+f1):false;
+      if(hit)hitBar=bx;
+    });
+    if(hitBar){
+      const f0=+hitBar.dataset.f0, f1=+hitBar.dataset.f1;
+      const t=(f1>f0)?(f-f0)/(f1-f0):0;
+      x=barX(hitBar,t);
+      bars.forEach(bx=>bx.classList.toggle('now',bx===hitBar));
+      mtxt=hitBar.dataset.mn+(MEASURE.total?'/'+MEASURE.total:'')+'마디';
+    }else{
+      x=sysX(b,f);
+      bars.forEach(bx=>{
+        const hit=x>=+bx.dataset.x0&&x<+bx.dataset.x1;
+        bx.classList.toggle('now',hit);
+        if(hit)mtxt=bx.dataset.mn+(MEASURE.total?'/'+MEASURE.total:'')+'마디';
+      });
+    }
     const h=b.querySelector('.origline');
     if(h)h.style.left=(x*100).toFixed(2)+'%';
     curX=x;
-    bars.forEach(bx=>{
-      const hit=x>=+bx.dataset.x0&&x<+bx.dataset.x1;
-      bx.classList.toggle('now',hit);
-      if(hit)mtxt=bx.dataset.mn+(MEASURE.total?'/'+MEASURE.total:'')+'마디';
-    });
   });
   MEASURE.txt=(p>=0)?mtxt:'';
   if(cur&&P.playing){
@@ -2727,11 +2823,22 @@ function headDur(ink,vr,hr,W,c,sp,y0,y1,bot,nextX0,others,lineRow){
        머리와 기둥이 붙는 지점에서는 가로 잉크 폭이 머리 전체 폭이라, 기둥을 가늘다는
        기준으로 찾으면 그 자리에서 걸러져 버린다. 그래서 **머리에서 떨어진 구간**
        (0.9~2.4칸 위/아래)에서 그 x 칸이 얼마나 채워져 있는지로 본다. */
-  const colFill=(x,ya,yb)=>{
+  /* dil=1 이면 x 좌우 1픽셀까지 같은 칸으로 본다.
+     ★ v53에서 이것 때문에 실제 사진의 음표가 통째로 버려지고 있었다. 인쇄 악보의 기둥은
+       원본 해상도에서 1~2px 이고, 사진·JPEG 로 한 번 뭉개진 뒤 이진화하면 **두 칸에 걸쳐
+       반씩 걸리거나 중간이 끊긴다.** 한 칸만 세면 채움률이 0.5~0.8 로 내려앉는다.
+       실측(실제 찬송가 사진 한 단): 후보 28개 중 24개가 "기둥 없음"으로 버려졌고,
+       그래서 v49~v50 의 음높이·박자 보정이 **조용히 꺼져 있었다.** */
+  const colFill=(x,ya,yb,dil)=>{
     if(x<0||x>=W)return 0;
     const a=Math.max(y0,Math.round(Math.min(ya,yb))), b=Math.min(y1,Math.round(Math.max(ya,yb)));
     if(b<=a)return 0;
-    let n=0; for(let y=a;y<=b;y++)if(ink[y*W+x])n++;
+    let n=0;
+    for(let y=a;y<=b;y++){
+      const o=y*W;
+      if(ink[o+x]){n++;continue;}
+      if(dil){ if((x>0&&ink[o+x-1])||(x+1<W&&ink[o+x+1]))n++; }
+    }
     return n/(b-a+1);
   };
   const tipOf=(x,dir)=>{                    // 머리에서 dir 방향으로 잉크를 따라간 끝
@@ -2745,14 +2852,25 @@ function headDur(ink,vr,hr,W,c,sp,y0,y1,bot,nextX0,others,lineRow){
   };
   let stem=null;
   const reach=Math.max(2,Math.round(sp*0.7));   // 속 빈 머리는 x 범위가 '구멍' 기준이라 넉넉히
-  const FILL=0.8;
-  for(let d=0;d<=reach&&!stem;d++){
-    const xr=Math.round(c.x1)+d;
-    if(colFill(xr,c.cy-sp*0.9,c.cy-sp*2.4)>=FILL&&colFill(xr,c.cy+sp*1.1,c.cy+sp*2.4)<0.5){
-      stem={x:xr,tip:tipOf(xr,-1),up:true}; break; }
-    const xl=Math.round(c.x0)-d;
-    if(colFill(xl,c.cy+sp*0.9,c.cy+sp*2.4)>=FILL&&colFill(xl,c.cy-sp*1.1,c.cy-sp*2.4)<0.5){
-      stem={x:xl,tip:tipOf(xl,1),up:false}; break; }
+  /* 두 번 훑는다. 먼저 **깨끗한 기준**(한 칸이 거의 다 잉크)으로 찾고, 못 찾았을 때만
+     **사진 기준**(좌우 1픽셀까지 묶고 문턱을 낮춤)으로 다시 찾는다. 순서가 중요하다 —
+     깨끗한 스캔에서는 첫 번째 훑기가 예전과 똑같이 동작하므로 기존 판정이 바뀌지 않는다.
+     ★ 반대쪽 검사(마디선 거르기)는 **완화하지 않는다.** 마디선은 위아래로 다 뻗으므로
+       여기서만 걸러지는데, 이걸 느슨하게 하면 마디선이 음표로 들어온다.
+       조표의 #/b 도 위아래로 다 뻗어서 같이 걸러진다 — 실측으로 확인했다.
+     ★ 0.5 라는 낮은 문턱이 위험해 보이지만 실측 분포는 두 무리로 뚜렷이 갈렸다:
+       진짜 기둥 0.43~1.0 / 가짜(가사 글자·코드 글자) 0.08~0.16. 그 사이가 텅 비어 있다. */
+  const PASS=[{dil:0,fill:0.8},{dil:1,fill:0.5}];
+  for(const ps of PASS){
+    for(let d=0;d<=reach&&!stem;d++){
+      const xr=Math.round(c.x1)+d;
+      if(colFill(xr,c.cy-sp*0.9,c.cy-sp*2.4,ps.dil)>=ps.fill&&colFill(xr,c.cy+sp*1.1,c.cy+sp*2.4,ps.dil)<0.5){
+        stem={x:xr,tip:tipOf(xr,-1),up:true}; break; }
+      const xl=Math.round(c.x0)-d;
+      if(colFill(xl,c.cy+sp*0.9,c.cy+sp*2.4,ps.dil)>=ps.fill&&colFill(xl,c.cy-sp*1.1,c.cy-sp*2.4,ps.dil)<0.5){
+        stem={x:xl,tip:tipOf(xl,1),up:false}; break; }
+    }
+    if(stem)break;
   }
   /* 기둥 끝에서 머리 쪽으로 훑으며 꼬리·빔이 몇 겹인지 센다.
      ★ 처음엔 기둥 칸의 가로 런 길이(hr)로 판정했는데, 꼬리가 오선 줄과 겹치는 자리에
@@ -2993,19 +3111,65 @@ async function staffGeom(url,clef){
      박자표 숫자(4, 8 처럼 속에 구멍이 있는 것)는 이 구간을 조금 넘어갈 수 있어 음표로
      오인될 수 있다. 그건 개수가 어긋나게 만들 뿐이고, 개수가 다르면 우리는 아무것도
      덮어쓰지 않으므로 결과가 나빠지지는 않는다(그저 이 단에서 이득을 못 본다). */
+  /* ★ v53: 잉크가 **끊겨도** 이어진 것으로 본다. 이전에는 한 칸의 잉크가 한 번도 끊기지
+     않고 오선 위아래를 다 넘어야 자리표로 인정했다. 깨끗한 합성 그림에서는 그게 맞지만,
+     **실제 사진에서는 단 한 번도 맞은 적이 없다** — 실측으로 확인했다(단 4개 전부 clefEnd=0).
+     인쇄된 자리표의 획은 얇고 기울어 있어, 사진·JPEG 로 뭉개진 뒤 이진화하면 한 칸 안에서
+     몇 픽셀씩 끊긴다. 그래서 자리표와 조표가 통째로 음표 후보로 들어왔고, 조표의 #이
+     음표로 잡혀 개수가 어긋났다(그러면 v49~v50 보정이 조용히 꺼진다).
+     끊김 허용치는 기둥 끝을 따라갈 때(tipOf)와 같은 0.35칸을 쓴다. */
   let clefEnd=0;
   const xLim=Math.round(W*0.14), hiEdge=top-sp*0.5, loEdge=bot+sp*0.5;
+  const vGap=Math.max(2,Math.round(sp*0.35));
   for(let x=0;x<xLim;x++){
-    let y=y0, hit=false;
-    while(y<=y1){
-      if(!ink[y*W+x]){y++;continue;}
-      let e=y; while(e+1<=y1&&ink[(e+1)*W+x])e++;
-      if(y<hiEdge&&e>loEdge){hit=true;break;}
-      y=e+1;
+    /* 이 칸의 잉크가 **오선 위로도 아래로도 넘치는가**. 끊김은 세지 않고 맨 위·맨 아래
+       잉크만 본다(사진에서는 반드시 끊긴다). 대신 그 범위의 30%는 잉크여야 한다 —
+       위아래로 떨어진 티끌 두 개가 자리표로 보이지 않게 하는 최소한의 안전장치다.
+       ★ 음표는 이 기준을 못 넘는다: 기둥은 3.5칸이라 위·아래 여백(각 0.5칸)을 둘 다
+         넘을 수 없다. 덧줄 음도, 가사 글자도 마찬가지다. 그래서 자리표만 걸린다. */
+    let hi=-1, lo=-1, n=0;
+    for(let y=y0;y<=y1;y++)if(ink[y*W+x]){ if(hi<0)hi=y; lo=y; n++; }
+    if(hi<0)continue;
+    if(hi<hiEdge&&lo>loEdge&&n>=(lo-hi+1)*0.3){
+      /* ★ 자리표는 **맨 왼쪽에 붙어 있는 한 덩어리**다. 여기서 그냥 "조건을 만족한 가장
+         오른쪽 칸"을 쓰면 안 된다 — 저 멀리 있는 칸 하나가 걸리는 순간 그 앞의 진짜 음표가
+         통째로 자리표 구간으로 빨려 들어간다. 실제로 그런 칸이 생긴다: 위로 뻗은 빔 아래에
+         아래로 뻗은 기둥이 겹치는 자리가 오선 위·아래를 다 넘는다(합성 테스트가 잡았다).
+         그래서 **왼쪽에서 이어지는 첫 덩어리**만 인정하고, 1칸 넘게 끊기면 거기서 끝낸다. */
+      if(clefEnd&&x-clefEnd>sp)break;
+      clefEnd=x;
     }
-    if(hit)clefEnd=x;
   }
-  if(clefEnd)clefEnd=Math.min(Math.round(W*0.2),clefEnd+Math.round(sp*1.6));
+  /* 자리표 뒤에는 조표(#/b 여러 개)와 박자표가 **바싹 붙어** 따라온다. 이것들도 음표가
+     아니므로 같이 건너뛰어야 하는데, 개수를 미리 알 수 없다(조표는 0~7개다).
+     그래서 세지 않고 **따라간다**: 잉크가 1.1칸보다 넓게 끊기는 곳이 첫 음표 앞의 여백이다.
+     ★ 여백 없이 음표가 바로 붙는 조판을 대비해 자리표 끝에서 6칸까지만 따라간다.
+       조표 7개 + 박자표가 대략 그 안에 들어오고, 더 가면 진짜 음표를 먹는다. */
+  if(clefEnd){
+    /* 조표(#/b)와 박자표 숫자는 **세로로 1.3~3칸짜리** 기호다. 그 성질이 이어지는 동안만
+       따라간다. 핵심은 **위쪽 한계**다 — 음표는 기둥이 3.5칸이라 머리까지 합치면 한 칸의
+       잉크가 4칸을 넘으므로 여기서 저절로 걸린다.
+       ★ 위쪽 한계를 안 두면 안 된다: 처음엔 "1.4칸 이상"만 봤더니 **음표 기둥도 세로로
+         길고 좁아서** 따라가기가 빔으로 이은 8분음표를 통째로 지나가 첫 두 음을 먹었다
+         (합성 회귀 테스트가 잡았다 — 실제 사진만 봤으면 못 잡았을 종류의 실수다).
+       ★ "잉크가 있는 동안 따라가기"도 안 된다 — 빔 때문에 끊기지 않는다. */
+    const tallAt=x=>{
+      if(x<0||x>=W)return false;
+      let hi=-1,lo=-1,n=0;
+      for(let y=y0;y<=y1;y++)if(ink[y*W+x]){ if(hi<0)hi=y; lo=y; n++; }
+      if(hi<0)return false;
+      const h=lo-hi+1;
+      return h>=sp*1.3&&h<=sp*3&&n>=h*0.45;
+    };
+    const hGap=Math.max(3,Math.round(sp*1.2)), stop=clefEnd+Math.round(sp*7);
+    let x=clefEnd, blank=0;
+    while(x<stop&&x<W){ if(tallAt(x)){blank=0;clefEnd=x;} else if(++blank>hGap)break; x++; }
+    clefEnd=Math.min(Math.round(W*0.2),clefEnd+Math.round(sp*0.6));
+  }
+  /* 디버그 고리: window.__GEOM2={} 를 먼저 두면 이 단의 자리표 끝·오선 자리가 담긴다.
+     자리표 구간을 잘못 잡으면 조표의 #/b 가 음표로 들어와 **개수가 어긋나고**, 그러면
+     v49~v50 의 보정이 통째로 꺼진다 — 조용히 실패하므로 재 볼 방법이 있어야 한다. */
+  if(window.__GEOM2)window.__GEOM2.push({W,sp:+sp.toFixed(1),top:+top.toFixed(1),bot:+bot.toFixed(1),clefEnd});
 
   /* 3) 속이 찬 머리: 세로·가로 런이 둘 다 머리 크기인 픽셀 */
   /* 세로 런에 상한을 두지 않는 것이 중요하다 — 머리에서 기둥으로 잉크가 이어지면 머리
@@ -3249,6 +3413,25 @@ function keySigSet(chord){
   for(let i=0;i<cnt;i++)out[ord[i]]=sgn;
   return out;
 }
+/* 잰 음높이를 믿어도 되는가 — 노래 선율로서 말이 되는지만 본다(v53).
+   왜 필요한가: 실제 사진에서는 가사 글자·코드 글자·조표의 #이 음표 후보로 섞여 들어올 수
+   있다. 그런 값이 섞인 목록을 **프롬프트에 "우리가 센 음이름"이라고 넣으면 AI 를 오히려
+   헷갈리게 만든다** — 안 재느니만 못한 상태다. 그래서 통째로 손을 떼는 문을 하나 둔다.
+   판정은 음악적 상식 하나뿐이다: 노래 선율은 이웃한 음끼리 크게 뛰지 않는다.
+   ★ 마디선(`geo.bars`)은 이 판정과 **상관없이 그대로 쓴다.** 마디선은 음표 검출과 무관하게
+     '오선을 위아래로 꿰뚫는 세로줄'만 보고 찾은 것이라 훨씬 믿을 만하고, 사진 위
+     '지금 몇째 마디' 표시가 여기에 달려 있다. 음높이가 못 미더워도 마디는 맞다. */
+function geomSane(notes){
+  if(!notes||notes.length<3)return false;
+  const st=notes.map(n=>n.step);
+  const gaps=[]; for(let i=1;i<st.length;i++)gaps.push(Math.abs(st[i]-st[i-1]));
+  const big=gaps.filter(g=>g>7).length;                 // 옥타브 넘는 도약
+  if(big>gaps.length*0.2)return false;
+  const srt=gaps.slice().sort((a,b)=>a-b);
+  if(srt[srt.length>>1]>3)return false;                 // 이웃 음 간격의 중앙값이 4도 넘음
+  const lo=Math.min.apply(null,st), hi=Math.max.apply(null,st);
+  return (hi-lo)<=21;                                   // 한 단의 음역이 3옥타브를 넘을 수 없다
+}
 function geomMelodyLine(geo,perBar,sig){
   if(!geo||!geo.notes||geo.notes.length<3)return '';
   const per=perBar||4;
@@ -3286,7 +3469,7 @@ async function addGeomMelody(draft,say){
   const sig=keySigSet(draft.key);
   let melN=0, melSys=0, melSure=0;
   const pages=draft.sys.map(s=>{
-    const mel=s.geo?geomMelodyLine(s.geo,P.beats,sig):'';
+    const mel=(s.geo&&geomSane(s.geo.notes))?geomMelodyLine(s.geo,P.beats,sig):'';
     if(mel){ melN+=s.geo.notes.length; melSys++; if(s.geo.durSure)melSure++; }
     return [mel,s.txt].filter(t=>t&&t.trim()).join('\n');
   }).filter(t=>t.trim());
@@ -3740,7 +3923,15 @@ function origGeomOf(geo){
     if(b-a<0.02)continue;
     let i0=-1,cnt=0;
     nx.forEach((x,j)=>{ if(x>=a&&x<b){ if(i0<0)i0=j; cnt++; } });
-    if(cnt)seg.push({x0:a,x1:b,i0,cnt});
+    if(!cnt)continue;
+    /* 마디 **안에서** '몇 박째 → 가로 어디'를 따로 갖고 있는다(v53). 마디 경계는
+       재생 타임라인이 정확히 알고 있으므로(origBeats), 여기서 쓰는 음표 길이 어림이
+       조금 틀려도 **오차가 그 마디를 넘어가지 않는다** — 마디선마다 저절로 맞춰진다. */
+    let tot2=0; for(let j=i0;j<i0+cnt;j++)tot2+=bt[j];
+    const pb=[], pxs=[]; let a2=0;
+    for(let j=i0;j<i0+cnt;j++){ pb.push(tot2>0?a2/tot2:0); pxs.push(nx[j]); a2+=bt[j]; }
+    pb.push(1); pxs.push(Math.max(nx[i0+cnt-1],b));   // 마디 끝 = 마디선
+    seg.push({x0:a,x1:b,i0,cnt,pb,px:pxs});
   }
   const kb=[], kx=[];
   if(seg.length){
@@ -3755,6 +3946,77 @@ function origGeomOf(geo){
   }
   return {seg:seg.length?seg:null,kb,kx};
 }
+/* 단마다 '곡 전체에서 차지하는 구간'과 '그 단에 든 마디들'을 **재생 타임라인에서 그대로
+   읽어** 정한다(v53). 어림이 없다 — 사진과 소리가 원리적으로 어긋날 수 없게 만드는 부분이다.
+
+   예전에는 `sysWeight` 로 단마다 박수를 어림해 비율로 나눴다. 어림은 재생 엔진의 계산과
+   조금씩 다를 수밖에 없고, 그 차이가 단마다 쌓여 뒤로 갈수록 벌어진다. v52에서 세는 대상을
+   고쳐 많이 나아졌지만 **원리적으로는 여전히 딴 데서 센 숫자**였다.
+   지금은 단마다 "몇 번째 코드부터인지"(`ch` 의 누적)만 알면 되고, 그 코드가 몇 박에 놓였는지는
+   재생 엔진이 이미 알고 있다(`tl.bars[].idx0`). 물어보기만 하면 된다.
+
+   ★ 안전한 실패: 단별 코드 개수의 합이 지금 악보의 코드 개수와 다르면(사용자가 텍스트를
+     고쳤다) **아무것도 하지 않고** null 을 돌려준다. 그러면 예전 방식(b0/b1)이 그대로 쓰인다.
+     어긋난 채로 짝지으면 엉뚱한 마디를 가리켜 없느니만 못하다 — `applyGeomPitch` 와 같은 원칙. */
+function origBeats(o){
+  if(!o||!o.pages)return null;
+  const sys=[]; o.pages.forEach(p=>(p.sys||[]).forEach(s=>sys.push(s)));
+  if(!sys.length)return null;
+  const tl=buildTimeline(), tb=tl.bars||[], tot=tl.total||1;
+  if(!tb.length)return null;
+  const nch=blocks.reduce((a,b)=>a+(b.k==='pairs'?b.pairs.filter(p=>p.chord).length:0),0);
+  const n=sys.length;
+  const haveCh=nch>0&&sys.every(s=>typeof s.ch==='number')
+             &&sys.reduce((a,s)=>a+(s.ch||0),0)===nch;
+  const edge=new Array(n+1).fill(null);
+  edge[0]=0; edge[n]=tot;
+
+  if(haveCh){
+    /* 정확한 길: 단마다 "몇 번째 코드부터"를 알고 있으므로 그 코드가 든 마디를 그대로 집는다 */
+    let c0=0;
+    for(let i=0;i<n;i++){
+      const c1=c0+(sys[i].ch||0);
+      const ms=tb.filter(b=>b.idx0>=c0&&b.idx0<c1);
+      if(ms.length){ if(i)edge[i]=ms[0].at; edge[i+1]=ms[ms.length-1].at+ms[ms.length-1].beats; }
+      c0=c1;
+    }
+    edge[n]=tot;
+    /* 코드가 하나도 없는 단(멜로디만 적힌 단)은 앞뒤 사이를 어림값(w) 비율로 나눠 갖는다 */
+    for(let i=1;i<n;i++){
+      if(edge[i]!=null)continue;
+      let a=i-1; while(a>0&&edge[a]==null)a--;
+      let b=i+1; while(b<n&&edge[b]==null)b++;
+      const span=(edge[b]==null?tot:edge[b])-(edge[a]==null?0:edge[a]);
+      let all=0, upto=0;
+      for(let k=a;k<b;k++){ const w=Math.max(0.001,sys[k].w||1); if(k<i)upto+=w; all+=w; }
+      edge[i]=(edge[a]==null?0:edge[a])+span*(all>0?upto/all:0);
+    }
+  }else{
+    /* 덜 정확한 길 — **이 버전 전에 저장해 둔 곡**에는 단별 코드 개수(ch)가 없다.
+       그래도 예전보다는 낫게 만들 수 있다: 예전 어림값(w)으로 나눈 뒤 그 경계를
+       **가장 가까운 진짜 마디선에 붙인다.** 어느 마디에서 단이 바뀌는지는 어림이지만,
+       적어도 **단이 바뀌는 순간은 언제나 마디 첫 박**이 된다 — 마디 한가운데에서
+       하이라이트가 건너뛰는 어색함이 사라지고, 마디 단위 표시도 쓸 수 있게 된다.
+       ★ 옛 곡을 마디까지 정확히 맞추려면 사진을 다시 인식하는 수밖에 없다. */
+    const tw=sys.reduce((a,s)=>a+Math.max(0,s.w||0),0);
+    let acc=0, used=0;
+    for(let i=1;i<n;i++){
+      acc+=Math.max(0,sys[i-1].w||0);
+      const want=tw>0?tot*acc/tw:tot*i/n;
+      let bestJ=-1, bestD=Infinity;
+      tb.forEach((b,j)=>{ const d=Math.abs(b.at-want); if(j>used&&d<bestD){bestD=d;bestJ=j;} });
+      if(bestJ<0){ edge[i]=edge[i-1]; continue; }
+      used=bestJ; edge[i]=tb[bestJ].at;
+    }
+  }
+  /* 단조 증가로 다듬는다(어느 길이든 앞 단을 뚫고 들어가지 않게) */
+  for(let i=1;i<=n;i++)if(edge[i]<edge[i-1])edge[i]=edge[i-1];
+  const mine=[];
+  for(let i=0;i<n;i++)mine.push(tb.filter(b=>b.at>=edge[i]-1e-9&&b.at<edge[i+1]-1e-9));
+  return sys.map((s,i)=>({b0:Math.max(0,Math.min(1,edge[i]/tot)),
+                          b1:Math.max(0,Math.min(1,edge[i+1]/tot)),
+                          bars:mine[i],tot,exact:haveCh}));
+}
 function buildOrig(sysRec){
   const recs=(sysRec||[]).filter(r=>r&&S.photos[r.page]);
   if(!recs.length)return null;
@@ -3765,7 +4027,9 @@ function buildOrig(sysRec){
     const w=Math.max(0,r.w||0);
     const b0=tot>0?acc/tot:0; acc+=w;
     const b1=tot>0?acc/tot:1;
-    pages[r.page].sys.push(Object.assign({t0:r.t0,t1:r.t1,b0,b1,n:++n+'단'},origGeomOf(r.geo)||{}));
+    /* ch = 이 단에 든 코드 개수. 재생 타임라인과 짝짓는 유일한 열쇠다(origBeats).
+       b0/b1 은 그게 안 될 때만 쓰는 어림값으로 남겨 둔다. */
+    pages[r.page].sys.push(Object.assign({t0:r.t0,t1:r.t1,b0,b1,w,ch:r.ch||0,n:++n+'단'},origGeomOf(r.geo)||{}));
   });
   const out={pages:pages.filter(p=>p.url&&p.sys.length),approx:recs.some(r=>r.whole)};
   return out.pages.length?out:null;
@@ -3774,6 +4038,12 @@ function buildOrig(sysRec){
    원본 사진 위 하이라이트를 재생 위치에 맞춰 옮기려면 단마다 "몇 박짜리인가"가 필요하다.
    멜로디를 읽었으면 그 박수가 곧 정답이고, 못 읽었으면 마디·코드 개수로 어림한다.
    재생 엔진과 완전히 같은 계산은 아니다 — 눈으로 따라가는 보조 표시라 이 정도면 충분하다. */
+/* 이 단 텍스트에 든 코드 개수. `reparse` 가 코드마다 매기는 전역 번호(p.idx)와 같은 규칙으로
+   세야 하므로 같은 파서를 쓴다. 이 숫자 하나가 사진의 단과 재생 타임라인을 잇는다(origBeats).
+   합이 전체 코드 개수와 안 맞으면 origBeats 가 알아서 손을 떼므로, 여기서 틀려도 안전하다. */
+function sysChords(txt){
+  return parseChart(txt||'').reduce((a,b)=>a+(b.k==='pairs'?b.pairs.filter(p=>p.chord).length:0),0);
+}
 function sysWeight(txt){
   /* ★ v52에서 세는 대상을 바꿨다 — 예전엔 **멜로디 박수**를 셌다. 그런데 실제 재생 길이를
      정하는 건 멜로디가 아니라 **코드 마디**다: buildTimeline 은 마디마다 멜로디를
@@ -4071,7 +4341,10 @@ async function runScan(){
       if(withMel&&P.geomPitch!==false&&!shots[i].whole){
         say(tag+'오선 자리와 음표 길이를 재는 중…');
         try{ const geo=await staffGeom(shots[i].url);
-             if(geo&&geo.notes.length>=3){ geoRaw=geo; geoNames=geo.notes.map(n=>n.name);
+             /* 마디선은 늘 받아 둔다(사진 위 '지금 몇째 마디' 표시용) — 음높이가 못 미더워도
+                마디선은 따로 잰 값이라 그대로 쓸 수 있다. 음이름은 말이 될 때만 쓴다(v53). */
+             if(geo)geoRaw=geo;
+             if(geo&&geo.notes.length>=3&&geomSane(geo.notes)){ geoNames=geo.notes.map(n=>n.name);
                if(geo.durSure)geoNotes=geo.notes; } }
         catch(e){ geoNames=null; geoNotes=null; geoRaw=null; }
       }
@@ -4148,7 +4421,7 @@ async function runScan(){
       if(tm){ if(i===0)$('title').value=tm[1].trim(); t=t.replace(/^TITLE:\s*.+$/m,'').trim(); }
       if(t)pages.push(t);
       sysRec.push({page:shots[i].page||0,t0:shots[i].t0||0,t1:(shots[i].t1===undefined?1:shots[i].t1),
-                   w:t?sysWeight(t):0,whole:!!shots[i].whole,geo:geoRaw});
+                   w:t?sysWeight(t):0,ch:t?sysChords(t):0,whole:!!shots[i].whole,geo:geoRaw});
       /* Gemini 는 gemPace 가 요청 직전에 간격을 지키므로 여기서 또 쉬면 두 번 쉰다 */
       if(i<NN-1&&!(prov==='gemini'&&!hosted))await new Promise(r=>setTimeout(r,1100));
     }
@@ -4210,7 +4483,7 @@ async function ocrFallback(existing,say,fail,err){
        OCR 이 이미 단 단위로 잘라 봤으므로 그 구간을 그대로 하이라이트에 쓴다
        (예전엔 단 정보가 없다고 보고 쪽 전체를 한 덩어리로 잡았다). */
     const rec=(draft.sys||[]).filter(s=>s.txt&&s.txt.trim())
-      .map(s=>({page:s.page||0,t0:s.t0||0,t1:(s.t1===undefined?1:s.t1),w:sysWeight(s.txt),whole:!!s.whole,geo:s.geo||null}));
+      .map(s=>({page:s.page||0,t0:s.t0||0,t1:(s.t1===undefined?1:s.t1),w:sysWeight(s.txt),ch:sysChords(s.txt),whole:!!s.whole,geo:s.geo||null}));
     S.orig=buildOrig(rec.length?rec:S.photos.map((ph,pi)=>({page:pi,t0:0,t1:1,w:1,whole:true})));
     if(hasSheet())S.mode='sheet';   // 인식이 깨져도 사진은 정확하다 — 사진을 기본 화면으로
     reparse(); renderAll(); addHistory();
