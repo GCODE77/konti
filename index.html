@@ -311,7 +311,7 @@ window.onerror=function(msg,src,ln){
    예) const SCAN_ENDPOINT = "https://konti-scan.내계정.workers.dev";
 */
 const SCAN_ENDPOINT = "";
-const APP_VER = "56";
+const APP_VER = "57";
 /* file:// 나 content:// 로 열면 브라우저가 외부 호출을 막는다(CORS). 미리 알려준다. */
 const LOCAL_FILE = !/^https?:$/.test(location.protocol);
 /* Claude 앱처럼 iframe 안에서 실행 중이면 키 없이도 인식이 통한다. */
@@ -636,7 +636,7 @@ function markSuspectNotes(){
     const c=p.chord, minor=/^m(?!aj)/.test(c.suffix);
     ok.add(mod(c.root)); ok.add(mod(c.root+(minor?3:4))); ok.add(mod(c.root+7));
     if(/7/.test(c.suffix)){ ok.add(mod(c.root+10)); ok.add(mod(c.root+11)); }
-    if(/(sus4|sus|sus$)/.test(c.suffix))ok.add(mod(c.root+5));
+    if(/(sus4|sus\b|sus$)/.test(c.suffix))ok.add(mod(c.root+5));
     if(/sus2|add9|9/.test(c.suffix))ok.add(mod(c.root+2));
     if(c.bass!==null)ok.add(mod(c.bass));
   }
@@ -2984,7 +2984,7 @@ function headDur(ink,vr,hr,W,c,sp,y0,y1,bot,nextX0,others,lineRow){
        바로 옆의 쉼표·다른 기호까지 들어와 헛집힌다 — 실측: 8분쉼표가 붙어 있는 8분음표.
        그리고 문턱을 0.45칸에서 0.3칸으로 내렸다. 빔은 옆 음표까지 길게 뻗지만
        **꼬리는 훨씬 얇아서**(기둥 2px + 꼬리 4px 정도) 0.45칸에서는 통째로 놓쳤다. */
-    const need=Math.max(3,Math.round(sp*0.3));
+    let need=Math.max(3,Math.round(sp*0.3));
     /* 두 줄이면 충분하다. 꼬리는 원래 얇고(6줄쯤), 그중 4줄이 오선 줄과 겹쳐 지워지면
        두 줄만 남는다 — 실측에서 minBand=3 이라 그 꼬리를 통째로 놓쳤다.
        기둥은 어차피 2px 라 need(0.3칸) 문턱을 절대 못 넘으므로 헛집히지 않는다. */
@@ -3001,7 +3001,7 @@ function headDur(ink,vr,hr,W,c,sp,y0,y1,bot,nextX0,others,lineRow){
       if(dOut>0&&oy>c.cy+sp*0.9&&oy<lim)lim=Math.round(oy-sp*0.7);
     }
     const steps=Math.abs(lim-ya)+1;
-    const wide=[], dbg=[];
+    const wide=[], dbg=[], isL=[];
     for(let k=0;k<steps;k++){
       const y=ya+dOut*k;
       if(y<y0||y>y1)break;
@@ -3021,9 +3021,28 @@ function headDur(ink,vr,hr,W,c,sp,y0,y1,bot,nextX0,others,lineRow){
           if(ink[p2]&&hr[p2]>side)side=hr[p2];
         }
       }
-      wide.push(side>=need);
-      if(window.__DURDBG)dbg.push(side);
+      dbg.push(side); isL.push(lineRow&&lineRow[y]?1:0);
     }
+    /* ★ 문턱을 **기둥 자신의 굵기**에서 뽑는다(v57). 예전엔 0.3칸 고정이었는데, 스캔본을
+       확대하면 기둥 자체가 7px(0.33칸)까지 번져서 **모든 음표가 빔을 가진 것처럼** 읽혔다
+       — 실측: 4분음표만 있는 단에서 bands 3~5, 한 단 합계가 16박이 아니라 6.75박이 됐다.
+       ★ 굵기를 잴 때 **오선 줄이 지나는 행은 뺀다**(lineRow — 인자로 받아 놓고 여태 한 번도
+         쓰지 않던 값이다). 줄 지우기는 기둥 칸에서 일부러 줄을 남기므로 그 행들만 값이
+         푹 꺼지는데(실측 7 → 3), 그걸 같이 세면 기둥이 얇은 줄 알고 문턱이 도로 낮아진다.
+       ★ 반대로 줄 행을 **아예 빼 버리면 안 된다** — 꼬리가 오선 줄과 정확히 겹치는 조판이
+         실제로 있다(높은 음의 아래 기둥). 회귀 테스트가 그걸 잡았다. 그래서 굵기 추정에서만
+         빼고, 빔을 셀 때는 모든 행을 그대로 쓴다.
+       깨끗한 악보에서는 기둥이 2px 라 예전 문턱(0.3칸)이 그대로 이긴다 — 판정이 안 바뀐다. */
+    {
+      let nz=dbg.filter((v,i)=>v>0&&!isL[i]);
+      if(nz.length<4)nz=dbg.filter(v=>v>0);
+      nz.sort((a,b)=>a-b);
+      if(nz.length>=4){
+        const sw=nz[Math.floor(nz.length*0.25)];
+        need=Math.max(need,sw+Math.max(2,Math.round(sp*0.12)));
+      }
+    }
+    for(const v of dbg)wide.push(v>=need);
     for(let i=0;i<wide.length;i++){
       if(wide[i])continue;
       let j=i; while(j<wide.length&&!wide[j])j++;
@@ -3037,7 +3056,7 @@ function headDur(ink,vr,hr,W,c,sp,y0,y1,bot,nextX0,others,lineRow){
     }
     /* 디버그 고리: window.__DURDBG=[] 을 먼저 두면 기둥 옆 잉크 양이 줄줄이 담긴다.
        이 판정도 눈에 보이는 출력이 없어서, 이게 없으면 왜 꼬리를 놓쳤는지 알 수 없다. */
-    if(window.__DURDBG)window.__DURDBG.push({cx:+c.cx.toFixed(0),stemX:stem.x,up:stem.up,need,minBand,gapTol,bands,side:dbg});
+    if(window.__DURDBG)window.__DURDBG.push({cx:+c.cx.toFixed(0),stemX:stem.x,up:stem.up,need,minBand,gapTol,bands,sp:+sp.toFixed(1),side:dbg.slice(),isL:isL.slice()});
   }
   /* 점: 머리 오른쪽의 작고 동글한 잉크 한 덩어리. 다음 음표 앞까지만 본다.
      ★ 두 곳만 본다 — 점은 음표와 **같은 높이**(칸에 놓인 음)이거나 **반 칸 위**(줄에 놓인
@@ -3253,12 +3272,61 @@ async function staffGeom(url,clef){
   const sp=(ctrOf(ctr5[4])-ctrOf(ctr5[0]))/4, top=ctrOf(ctr5[0]), bot=ctrOf(ctr5[4]);
   if(sp<5)return null;                                 // 반칸이 2px 남짓이면 자리를 셀 수 없다
 
+  /* 오선이 **가로로 어디까지 그어져 있는지** 먼저 재 둔다(v57). 줄을 지우기 전에 재야 한다.
+     조판 규칙상 **단의 오른쪽 끝은 언제나 마디선**이다(겹줄이든 홑줄이든). 아래에서 마디선을
+     하나도 못 찾았을 때 이 자리를 마지막 마디선으로 쓴다 — 실측: 온음표로 끝나는 단에서
+     끝 마디선을 놓쳐 한 마디가 통째로 사라졌다. */
+  let staffX1=0;
+  {
+    const ends=[];
+    for(let k=0;k<5;k++){
+      const yc=Math.round(ctrOf(ctr5[k]));
+      if(yc<0||yc>=H)continue;
+      let last=-1;
+      for(let x=W-1;x>=0;x--){ if(ink[yc*W+x]){ last=x; break; } }
+      if(last>=0)ends.push(last);
+    }
+    if(ends.length>=3){ ends.sort((a,b)=>a-b); staffX1=ends[ends.length>>1]; }
+  }
+
   /* 2) 오선 줄 지우기 */
+  /* ★ 흐린 줄(soft) 대비(v57). 스캔본·저해상도 인쇄물에서는 오선이 **연한 회색**으로
+     번져 이진화하면 굵은 띠가 된다(실측: 줄 간격 21px 에 줄 두께 7px, 회색 146 인데
+     음표 잉크는 9). 그 굵은 띠가 **온·2분음표 머리의 구멍을 가로질러 반으로 쪼개서**
+     속 빈 머리가 통째로 사라졌다 — 실측한 찬송가에서 한 단 11음 중 4음이 이것 때문에
+     빠졌고, 전부 줄 위에 놓인 2분음표였다.
+     예전 규칙(세로 잉크 런이 짧으면 지운다)은 머리가 줄에 걸치면 런이 길어져 못 지운다.
+     그래서 **줄이 흐릴 때만** 규칙을 하나 더 쓴다: 그 칸의 띠 안 픽셀이 "맨 줄 정도의
+     회색"이면(= 진한 잉크가 지나가지 않으면) 지운다. 기둥·마디선·속 찬 머리는 훨씬
+     진하므로 그대로 남는다.
+     ★ 이 규칙은 **흐린 줄에서만** 켠다. 합성 악보·깨끗한 스캔은 줄도 음표도 새까매서
+       구분이 안 되는데, 거기서는 예전 규칙이 이미 정확하다(회귀 테스트 196개가 그걸
+       지키고 있다). soft 판정이 그 경계다. */
+  let softLine=false, softTh=0;
+  {
+    const lv=[], iv=[];
+    for(let k=0;k<5;k++){
+      const yc=Math.round(ctrOf(ctr5[k]));
+      if(yc<0||yc>=H)continue;
+      for(let x=0;x<W;x+=3)lv.push(gray[yc*W+x]);
+    }
+    for(let p=0;p<N;p+=5)if(ink[p])iv.push(gray[p]);
+    if(lv.length>20&&iv.length>50){
+      lv.sort((a,b)=>a-b); iv.sort((a,b)=>a-b);
+      const lineG=lv[lv.length>>1], inkG=iv[Math.floor(iv.length*0.1)];
+      if(lineG-inkG>60){ softLine=true; softTh=(lineG+inkG)/2; }
+    }
+  }
   for(let k=0;k<5;k++){
     const a=ctr5[k][0], b=ctr5[k][1];
     const t=b-a+1, lim=Math.max(t*2+1,Math.round(sp*0.46));
     for(let x=0;x<W;x++){
       if(!ink[a*W+x]&&!ink[b*W+x])continue;
+      if(softLine){
+        let mn=255;
+        for(let y=a;y<=b;y++){ const v=gray[y*W+x]; if(v<mn)mn=v; }
+        if(mn>softTh){ for(let y=a;y<=b;y++)ink[y*W+x]=0; continue; }
+      }
       let yT=a; while(yT-1>=0&&ink[(yT-1)*W+x])yT--;
       let yB=b; while(yB+1<H&&ink[(yB+1)*W+x])yB++;
       if(yB-yT+1<=lim)for(let y=a;y<=b;y++)ink[y*W+x]=0;
@@ -3343,7 +3411,70 @@ async function staffGeom(url,clef){
      그래서 세지 않고 **따라간다**: 잉크가 1.1칸보다 넓게 끊기는 곳이 첫 음표 앞의 여백이다.
      ★ 여백 없이 음표가 바로 붙는 조판을 대비해 자리표 끝에서 6칸까지만 따라간다.
        조표 7개 + 박자표가 대략 그 안에 들어오고, 더 가면 진짜 음표를 먹는다. */
+  /* ★ 조표를 **세어서 조를 정한다**(v57). 사장님 요청 그대로 — "음도 위치 및 오선보를
+     계산해서 읽어라". 지금까지는 조를 **OCR 이 읽은 첫 코드**에서만 얻었는데, 그 한 글자를
+     잘못 읽으면 곡 전체의 음이름이 통째로 틀어졌다(실측: Bb장조 찬송가가 A장조로 나왔다).
+     조표는 자리표 바로 뒤에 **정해진 순서·정해진 높이**로 서는 기호라, 개수만 세면 조가
+     나온다 — 추론이 아니라 세는 일이다.
+     #과 b 의 구분: **위쪽 1/3 에 잉크가 어디까지 퍼져 있나**만 보면 된다. #은 세로획이
+     둘이라 위쪽에서도 글자 폭 전체에 걸치고, b 는 왼쪽 세로획 하나뿐이라 왼쪽에만 있다. */
+  let ksig=null;   /* 전역 함수 keySig() 와 이름이 겹치지 않게 */
   if(clefEnd){
+    const gx0=clefEnd, gx1=Math.min(W-1,Math.round(clefEnd+sp*7));
+    const gy0=Math.max(y0,Math.round(top-sp*1.7)), gy1=Math.min(y1,Math.round(bot+sp*1.7));
+    const mk=new Uint8Array(N), st2=new Int32Array((gx1-gx0+1)*(gy1-gy0+1)+8);
+    const glyphs=[];
+    for(let y=gy0;y<=gy1;y++)for(let x=gx0;x<=gx1;x++){
+      const p0=y*W+x; if(!ink[p0]||mk[p0])continue;
+      let sp2=0; st2[sp2++]=p0; mk[p0]=1;
+      let ax0=x,ax1=x,ay0=y,ay1=y,ar=0;
+      while(sp2>0){
+        const q=st2[--sp2], qy=(q/W)|0, qx=q-qy*W; ar++;
+        if(qx<ax0)ax0=qx; if(qx>ax1)ax1=qx; if(qy<ay0)ay0=qy; if(qy>ay1)ay1=qy;
+        for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+          const nx=qx+dx, ny=qy+dy;
+          if(nx<gx0||nx>gx1||ny<gy0||ny>gy1)continue;
+          const np=ny*W+nx; if(ink[np]&&!mk[np]){mk[np]=1;st2[sp2++]=np;}
+        }
+      }
+      glyphs.push({x0:ax0,x1:ax1,y0:ay0,y1:ay1,area:ar});
+    }
+    /* 조각난 글자를 묶는다(사진에서는 획이 끊긴다).
+       ★ 그냥 "가로로 이웃하면 묶기"로 하면 안 된다 — 조표의 #들은 서로 바싹 붙어 서 있어서
+         셋이 통째로 한 덩어리가 된다(실측: 59×102px 짜리 한 덩어리 = 세 개가 뭉친 것).
+         **가로로 실제 겹칠 때만** 묶는다(음표 칸 묶기와 같은 규칙). */
+    glyphs.sort((a,b)=>a.x0-b.x0);
+    const grp=[];
+    for(const g of glyphs){
+      const L=grp[grp.length-1];
+      const ov=L?Math.min(L.x1,g.x1)-Math.max(L.x0,g.x0):-1;
+      const mw=L?Math.min(L.x1-L.x0,g.x1-g.x0)+1:1;
+      if(L&&ov>mw*0.5){ L.x1=Math.max(L.x1,g.x1); L.y0=Math.min(L.y0,g.y0); L.y1=Math.max(L.y1,g.y1); L.area+=g.area; }
+      else grp.push({x0:g.x0,x1:g.x1,y0:g.y0,y1:g.y1,area:g.area});
+    }
+    const acc=grp.filter(g=>{
+      const gw=g.x1-g.x0+1, gh=g.y1-g.y0+1;
+      return gh>=sp*1.15&&gh<=sp*3.2&&gw>=sp*0.3&&gw<=sp*1.35&&gh>gw*1.15&&g.area>=sp*sp*0.12;
+    });
+    if(acc.length>=1&&acc.length<=7){
+      let flats=0;
+      for(const g of acc){
+        const gw=g.x1-g.x0+1, hCut=g.y0+Math.max(1,Math.round((g.y1-g.y0+1)*0.32));
+        let lo=g.x1+1, hi=g.x0-1;
+        for(let y=g.y0;y<=hCut;y++)for(let x=g.x0;x<=g.x1;x++)
+          if(ink[y*W+x]){ if(x<lo)lo=x; if(x>hi)hi=x; }
+        if(hi>=lo&&(hi-lo+1)<=gw*0.55)flats++;
+      }
+      /* 조표 사이 간격이 고른가 — 음표나 박자표가 섞여 들어오면 여기서 걸린다 */
+      let even=true;
+      for(let i=1;i+1<acc.length;i++){
+        const d1=acc[i].x0-acc[i-1].x0, d2=acc[i+1].x0-acc[i].x0;
+        if(d2>d1*2.2||d1>d2*2.2)even=false;
+      }
+      if(even)ksig={n:acc.length,flat:flats*2>acc.length};
+    }
+    if(window.__KEYDBG)window.__KEYDBG.push({clefEnd,sp:+sp.toFixed(1),ksig,
+      grp:grp.map(g=>({x:g.x0,w:g.x1-g.x0+1,h:g.y1-g.y0+1,a:g.area}))});
     /* 조표(#/b)와 박자표 숫자는 **세로로 1.3~3칸짜리** 기호다. 그 성질이 이어지는 동안만
        따라간다. 핵심은 **위쪽 한계**다 — 음표는 기둥이 3.5칸이라 머리까지 합치면 한 칸의
        잉크가 4칸을 넘으므로 여기서 저절로 걸린다.
@@ -3439,19 +3570,56 @@ async function staffGeom(url,clef){
     /* 음표 머리는 기울어진 타원이라 구멍이 **가로로 뚜렷하게 길다**(실측 bw/bh≈1.36).
        16분음표의 꼬리 두 겹과 기둥 사이에 생기는 빈틈은 거의 정사각형(≈0.95)이라,
        여기서 갈라낸다 — 예전엔 0.7 이어서 그 빈틈이 음표 머리로 잡혀 개수가 어긋났다. */
-    if(bw<bh*1.12)continue;
+    /* ★ 다만 1.12 라는 비율 하나로만 자르면 안 된다(v57). 스캔본에서는 줄이 번져 구멍의
+       위아래가 조금 깎여 **거의 정사각(1.09)** 이 된다 — 실측한 찬송가에서 2분음표 두 개가
+       이 한 줄 때문에 통째로 사라졌다(구멍은 12×11 로 멀쩡히 잡혀 있었다).
+       그래서 **구멍이 충분히 클 때는** 가로가 세로보다 크기만 하면 받아들인다.
+       16분음표 꼬리 사이의 빈틈은 이 크기를 못 넘는다(넓이 기준에서 걸린다). */
+    /* 16분음표 꼬리와 기둥 사이의 빈틈도 거의 정사각이라 여기서 갈라야 한다. 두 모양은
+       **얼마나 꽉 찼는지**로 뚜렷이 갈린다(실측: 음표 구멍 0.73 / 꼬리 빈틈 0.52) —
+       구멍은 타원이고 빈틈은 휜 삼각형이기 때문이다. */
+    if(bw<bh*1.12&&!(bw>=bh&&area>=sp*sp*0.15&&bw>=sp*0.45&&bh>=sp*0.4&&area>=bw*bh*0.62))continue;
     holes.push({x0:ax0,x1:ax1,cx:symX/area,cy:symY/area,hollow:true});
   }
   /* 오선 밖(위·아래)에 구멍이 여럿 흩어져 있으면 그건 음표가 아니라 글자다
      (찬송가는 오선 사이에 가사를 인쇄한다). 그런 구멍은 통째로 버린다. */
   const outside=holes.filter(h=>h.cy<top-sp*0.6||h.cy>bot+sp*0.6);
   const useHoles=(outside.length>3)?holes.filter(h=>h.cy>=top-sp*0.6&&h.cy<=bot+sp*0.6):holes;
+  /* ★ 속 빈 머리의 **테두리**가 '속이 찬 덩어리' 검사도 함께 통과하는 일이 흔하다(v57).
+     예전에는 그럴 때 구멍을 그냥 버렸고, 그러면 그 음이 **4분음표로 둔갑**했다. 게다가
+     기둥까지 못 찾으면(온음표) 통째로 사라졌다 — 실측한 찬송가 2단에서 2분·온음표 4개가
+     전부 이 길로 빠졌다. 겹치면 버리지 말고 **속이 빈 것으로 고쳐 준다.** */
   for(const h of useHoles){
-    if(cands.some(c=>Math.abs(c.cx-h.cx)<sp*0.7&&Math.abs(c.cy-h.cy)<sp*0.7))continue;
+    const hit=cands.find(c=>Math.abs(c.cx-h.cx)<sp*0.7&&Math.abs(c.cy-h.cy)<sp*0.7);
+    if(hit){ if(!hit.hollow&&Math.abs(hit.cx-h.cx)<sp*0.5&&Math.abs(hit.cy-h.cy)<sp*0.4)hit.hollow=true; continue; }
     cands.push(h);
   }
   if(cands.length<3)return null;
 
+  /* ★ 오선 밖 후보(코드 글자·가사)는 **여기서 먼저** 버린다(v57).
+     예전에는 이 검사를 맨 마지막(길이 판정 뒤)에 했는데, 그 전에 "같은 x 면 맨 위만 남긴다"
+     규칙이 먼저 도는 게 문제였다 — 음표 **바로 위에 찍힌 코드 글자**가 그 칸의 대표가 되어
+     진짜 음표를 밀어내고, 그다음 검사에서 글자가 버려지면서 **음표까지 함께 사라졌다.**
+     실측: 찬송가 2·4·5단에서 이 길로 음표가 단마다 두세 개씩 없어졌다.
+     규칙 자체는 그대로다 — 오선 밖(위 10반칸·아래 -2반칸 너머)은 덧줄이 있어야 음표다. */
+  {
+    const half0=sp/2;
+    const keep=c=>{
+      const step=Math.round((bot-c.cy)/half0);
+      if(step<10&&step>-2)return true;
+      const ly=Math.round(bot-(step>=10?10:-2)*half0);
+      const x0c=Math.max(0,Math.round(c.cx-sp*0.7)), x1c=Math.min(W-1,Math.round(c.cx+sp*0.7));
+      let best=0;
+      for(let y=ly-1;y<=ly+1;y++){
+        if(y<0||y>=H)continue;
+        let n=0; for(let x=x0c;x<=x1c;x++)if(ink[y*W+x])n++;
+        best=Math.max(best,n/Math.max(1,x1c-x0c+1));
+      }
+      return best>=0.7;
+    };
+    const kept=cands.filter(keep);
+    if(kept.length>=3)cands.length=0,Array.prototype.push.apply(cands,kept);
+  }
   /* 5) 같은 x 에 쌓인 것은 맨 위만 = 소프라노 */
   cands.sort((a,b)=>a.cx-b.cx);
   let cols=[];
@@ -3483,17 +3651,25 @@ async function staffGeom(url,clef){
      붙어 선 무리**가 있고 그 뒤로 2.5칸 넘는 여백이 오면, 그 무리는 조표다.
      ★ 음표에는 이 조건이 안 걸린다 — 가장 촘촘한 16분음표도 2칸 넘게 벌어지고, 무엇보다
        진짜 음표 무리 뒤에는 이런 큰 여백이 없다. */
+  if(window.__COLDBG)window.__COLDBG.push({stage:'pre',v:cols.map(c=>({x:+(c.cx/W).toFixed(3),cy:+c.cy.toFixed(0),ho:c.hollow}))});
   if(cols.length>2){
     const xLim2=W*0.22, gapTight=sp*1.6, gapClear=sp*2.5;
     let k=0;
     while(k+1<cols.length&&cols[k+1].cx-cols[k].cx<gapTight&&cols[k+1].cx<xLim2)k++;
+    /* ★ 조표(#/b)에는 **속이 빈 타원 구멍이 없다**(v57). 그런데 이 규칙은 모양을 안 보고
+       "왼쪽에 촘촘히 붙은 무리"를 통째로 지우므로, 첫 음이 2분·온음표이고 조표 가까이
+       붙어 있으면 **진짜 첫 음까지 지웠다** — 실측한 찬송가 2단에서 정확히 그랬다.
+       속 빈 머리가 하나라도 끼어 있으면 그 무리는 조표가 아니다. */
+    if(k>0&&cols.slice(0,k+1).some(c=>c.hollow))k=0;
     if(k>0&&cols[k].cx<xLim2&&cols[k+1]&&cols[k+1].cx-cols[k].cx>gapClear)cols=cols.slice(k+1);
   }
   if(cols.length<3)return null;
+  if(window.__COLDBG)window.__COLDBG.push({stage:'cols',v:cols.map(c=>({x:+(c.cx/W).toFixed(3),cy:+c.cy.toFixed(0),ho:c.hollow}))});
   const res=[], devs=[];
   cols.forEach((c,ci)=>{
     const nextX0=(ci+1<cols.length)?cols[ci+1].x0:W;
     const d=headDur(ink,vr,hr,W,c,sp,y0,y1,bot,nextX0,(c.ys||[]).filter(v=>Math.abs(v-c.cy)>sp*0.4),lineRow);
+    if(window.__COLDBG)window.__COLDBG.push({stage:'dur',x:+(c.cx/W).toFixed(3),cy:+c.cy.toFixed(0),ho:d.hollow,st:d.stem,b:d.beats,step:Math.round((bot-c.cy)/(sp/2))});
     if(!d.hollow&&!d.stem)return;
     const q=(bot-c.cy)/half, step=Math.round(q);
     /* ★ 오선 밖으로 나간 음은 **덧줄이 있어야 진짜 음표다**(v53).
@@ -3534,17 +3710,30 @@ async function staffGeom(url,clef){
        넘치지만 아래쪽이 반 칸 모자라고, 위 줄 음표의 아래 기둥은 그 반대다.
        그래서 "위로도 아래로도 다 넘치는가"를 보면 기둥은 자동으로 빠진다.
      ★ 오선 줄 지우기(2단계)는 이미 끝난 상태다. 마디선은 세로 런이 길어서 그 단계에
-       지워지지 않는다 — 지워지는 건 줄에 붙은 짧은 잉크뿐이다. */
+       지워지지 않는다 — 지워지는 건 줄에 붙은 짧은 잉크뿐이다.
+     ★★ 위의 "기둥은 3.5칸이라 못 넘는다"는 **틀린 말이었다**(v57에서 실측으로 잡았다).
+       오선 **아래쪽**에 놓인 음표의 위 기둥은 머리 높이까지 합치면 4.5칸이라 위아래를
+       둘 다 넘는다. 그래서 찬송가 한 단에서 마디선이 4개가 아니라 9개로 잡혔고(음표
+       자리와 x 가 정확히 같았다), 20마디짜리 곡이 29마디로 늘어나 사진 하이라이트가
+       통째로 어긋났다. 진짜 구분 기준은 **굵기**다 — 마디선은 처음부터 끝까지 얇지만
+       기둥에는 반드시 머리(1.3칸 폭)가 붙어 있다. 그래서 오선 높이 전 구간에서
+       가로 잉크가 한 번도 0.62칸을 넘지 않아야 마디선으로 인정한다. */
   const bars=[];
   {
     const yA=top+sp*0.25, yB=bot-sp*0.25, ya=Math.round(yA);
     const lim=Math.max(2,Math.round(sp*0.55));
+    const thin=Math.max(2,Math.round(sp*0.62));
+    const yT0=Math.max(0,Math.round(top-sp*0.2)), yB0=Math.min(H-1,Math.round(bot+sp*0.2));
     const full=new Uint8Array(W);
-    if(ya>=0&&ya<H)for(let x=0;x<W;x++){
+    /* 자리표·조표 구간에는 마디선이 없다 — 거기서 찾으면 자리표의 세로획이 마디선이 된다 */
+    if(ya>=0&&ya<H)for(let x=Math.max(0,clefEnd);x<W;x++){
       if(!ink[ya*W+x])continue;
       let t2=ya; while(t2-1>=0&&ink[(t2-1)*W+x])t2--;
       let b2=ya; while(b2+1<H&&ink[(b2+1)*W+x])b2++;
-      if(t2<=yA&&b2>=yB)full[x]=1;
+      if(!(t2<=yA&&b2>=yB))continue;
+      let wide=false;
+      for(let y=yT0;y<=yB0;y++){ if(hr[y*W+x]>thin){ wide=true; break; } }
+      if(!wide)full[x]=1;
     }
     let s2=-1;
     for(let x=0;x<=W;x++){
@@ -3552,9 +3741,14 @@ async function staffGeom(url,clef){
       if(on){ if(s2<0)s2=x; }
       else if(s2>=0){ if(x-s2<=lim)bars.push(((s2+x-1)/2)/sc); s2=-1; }
     }
+    /* 단 끝 마디선 보충 — 오선이 끝나는 자리에 마디선이 없으면 거기에 하나 둔다.
+       겹세로줄(끝마디)이나 굵은 줄은 위의 '얇아야 한다' 검사에서 빠질 수 있다. */
+    if(staffX1>sp*4&&!bars.some(b=>Math.abs(b*sc-staffX1)<sp*1.6))bars.push(staffX1/sc);
+    bars.sort((a,b)=>a-b);
   }
   /* w: notes[].x · bars[] 가 어떤 폭을 기준으로 한 값인지. 사진 위 비율로 바꿀 때 쓴다. */
-  return {sp,top,bot,med,notes:res,durSure,total,w:img.width,bars};
+  /* iw: top/bot/sp 가 사는 내부 캔버스 폭. 원본 그림 좌표로 되돌릴 때 쓴다(코드 띠 오려내기). */
+  return {sp,top,bot,med,notes:res,durSure,total,w:img.width,iw:W,bars,keySig:ksig};
 }
 /* AI 결과의 ♪ 줄 음이름을 우리가 센 것으로 덮어쓴다. 개수가 정확히 같을 때만 한다. */
 function applyGeomPitch(text,names){
@@ -3824,6 +4018,66 @@ function geomMidi(name,sig){
    ★ 마디선은 **사진에서 잰 마디선(seg)** 을 그대로 쓴다(v54). 예전에는 음표 길이를 더해
      박자표에 닿을 때마다 끊었는데, 길이를 하나만 잘못 재도 그 뒤 마디가 전부 밀렸다.
      마디선은 오선을 꿰뚫는 세로줄이라 음표 길이보다 훨씬 정확하게 잡힌다. */
+/* 마디 안 음표 길이를 **박자표에 맞춰 바로잡는다** (v57).
+   조판에는 흔들리지 않는 규칙이 하나 있다: **한 마디는 정확히 박자표만큼이다.**
+   우리가 픽셀로 잰 길이는 스캔 상태에 따라 흔들리지만(실측: 4분음표만 있는 마디가
+   0.125박으로 읽히기도 한다), 마디선 위치는 훨씬 튼튼하게 읽힌다. 그래서 **마디선을
+   믿고 길이를 거기에 맞춘다** — 비율은 잰 대로 두고 합계만 박자표에 맞춘 뒤, 흔한
+   음표 길이로 스냅한다.
+   ★ 이게 사진과 소리의 싱크를 **원리적으로** 보장한다. 마디마다 합이 딱 맞으므로
+     오차가 다음 마디로 넘어가지 못한다.
+   ★ 안 건드리는 경우: 이미 맞는 마디(그대로), 늘이거나 줄이는 배율이 터무니없는 마디
+     (못갖춘마디·마지막 마디일 수 있다 — 건드리면 더 나빠진다). */
+const BEAT_GRID=[0.125,0.25,0.375,0.5,0.75,1,1.5,2,3,4,6,8];
+function fitBarBeats(bs,per){
+  const sum=bs.reduce((a,b)=>a+(b>0?b:0),0);
+  if(!(sum>0)||!(per>0))return bs;
+  if(Math.abs(sum-per)<=0.06&&bs.every(b=>BEAT_GRID.some(g=>Math.abs(g-b)<1e-6)))return bs;
+  const k=per/sum;
+  if(k<0.2||k>6)return bs;                      // 못갖춘마디로 보이면 손대지 않는다
+  const GRID=BEAT_GRID;
+  const sc=bs.map(b=>(b>0?b:0)*k);
+  const sn=sc.map(v=>GRID.reduce((a,g)=>Math.abs(g-v)<Math.abs(a-v)?g:a,GRID[0]));
+  let s2=sn.reduce((a,b)=>a+b,0);
+  if(Math.abs(s2-per)>1e-6){
+    let mi=0; for(let i=1;i<sn.length;i++)if(sn[i]>sn[mi])mi=i;
+    const f=+(sn[mi]+(per-s2)).toFixed(4);
+    if(f>=0.125)sn[mi]=f;
+    else return sc.map(v=>+v.toFixed(4));       // 스냅이 망가지면 비례만 맞춘다
+  }
+  return sn;
+}
+/* ★ 잰 길이의 합이 박자표와 안 맞으면 **음표 사이 간격**으로 갈아탄다(v57).
+   조판 규칙이 하나 더 있다: 긴 음표일수록 다음 음표까지 넓게 띄운다. 찬송가처럼 단순한
+   조판에서는 이게 거의 비례해서, 마디 안 간격 비율만으로 길이를 되짚을 수 있다.
+   실측 검증: 잰 길이가 **정확했던 단**(1단)에서 간격으로 되짚은 값이 네 마디 모두
+   (2,1,1)(1,1,2)(2,1,1)(2,2) 로 정확히 같았다. 그리고 잰 길이가 무너진 단(2단 1마디,
+   실제 2,1,1 인데 2,0.125,0.125 로 읽힘)에서는 간격이 2,1,1 을 되찾았다.
+   그래서 **잰 길이가 스스로 앞뒤가 맞을 때만 그걸 쓰고, 아니면 간격을 쓴다.** */
+function fitBeatsToBars(geo,seg,per){
+  if(!geo||!geo.notes||!seg||seg.length<2)return false;
+  let changed=false;
+  for(const sg of seg){
+    if(!sg.cnt)continue;
+    const bs=[], xs=[];
+    for(let j=sg.i0;j<sg.i0+sg.cnt;j++){
+      bs.push(geo.notes[j]?(geo.notes[j].beats>0?geo.notes[j].beats:1):1);
+      xs.push(geo.notes[j]?geo.notes[j].x/(geo.w||1):0);
+    }
+    let src=bs;
+    const sum=bs.reduce((a,b)=>a+b,0);
+    if(Math.abs(sum-per)>0.06&&xs.length){
+      const gaps=xs.map((x,i)=>Math.max(1e-4,(i+1<xs.length?xs[i+1]:sg.x1)-x));
+      const t=gaps.reduce((a,b)=>a+b,0);
+      if(t>0)src=gaps.map(v=>v/t*per);
+    }
+    const fx=fitBarBeats(src,per);
+    for(let j=sg.i0,k=0;j<sg.i0+sg.cnt;j++,k++)
+      if(geo.notes[j]&&geo.notes[j].beats!==fx[k]){ geo.notes[j].beats=fx[k]; changed=true; }
+  }
+  if(changed)geo.total=+geo.notes.reduce((a,n)=>a+(n.beats||0),0).toFixed(4);
+  return changed;
+}
 function geomMelodyLine(geo,perBar,sig,seg){
   if(!geo||!geo.notes||geo.notes.length<3)return '';
   const per=perBar||4;
@@ -3835,6 +4089,7 @@ function geomMelodyLine(geo,perBar,sig,seg){
   const out=[];
   if(seg&&seg.length>1){
     seg.forEach((sg,si)=>{
+      if(!sg.cnt)out.push('r:'+per);                 // 음표를 못 찾은 마디는 쉼표 한 마디로
       for(let j=sg.i0;j<sg.i0+sg.cnt;j++){ const n=nts[j]; if(n)out.push(n.tok+':'+n.beats); }
       if(si<seg.length-1)out.push('|');
     });
@@ -3861,7 +4116,7 @@ async function addGeomMelody(draft,say){
   const N=draft.sys.length;
   for(let i=0;i<N;i++){
     const s=draft.sys[i];
-    if(!s.url||s.whole)continue;   // 단 분리에 실패한 쪽은 첫 단만 재게 되어 뜻이 없다
+    if(!s.url||s.whole||s.geo)continue;   // 단 분리에 실패한 쪽은 첫 단만 재게 되어 뜻이 없다
     say&&say((N>1?(i+1)+'/'+N+'단 ':'')+'음표 자리와 길이를 재는 중…');
     try{ const geo=await staffGeom(s.url); if(geo&&geo.notes.length>=3)s.geo=geo; }
     catch(e){ /* 한 단을 못 재도 나머지는 그대로 간다 */ }
@@ -3869,8 +4124,39 @@ async function addGeomMelody(draft,say){
   /* 조. 읽어 낸 코드가 있으면 그걸 쓰고(가장 믿을 만하다), 하나도 없으면 멜로디로 어림한다.
      ★ 코드를 하나도 못 읽었으면 조표를 알 길이 없어 멜로디가 전부 제자리음(C조)으로 적힌다.
        그래도 **조 안에서의 관계는 맞으므로** 사용자가 이조 한 번으로 맞출 수 있다. */
+  /* ★ 조는 **조표를 세어서** 정한다(v57). 예전에는 OCR 이 읽은 첫 코드 하나에만 매달렸고,
+     그 한 글자를 잘못 읽으면 곡 전체 음이름이 통째로 틀어졌다(실측: Bb장조 찬송가 → A장조).
+     조표는 단마다 똑같이 인쇄되어 있으므로 **여러 단에서 세어 다수결**을 하면 훨씬 튼튼하다.
+     장/단조 구분은 조표만으로는 알 수 없으니(나란한조는 조표가 같다) 거기서만 멜로디·코드를
+     쓴다 — 조표가 정하는 것(#/b 몇 개)과 멜로디가 정하는 것(으뜸음)을 나눠 맡긴다. */
+  let ksv=null;
+  {
+    const votes={};
+    draft.sys.forEach(s=>{ const k=s.geo&&s.geo.keySig;
+      if(k&&k.n>=0&&k.n<=7){ const t=(k.flat?'b':'#')+k.n; votes[t]=(votes[t]||0)+1; } });
+    let bestT=null,bestN=0;
+    for(const t in votes)if(votes[t]>bestN){bestN=votes[t];bestT=t;}
+    if(bestT&&bestN>=2)ksv={flat:bestT[0]==='b',n:+bestT.slice(1)};
+  }
   let key=draft.key?{pc:draft.key.root,minor:/^m(?!aj)/.test(draft.key.suffix||'')}:null;
-  const sig=keySigSet(draft.key);
+  let sig=keySigSet(draft.key);
+  if(ksv){
+    const ord=ksv.flat?FLAT_ORD:SHARP_ORD, sgn=ksv.flat?'b':'#';
+    sig={}; for(let i=0;i<ksv.n;i++)sig[ord[i]]=sgn;
+    /* 그 조표에 맞는 장조와 나란한단조 */
+    const MAJ_SH=[0,7,2,9,4,11,6,1], MAJ_FL=[0,5,10,3,8,1,6,11];
+    const majPc=(ksv.flat?MAJ_FL:MAJ_SH)[ksv.n], minPc=mod(majPc-3);
+    /* 첫 코드가 둘 중 하나와 맞으면 그걸 믿는다(장/단조까지 알려 준다) */
+    if(key&&(mod(key.pc)===majPc||mod(key.pc)===minPc)){
+      key={pc:mod(key.pc),minor:mod(key.pc)===minPc?true:(mod(key.pc)===majPc?false:key.minor)};
+    }else{
+      const all=[];
+      draft.sys.forEach(s=>{ if(s.geo&&geomSane(s.geo.notes))
+        s.geo.notes.forEach(n=>{ const mm=geomMidi(n.name,sig); if(mm!==null)all.push({midi:mm,beats:n.beats||1}); }); });
+      const g=all.length>=6?guessKeyFromMelody(all):null;
+      key=(g&&mod(g.pc)===minPc)?{pc:minPc,minor:true}:{pc:majPc,minor:false};
+    }
+  }
   if(!key){
     const all=[];
     draft.sys.forEach(s=>{ if(s.geo&&geomSane(s.geo.notes))
@@ -3880,7 +4166,11 @@ async function addGeomMelody(draft,say){
   let melN=0, melSys=0, melSure=0, guessN=0, keepN=0;
   const pages=draft.sys.map(s=>{
     const ok=s.geo&&geomSane(s.geo.notes);
-    const og=ok?origGeomOf(s.geo):null;
+    /* 마디선을 먼저 잡고(og0) → 그 마디에 맞춰 길이를 바로잡고 → 다시 잰다(og).
+       두 번 재는 이유: 마디 안 '몇 박째 → 가로 어디' 표(pb/px)가 고친 길이로 만들어져야
+       사진 위 하이라이트가 소리와 같은 자리를 가리킨다. */
+    let og=ok?origGeomOf(s.geo):null;
+    if(og&&og.seg&&og.seg.length>1&&fitBeatsToBars(s.geo,og.seg,P.beats))og=origGeomOf(s.geo);
     const seg=(og&&og.seg&&og.seg.length>1)?og.seg:null;
     const mel=ok?geomMelodyLine(s.geo,P.beats,sig,seg):'';
     if(mel){ melN+=s.geo.notes.length; melSys++; if(s.geo.durSure)melSure++; }
@@ -3905,7 +4195,6 @@ async function addGeomMelody(draft,say){
       return hit.length?hit[0].ch:null;
     });
     const got=guessChords(bars,key.pc,key.minor,{fixed});
-    got.forEach(c=>{ if(c.guess)guessN++; else keepN++; });
     /* 코드 줄을 다시 짠다. 가사와 칸을 맞춰야 하므로 **원래 낱말 배치기(wordsToChart)** 에
        코드를 마디 시작 자리의 낱말로 끼워 넣는다 — 그러면 가사 칸이 저절로 맞는다. */
     /* 새로 짜는 코드 줄은 **반드시 가사 줄보다 위에** 높여야 한다.
@@ -3917,13 +4206,28 @@ async function addGeomMelody(draft,say){
                        ((s.words&&s.words.v)||[]).map(o=>o.bbox.y0));
     const topY=ys.length?Math.min.apply(null,ys):0;
     const cy={y0:topY-24,y1:topY-6};
-    const cwords=[];
+    /* ★ 한 마디에 코드가 **둘 이상**인 조판이 흔하다(E E7 / F#m B7 / Esus4 E …).
+       예전에는 마디마다 코드를 하나만 내보내서, 읽어 낸 코드의 절반 가까이를 버리고 있었다
+       (실측: 27개를 다 읽어 놓고 16개만 썼다). 읽어 낸 코드가 있으면 **잰 가로 자리 그대로**
+       전부 내보낸다. 하나도 못 읽은 마디에서만 짐작한 코드를 쓴다. */
+    const cwords=[]; let keep2=0, guess2=0;
+    const pref=PREF[mod(key.pc)]||'sharp';
     seg.forEach((sg,i)=>{
       const x=Math.round(sg.x0*(s.cw||w));
       if(i)cwords.push({text:'|',bbox:{x0:x-2,x1:x,y0:cy.y0,y1:cy.y1},kind:'c'});
-      cwords.push({text:showChord(got[i],0,PREF[mod(key.pc)]||'sharp'),
-                   bbox:{x0:x+2,x1:x+30,y0:cy.y0,y1:cy.y1},kind:'c'});
+      const hits=cws.filter(o=>o.f>=sg.x0-0.01&&o.f<sg.x1);
+      if(hits.length){
+        hits.forEach(h=>{
+          const hx=Math.max(x+2,Math.round(h.f*(s.cw||w)));
+          cwords.push({text:showChord(h.ch,0,pref),bbox:{x0:hx,x1:hx+30,y0:cy.y0,y1:cy.y1},kind:'c'});
+          keep2++;
+        });
+      }else{
+        cwords.push({text:showChord(got[i],0,pref),bbox:{x0:x+2,x1:x+30,y0:cy.y0,y1:cy.y1},kind:'c'});
+        guess2++;
+      }
     });
+    guessN+=guess2; keepN+=keep2;
     const txt=wordsToChart(cwords.concat((s.words&&s.words.l)||[]).concat((s.words&&s.words.v)||[]));
     /* 다시 짜인 단 텍스트를 남긴다 — 사진 하이라이트용 단별 코드 개수(ch)는
        예전 OCR 텍스트가 아니라 **이걸** 세야 마디가 맞는다. */
@@ -4197,11 +4501,25 @@ function stripStaff(srcUrl,scale){
 }
 function fixChordToken(t){
   let x=t.replace(/[♭]/g,'b').replace(/[♯]/g,'#').replace(/[·•,.]$/,'').trim();
+  /* ★ 실측한 오인(v57) — 굵은 세리프체 코드 글자를 Tesseract 로 읽으면 이렇게 나온다:
+       "F#m"→"Fim" / "Esus4"→"Esusd" / "A#"→"Ao". ♯ 은 eng 모델에 없는 글자라 어쩔 수 없다.
+       고칠 수 있는 건 **자리가 정해진 것뿐**이다 — 으뜸음 바로 뒤, 그리고 sus 뒤의 숫자. */
+  x=x.replace(/^([A-G])[il1!|](?=m|maj|M|\d|$)/,'$1#');
+  x=x.replace(/^([A-G])[oO0](?=m(?!aj))/,'$1#');
+  x=x.replace(/sus[dDoOiIlL1!|](?![0-9])/,'sus4');
   x=x.replace(/^([A-G])[|1lI](?=[A-G])/,'$1/');
   x=x.replace(/([A-G][#b]?)[|lI]([A-G][#b]?)$/,'$1/$2');
   x=x.replace(/^([A-G])[oO0](?![a-z])/,'$1');
   x=x.replace(/^([A-G][#b]?)rn/,'$1m');
   x=x.replace(/^([A-G][#b]?)M(?=7|$)/,'$1maj');
+  /* 숫자만 남은 꼬리에 잡숫자가 끼어 든다(실측: "B7"→"B71", "B87"). 코드에서 쓰는 숫자는
+     정해져 있으니(2·4·5·6·7·9·11·13) 그것만 남긴다. */
+  x=x.replace(/^([A-G][#b]?)([0-9]{2,})$/,(m,r,d)=>{
+    if(/11/.test(d))return r+'11';
+    if(/13/.test(d))return r+'13';
+    const c=d.split('').find(v=>'245679'.indexOf(v)>=0);
+    return c?r+c:r;
+  });
   x=x.replace(/[^A-Ga-g#b\/0-9msuadijMΔ°+()\-]/g,'');
   if(/^[A-G]/.test(x))x=x[0].toUpperCase()+x.slice(1);
   return x;
@@ -4289,6 +4607,116 @@ async function ensureOcrWorkers(say){
 /* 사진 여러 장을 OCR로 읽어 "코드+가사" 초안 텍스트를 만든다(음표는 못 읽음).
    - 단독으로 쓰면 키 없는 OCR 결과
    - runScan()에서 API 프롬프트에 참고 힌트로 얹으면 AI 채보 정확도를 보정하는 용도로도 쓴다 */
+/* ===== 코드 이름만 따로 오려서 읽는다 (v57) =====
+   왜 필요한가. 실측: 실제 찬송가 한 쪽에서 눈에 뻔히 보이는 코드 27개 중 **8개만** 읽혔다.
+   단 그림을 통째로 넣으면 Tesseract 가 보는 건 오선·음표·빔·가사·절번호가 뒤엉킨 그림이고,
+   그 안에서 글자 줄을 잡아내는 데 실패한다(1단만 겨우 읽혔다).
+   코드는 **오선 바로 위 좁은 띠**에만 산다. 그 띠만 오려 내면 남는 건 글자뿐이다.
+   ★ 한국 찬송가·콘티 악보는 코드를 **빨간 글씨**로 찍는 일이 아주 많다. 색이 있으면 그
+     색만 남기는 것만으로 오선·음표·가사가 통째로 사라진다 — 가장 싸고 확실한 분리다.
+   ★ 그리고 띠를 통째로 넣어도 안 된다(실측: 4000×130 짜리 띠에서 "A mDi sus4" 가 나왔다).
+     너무 납작해서 Tesseract 의 줄 찾기가 무너진다. **낱말 단위로 잘라 한 글자 뭉치씩**
+     넣으면(PSM 8 + 화이트리스트) 같은 띠에서 "D | A | F#m | B7 | Esus4E" 가 나온다. */
+function chordBandCanvas(url,geo){
+  return new Promise((res,rej)=>{
+    const img=new Image();
+    img.onload=()=>{
+      try{
+        const k=(geo.w||img.width)/(geo.iw||geo.w||img.width);   // 내부 캔버스 → 원본 좌표
+        const sp=geo.sp*k, top=geo.top*k;
+        const bandTop=Math.max(0,Math.round(top-sp*3.3));
+        const bandBot=Math.max(bandTop+4,Math.round(top-sp*0.15));
+        const bw=img.width, bh=Math.min(img.height,bandBot)-bandTop;
+        if(bh<6){ rej(new Error('띠가 너무 얇다')); return; }
+        const sc=Math.max(1,Math.min(5,130/bh));
+        const W=Math.round(bw*sc), H=Math.round(bh*sc);
+        const cv=document.createElement('canvas'); cv.width=W; cv.height=H;
+        const g=cv.getContext('2d',{willReadFrequently:true});
+        g.fillStyle='#fff'; g.fillRect(0,0,W,H);
+        g.drawImage(img,0,bandTop,bw,bh,0,0,W,H);
+        const d=g.getImageData(0,0,W,H), px=d.data;
+        let chrom=0, dark=0;
+        for(let i=0;i<px.length;i+=4){
+          const r=px[i],gg=px[i+1],b=px[i+2];
+          const mx=Math.max(r,gg,b), mn=Math.min(r,gg,b), lum=r*.299+gg*.587+b*.114;
+          if(lum<190)dark++;
+          if(mx-mn>55&&mx>90&&lum<225)chrom++;
+        }
+        const useColor=chrom>W*H*0.003&&chrom>dark*0.18;
+        for(let i=0;i<px.length;i+=4){
+          const r=px[i],gg=px[i+1],b=px[i+2];
+          const mx=Math.max(r,gg,b), mn=Math.min(r,gg,b), lum=r*.299+gg*.587+b*.114;
+          const on=useColor?(mx-mn>55&&mx>90&&lum<225):(lum<170);
+          px[i]=px[i+1]=px[i+2]=on?0:255;
+        }
+        g.putImageData(d,0,0);
+        res({cv,W,H,color:useColor});
+      }catch(e){ rej(e); }
+    };
+    img.onerror=()=>rej(new Error('이미지 처리 실패'));
+    img.src=url;
+  });
+}
+/* 띠를 낱말 뭉치로 자른다. 글자 높이의 0.5배보다 넓게 벌어지면 다른 낱말로 본다. */
+function chordBandTokens(band){
+  const {cv,W,H}=band;
+  const px=cv.getContext('2d',{willReadFrequently:true}).getImageData(0,0,W,H).data;
+  const col=new Int32Array(W); let ty0=H,ty1=-1;
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++)
+    if(px[(y*W+x)*4]<128){ col[x]++; if(y<ty0)ty0=y; if(y>ty1)ty1=y; }
+  if(ty1<ty0)return [];
+  const gapTh=Math.max(2,Math.round((ty1-ty0+1)*0.5));
+  const runs=[]; let s=-1,gap=0;
+  for(let x=0;x<=W;x++){
+    if(x<W&&col[x]>0){ if(s<0)s=x; gap=0; }
+    else if(s>=0){ if(++gap>gapTh){ runs.push([s,x-gap]); s=-1; } }
+  }
+  if(s>=0)runs.push([s,W-1]);
+  const out=[];
+  for(const [a,b] of runs){
+    if(b-a<4)continue;
+    let ry0=H,ry1=-1;
+    for(let y=0;y<H;y++)for(let x=a;x<=b;x++)if(px[(y*W+x)*4]<128){ if(y<ry0)ry0=y; if(y>ry1)ry1=y; }
+    if(ry1<ry0)continue;
+    const h=ry1-ry0+1;
+    if(h<6||h>H)continue;
+    /* Tesseract 는 글자 높이 100px 언저리에서 가장 잘 읽는다. 둘레에 흰 여백을 넉넉히 둬야
+       한다 — 글자가 그림 가장자리에 닿아 있으면 통째로 못 읽는 일이 잦다. */
+    const sc=Math.max(1,Math.min(6,110/h)), pad=Math.round(h*0.45*sc);
+    const cw=Math.round((b-a+1)*sc)+pad*2, ch=Math.round(h*sc)+pad*2;
+    const o=document.createElement('canvas'); o.width=cw; o.height=ch;
+    const og=o.getContext('2d');
+    og.fillStyle='#fff'; og.fillRect(0,0,cw,ch);
+    og.imageSmoothingEnabled=true; og.imageSmoothingQuality='high';
+    og.drawImage(cv,a,ry0,b-a+1,h,pad,pad,Math.round((b-a+1)*sc),Math.round(h*sc));
+    out.push({f:a/W,fw:(b-a+1)/W,url:o.toDataURL('image/png')});
+  }
+  return out;
+}
+/* 한 뭉치가 코드 둘이 붙은 것일 수 있다(예: "Esus4E" = Esus4 + E). 통째로는 못 읽히니
+   **앞에서부터 가장 긴 코드**를 떼어 내고 나머지를 다시 본다. */
+function splitChordRun(t){
+  const out=[], seen={};
+  let rest=fixChordToken(t||'');
+  for(let n=0;n<3&&rest;n++){
+    const whole=parseChord(rest);
+    if(whole){ out.push(rest); break; }
+    let cut=0;
+    for(let i=rest.length-1;i>=1;i--){
+      const head=rest.slice(0,i);
+      if(/^[A-G]/.test(rest.slice(i))&&parseChord(head)){ cut=i; break; }
+    }
+    if(!cut)break;
+    out.push(rest.slice(0,cut)); rest=rest.slice(cut);
+  }
+  /* 끝내 못 읽으면 **으뜸음만이라도** 건진다. "Esus4" 를 "E" 로 적는 것은 반주로서 틀리지
+     않고(같은 화음 위다), 통째로 버려서 짐작 코드가 들어가는 것보다 훨씬 낫다. */
+  if(!out.length){
+    const m=/^([A-G][#b]?)/.exec(fixChordToken(t||''));
+    if(m&&parseChord(m[1]))out.push(m[1]);
+  }
+  return out.filter(x=>!seen[x]&&(seen[x]=1)&&parseChord(x));
+}
 async function ocrDraft(photoUrls,say){
   await ensureOcrWorkers(say);
   /* sys: 단마다 {txt, url, page, t0, t1, whole} — 나중에 addGeomMelody 가 이 그림을
@@ -4301,7 +4729,11 @@ async function ocrDraft(photoUrls,say){
     let shots=[{url:photoUrls[i],t0:0,t1:1,whole:true}];
     /* 단 단위로 자르면 그 조각 안에서 다시 확대할 여유가 생긴다(전체 페이지를 한 번에 키우는
        것보다 훨씬 싸다) — 그래서 여기서는 목표 해상도를 크게 잡는다. */
-    try{ const parts=await splitSystems(photoUrls[i],2200);
+    /* ★ 목표 폭을 억지로 2200 으로 밀지 않는다(v57). splitSystems 는 아무 것도 안 주면
+       **오선 간격이 22px 이 되도록** 키워 주는데, 그게 staffGeom 이 맞춰 놓은 눈금이다.
+       2200 을 강요하면 단 폭에 따라 눈금이 흔들려 마디선 개수가 달라졌다(실측: 4마디가
+       3마디로). 글자 인식은 코드 띠·가사가 각자 다시 키우므로 여기서 키울 필요가 없다. */
+    try{ const parts=await splitSystems(photoUrls[i]);
          if(parts&&parts.length)shots=parts.map(p=>({url:p.url,t0:p.t0,t1:p.t1,whole:false})); }catch(e){}
     for(let j=0;j<shots.length;j++){
       const tag2=shots.length>1?tag+(j+1)+'/'+shots.length+'단 ':tag;
@@ -4309,12 +4741,51 @@ async function ocrDraft(photoUrls,say){
       /* 단 단위로 잘랐으면 이미 위에서 충분히 확대했으니 그대로, 통째로(단 분리 실패) 넣을 땐
          한 번 더 키운다 — 어느 쪽이든 작은 글자가 인식 가능한 크기가 되도록. */
       const clean=await stripStaff(shots[j].url,shots.length>1?1:1.4);
+      say&&say(tag2+'오선을 재는 중…');
+      /* 오선을 **여기서** 먼저 잰다(v57). 코드 띠를 오려내려면 오선 위치가 있어야 하고,
+         어차피 addGeomMelody 가 곧 같은 일을 하므로 결과를 들고 가면 한 번만 재면 된다. */
+      let geo=null; try{ geo=await staffGeom(shots[j].url); }catch(e){}
       say&&say(tag2+'코드 심볼을 읽는 중…');
       const rc=await wChord.recognize(clean,{},{blocks:true,text:false});
-      const chordWords=wordsFrom(rc.data)
+      const asChord=(ws,scaleW)=>ws
         .filter(w=>w.text&&w.text.trim()&&(w.confidence===undefined||w.confidence>40))
         .filter(w=>parseChord(fixChordToken(w.text.trim())))
-        .map(w=>({text:w.text,bbox:w.bbox,kind:'c'}));
+        .map(w=>({text:w.text,bbox:w.bbox,kind:'c',f:scaleW>0?w.bbox.x0/scaleW:-1}));
+      let cwFull=0; try{ cwFull=(await imgFrom(clean)).width; }catch(e){}
+      let chordWords=asChord(wordsFrom(rc.data),cwFull);
+      /* ★ 오선 바로 위 띠만 따로, **낱말 하나씩** 읽는다 — 여기서 대부분이 나온다 */
+      if(geo)try{
+        const band=await chordBandCanvas(shots[j].url,geo);
+        const toks=chordBandTokens(band);
+        const bandWords=[];
+        if(toks.length){
+          const SPARSE=(window.Tesseract&&Tesseract.PSM&&Tesseract.PSM.SPARSE_TEXT)||'11';
+          await wChord.setParameters({tessedit_pageseg_mode:'8'});   // 한 낱말짜리 그림
+          for(const tk of toks){
+            let txt='';
+            try{ const r=await wChord.recognize(tk.url,{},{blocks:true,text:true}); txt=(r.data.text||'').trim(); }catch(e){}
+            const parts=splitChordRun(txt);
+            parts.forEach((c,ci)=>bandWords.push({
+              text:c,kind:'c',f:tk.f+(parts.length>1?tk.fw*ci/parts.length:0),
+              bbox:{x0:0,x1:1,y0:0,y1:1}}));
+          }
+          await wChord.setParameters({tessedit_pageseg_mode:SPARSE});
+        }
+        if(bandWords.length){
+          /* 띠에서 읽은 것을 기준으로 삼고, 통짜 그림에서 읽은 것 중 **겹치지 않는 것만** 더한다.
+             둘 다 놓치는 자리가 서로 다르므로 합치면 회수가 올라간다. */
+          const merged=bandWords.slice();
+          for(const w of chordWords)
+            if(w.f>=0&&!merged.some(m=>Math.abs(m.f-w.f)<0.025))merged.push(w);
+          /* 좌표계를 **통짜 그림(clean) 픽셀**로 통일한다 — 아래 wordsToChart 와
+             addGeomMelody 가 그 단위로 가사와 칸을 맞춘다. 코드는 늘 맨 위 줄이므로
+             y 는 0~30 으로 고정해 준다(그래야 가사보다 확실히 위로 묶인다). */
+          const gh=Math.max(14,Math.round((cwFull||1000)*0.02));
+          chordWords=merged.sort((a,b)=>a.f-b.f)
+            .map(w=>({text:w.text,kind:'c',
+                      bbox:{x0:w.f*(cwFull||1000),x1:w.f*(cwFull||1000)+gh*1.5,y0:0,y1:gh}}));
+        }
+      }catch(e){}
       say&&say(tag2+'가사를 읽는 중…');
       const rl=await wLyric.recognize(clean,{},{blocks:true,text:false});
       const rawLyric=wordsFrom(rl.data).filter(w=>w.text&&w.text.trim());
@@ -4344,9 +4815,10 @@ async function ocrDraft(photoUrls,say){
          맞춰 코드 줄을 다시 짭는데, 그때 문자 인식이 읽은 코드를 **어느 마디에 놓을지**
          가로 자리(x)로 정해야 하기 때문이다. 글자 칸 수로 맞추는 것보다 훨씬 튼튼하다.
          cw = 그 bbox 들이 사는 그림의 폭(비율로 바꾸려면 필요하다). */
-      let cw=0; try{ cw=(await imgFrom(clean)).width; }catch(e){}
+      const cw=cwFull||0;
       sys.push({txt,url:shots[j].url,page:i,t0:shots[j].t0,t1:shots[j].t1,whole:shots[j].whole,
-                cw,words:{c:chordWords,l:lyricWords,v:verseWords}});
+                cw,geo:(geo&&geo.notes&&geo.notes.length>=3)?geo:null,
+                words:{c:chordWords,l:lyricWords,v:verseWords}});
     }
   }
   return {text:sys.map(s=>s.txt).filter(t=>t.trim()).join('\n\n'),chordN,lyricN,sys,key:key1};
@@ -4516,7 +4988,17 @@ function origGeomOf(geo){
     if(b-a<0.02)continue;
     let i0=-1,cnt=0;
     nx.forEach((x,j)=>{ if(x>=a&&x<b){ if(i0<0)i0=j; cnt++; } });
-    if(!cnt)continue;
+    /* ★ 음표를 하나도 못 찾은 마디도 **마디로 남긴다**(v57) — 단, 진짜 마디선 두 개
+       사이에 낀 것만. 예전에는 통째로 버렸는데, 그러면 그 단의 마디 수가 실제보다 하나
+       적어져 사진 위 마디 표시가 그 뒤로 전부 한 칸씩 밀렸다(실측: 온음표 한 마디를
+       놓쳐 4마디가 3마디가 됐다). 쉼표 한 마디로 두면 마디 수가 악보와 같아진다.
+       맨 앞·맨 뒤의 빈 구간은 마디가 아니다(자리표 앞, 마지막 마디선 뒤) — 버린다. */
+    if(!cnt){
+      const inner=i>0&&i<edges.length-2;
+      if(!inner||b-a<0.04)continue;
+      seg.push({x0:a,x1:b,i0:-1,cnt:0,pb:[0,1],px:[a,b]});
+      continue;
+    }
     /* 마디 **안에서** '몇 박째 → 가로 어디'를 따로 갖고 있는다(v53). 마디 경계는
        재생 타임라인이 정확히 알고 있으므로(origBeats), 여기서 쓰는 음표 길이 어림이
        조금 틀려도 **오차가 그 마디를 넘어가지 않는다** — 마디선마다 저절로 맞춰진다. */
