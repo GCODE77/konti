@@ -311,7 +311,7 @@ window.onerror=function(msg,src,ln){
    예) const SCAN_ENDPOINT = "https://konti-scan.내계정.workers.dev";
 */
 const SCAN_ENDPOINT = "";
-const APP_VER = "53";
+const APP_VER = "54";
 /* file:// 나 content:// 로 열면 브라우저가 외부 호출을 막는다(CORS). 미리 알려준다. */
 const LOCAL_FILE = !/^https?:$/.test(location.protocol);
 /* Claude 앱처럼 iframe 안에서 실행 중이면 키 없이도 인식이 통한다. */
@@ -2668,7 +2668,19 @@ async function prepImage(f){
   /* 단 단위로 잘라 보낼 원본. 예전에는 위의 1600px 사본을 다시 잘라 썼는데, 이미 줄여 놓은
      그림에서 오려낸 것이라 오선 간격이 몇 픽셀밖에 안 남아 음높이를 볼 수가 없었다.
      음높이 인식은 "음표 머리가 어느 줄/칸에 놓였나"를 보는 일이라 이 해상도가 곧 정확도다. */
-  const hiOut=fitCanvas(img,3000);
+  /* ★★ 재는 사본은 **보정을 거치면 안 된다**(v54에서 고친 진짜 범인).
+     fitCanvas 는 글자를 읽히기 좋게 하려고 `contrast(1.25) brightness(1.05)` 를 건다.
+     그런데 오선은 1~2px 짜리 얇은 회색 선이라, 밝기를 조금만 올려도 **배경에 묻혀 사라진다.**
+     실측: 보정한 사본에서는 splitSystems 가 단을 **하나도 못 찾고**(null), staffGeom 도
+     단마다 null 이었다. 보정을 안 거치는 showUrl 만 혼자 잘 돌아가고 있었다.
+     그래서 글자를 읽는 사본(url·ocrUrl)과 **재는 사본(hiUrl)을 갈라** 둔다. */
+  const hiOut=(()=>{
+    const sc=Math.min(1,3000/Math.max(img.width,img.height));
+    const cv=document.createElement('canvas');
+    cv.width=Math.round(img.width*sc); cv.height=Math.round(img.height*sc);
+    cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
+    return cv.toDataURL('image/jpeg',.95);
+  })();
   /* 화면에 그대로 비춰 줄 사본. 보내는 사본(url)은 흑백·고대비로 만들어 놓은 것이라
      사람이 보기엔 원본이 낫다. localStorage 에 넣을 수 있는 크기로 줄여 둔다. */
   const showOut=(()=>{
@@ -3450,6 +3462,157 @@ function keySigSet(chord){
   for(let i=0;i<cnt;i++)out[ord[i]]=sgn;
   return out;
 }
+/* ============ 멜로디에서 코드를 짐작한다 (v54) ============
+   사용자 제안 그대로 — *"AI로 굳이 안 읽어도, 네가 마디로 음표 높이를 읽었다고 하면
+   코드 못 읽거나 식별 어려운 것은 마디의 음을 보고 무슨 코드가 들어가는지 짐작해서 넣으면
+   되잖아!"* 맞는 말이다. 음악에서 이걸 '화성 붙이기'라고 부르고, 찬송가·복음성가처럼
+   조성이 뚜렷하고 화성이 단순한 곡에서는 규칙만으로도 꽤 맞는다.
+   코드 기호를 **글자로 읽는 것**(OCR)은 ♯ 하나 때문에 무너지지만, 코드를 **음에서 되짚는
+   것**은 우리가 이미 픽셀로 재 놓은 값만 쓰므로 AI도 OCR도 필요 없다.
+
+   ★ 마디마다 따로 제일 좋은 코드를 고르면 안 된다. 화성은 앞뒤 관계가 절반이라,
+     낱개로 고르면 "마디마다는 그럴듯한데 이어 놓으면 음악이 아닌" 결과가 나온다.
+     그래서 마디 점수(그 마디 음이 코드음인가)와 이음 점수(흔한 진행인가)를 함께 놓고
+     **곡 전체를 한 번에** 최적으로 고른다(비터비).
+   ★ 이건 어디까지나 **짐작이다.** 원보와 다를 수 있다는 것을 숨기지 말 것 —
+     짐작한 코드는 화면에 따로 표시하고(.guess), 결과 안내에도 몇 개인지 밝힌다. */
+
+/* 그 조에서 실제로 쓰는 코드만 후보로 둔다. 후보를 늘리면 점수가 비슷한 것들이 많아져
+   오히려 더 많이 틀린다 — vii°(감3화음)은 찬송가에서 드물어 넣지 않는다. */
+function chordCandidates(keyPc,minor){
+  const T=mod(keyPc);
+  const mk=(deg,off,sfx,ivs)=>({deg,root:mod(T+off),sfx,pcs:ivs.map(v=>mod(T+v))});
+  if(minor)return [
+    mk(0,0,'m',[0,3,7]),      // i
+    mk(2,3,'', [3,7,10]),     // III
+    mk(3,5,'m',[5,8,0]),      // iv
+    mk(4,7,'', [7,11,2]),     // V  (화성단음계 — 단조 종지의 기본)
+    mk(4,7,'m',[7,10,2]),     // v  (자연단음계)
+    mk(5,8,'', [8,0,3]),      // VI
+    mk(6,10,'',[10,2,5])      // VII
+  ];
+  return [
+    mk(0,0,'', [0,4,7]),      // I
+    mk(1,2,'m',[2,5,9]),      // ii
+    mk(2,4,'m',[4,7,11]),     // iii
+    mk(3,5,'', [5,9,0]),      // IV
+    mk(4,7,'', [7,11,2]),     // V
+    mk(5,9,'m',[9,0,4]),      // vi
+    mk(4,7,'7',[7,11,2,5])    // V7
+  ];
+}
+const SCALE_MAJ=[0,2,4,5,7,9,11], SCALE_MIN=[0,2,3,5,7,8,10];
+
+/* 이 마디의 음들이 이 코드에 얼마나 맞는가 (−1 ~ +1.3).
+   ★ 마디 첫 음(강박)에 가중치를 크게 준다 — 화성을 정하는 건 강박이다.
+     지나가는 음(비화성음)은 대개 약박에 있고, 그걸 같은 무게로 세면 엉뚱한 코드가 이긴다. */
+function chordFit(notes,c,keyPc,minor){
+  if(!notes||!notes.length)return 0;
+  const scale=minor?SCALE_MIN:SCALE_MAJ;
+  let s=0,w=0;
+  notes.forEach((nt,j)=>{
+    let k=Math.max(0.1,nt.beats||1);
+    if(j===0)k*=1.7; else if(j===notes.length-1)k*=1.2;
+    w+=k;
+    const pc=mod(nt.midi), i=c.pcs.indexOf(pc);
+    if(i===0)s+=k*1.30;            // 근음
+    else if(i===1)s+=k*1.15;       // 3음 — 장단을 가르는 음이라 근음 다음으로 세다
+    else if(i===2)s+=k*1.00;       // 5음
+    else if(i>2)s+=k*0.80;         // 7음
+    /* 코드음이 아니어도 **그 조의 음계 안**이면 지나가는 음일 수 있으니 덜 깎고,
+       음계 밖의 음이면 그 코드가 아니라는 강한 증거다. */
+    else s+=k*(scale.indexOf(mod(pc-keyPc))>=0?-0.50:-1.05);
+  });
+  return w>0?s/w:0;
+}
+/* 흔한 화성 진행에 가산점, 어색한 진행에 감점 (앞도수>뒤도수). 전부 음악 이론의 관습이다. */
+const PROG_GOOD={'4>0':.55,'3>0':.40,'1>4':.50,'3>4':.45,'5>1':.40,'5>3':.35,
+                 '0>3':.35,'0>4':.35,'0>5':.30,'5>4':.30,'3>1':.25,'2>3':.30,'6>2':.35,'4>5':.20};
+const PROG_BAD ={'4>3':-.45,'1>0':-.30,'2>0':-.30,'5>2':-.25,'6>0':-.20};
+
+/* 읽어 낸 코드를 그 조의 몇 도인지로 바꾼다(이음 점수를 매기려면 도수가 필요하다).
+   조성에 없는 코드(차용화음 등)는 가장 가까운 도수로 본다 — 이음 점수에만 쓰므로 충분하다. */
+function chordDegree(root,keyPc,minor){
+  const sc=minor?SCALE_MIN:SCALE_MAJ, d=mod(root-keyPc);
+  let bi=0,bd=99;
+  for(let i=0;i<sc.length;i++){ const g=Math.min(mod(sc[i]-d),mod(d-sc[i])); if(g<bd){bd=g;bi=i;} }
+  return bi;
+}
+/* 마디별 음 목록 → 마디별 코드.
+     bars[i] = [{midi,beats}, …]  그 마디에 울리는 멜로디(없으면 빈 배열)
+     opt.fixed[i] = 이미 읽어 낸 코드 객체(있으면 **그대로 둔다**) 또는 null
+   ★ 읽어 낸 코드는 짐작이 절대 이기지 못한다. 읽은 것이 진실이고, 짐작은 빈칸을 메울 뿐이다.
+     그리고 읽은 코드는 **닻** 노릇을 한다 — 그 사이를 잇는 짐작이 음악적으로 맞아떨어진다. */
+function guessChords(bars,keyPc,minor,opt){
+  opt=opt||{};
+  keyPc=mod(keyPc||0);
+  const n=(bars||[]).length; if(!n)return [];
+  const base=chordCandidates(keyPc,minor);
+  const fixed=opt.fixed||[];
+  const TW=opt.progW===undefined?0.9:opt.progW;
+  /* 마디마다 쓸 수 있는 후보 목록. 읽어 낸 마디는 후보가 그 코드 하나뿐이다. */
+  const states=[];
+  for(let t=0;t<n;t++){
+    const f=fixed[t];
+    if(f&&f.root!==undefined)
+      states.push([{deg:chordDegree(f.root,keyPc,minor),root:f.root,sfx:f.suffix||'',
+                    bass:(f.bass===undefined?null:f.bass),pcs:[],fix:true}]);
+    else states.push(base);
+  }
+  /* 마디 점수 */
+  const em=states.map((st,t)=>st.map(c=>c.fix?0:chordFit(bars[t],c,keyPc,minor)));
+  /* 처음과 끝은 으뜸화음이기 쉽다 — 특히 마지막 마디는 거의 예외가 없다(종지) */
+  states[0].forEach((c,j)=>{ if(!c.fix&&c.deg===0)em[0][j]+=0.45; });
+  if(n>1)states[n-1].forEach((c,j)=>{ if(c.fix)return;
+    if(c.deg===0)em[n-1][j]+=1.20; else if(c.deg===4)em[n-1][j]-=0.35; });
+  if(n>2)states[n-2].forEach((c,j)=>{ if(!c.fix&&c.deg===4)em[n-2][j]+=0.40; });
+  /* 비터비 — 마디마다 따로 고르지 않고 곡 전체를 한 번에 고른다 */
+  const dp=[em[0].slice()], bk=[];
+  for(let t=1;t<n;t++){
+    const m=states[t].length, cur=new Array(m).fill(-Infinity), b=new Array(m).fill(0);
+    for(let j=0;j<m;j++){
+      let best=-Infinity, bi=0;
+      for(let i=0;i<states[t-1].length;i++){
+        const A=states[t-1][i], B=states[t][j], key=A.deg+'>'+B.deg;
+        let tr=(PROG_GOOD[key]||0)+(PROG_BAD[key]||0);
+        if(A.deg===B.deg)tr+=(A.sfx===B.sfx?0.12:-0.05);
+        const v=dp[t-1][i]+TW*tr;
+        if(v>best){best=v;bi=i;}
+      }
+      cur[j]=best+em[t][j]; b[j]=bi;
+    }
+    dp.push(cur); bk.push(b);
+  }
+  let bi=0; for(let j=1;j<dp[n-1].length;j++)if(dp[n-1][j]>dp[n-1][bi])bi=j;
+  const path=new Array(n); path[n-1]=bi;
+  for(let t=n-1;t>0;t--)path[t-1]=bk[t-1][path[t]];
+  return path.map((j,t)=>{ const c=states[t][j];
+    return {root:c.root,suffix:c.sfx,bass:c.bass===undefined?null:c.bass,guess:!c.fix,deg:c.deg}; });
+}
+/* 코드를 하나도 못 읽었을 때 멜로디만으로 조를 어림한다(Krumhansl 음고 프로파일).
+   음 길이를 가중치로 음고류 히스토그램을 만들고 24개 조의 프로파일과 견준다. */
+const KS_MAJ=[6.35,2.23,3.48,2.33,4.38,4.09,2.52,5.19,2.39,3.66,2.29,2.88];
+const KS_MIN=[6.33,2.68,3.52,5.38,2.60,3.53,2.54,4.75,3.98,2.69,3.34,3.17];
+function guessKeyFromMelody(notes){
+  const h=new Array(12).fill(0);
+  for(const n of (notes||[])){ if(n.midi===undefined)continue; h[mod(n.midi)]+=Math.max(0.1,n.beats||1); }
+  const tot=h.reduce((a,b)=>a+b,0); if(!tot)return {pc:0,minor:false};
+  const last=(notes||[]).filter(n=>n.midi!==undefined).pop();
+  const corr=(prof,rot)=>{
+    let s=0; for(let i=0;i<12;i++)s+=(h[mod(i+rot)]/tot)*prof[i];
+    return s;
+  };
+  let best={pc:0,minor:false,s:-1};
+  for(let r=0;r<12;r++){
+    for(const mi of [false,true]){
+      let s=corr(mi?KS_MIN:KS_MAJ,r);
+      if(last&&mod(last.midi)===r)s+=0.35;     // 곡은 으뜸음으로 끝나는 일이 압도적으로 많다
+      if(s>best.s)best={pc:r,minor:mi,s};
+    }
+  }
+  return {pc:best.pc,minor:best.minor};
+}
+
 /* 잰 음높이를 믿어도 되는가 — 노래 선율로서 말이 되는지만 본다(v53).
    왜 필요한가: 실제 사진에서는 가사 글자·코드 글자·조표의 #이 음표 후보로 섞여 들어올 수
    있다. 그런 값이 섞인 목록을 **프롬프트에 "우리가 센 음이름"이라고 넣으면 AI 를 오히려
@@ -3469,7 +3632,17 @@ function geomSane(notes){
   const lo=Math.min.apply(null,st), hi=Math.max.apply(null,st);
   return (hi-lo)<=21;                                   // 한 단의 음역이 3옥타브를 넘을 수 없다
 }
-function geomMelodyLine(geo,perBar,sig){
+/* 잰 음표 하나를 실제 음높이(midi)로. 조표(sig)를 입혀야 Bb조 찬송가가 B 로 울리지 않는다. */
+function geomMidi(name,sig){
+  const m=/^([A-G])(-?\d+)$/.exec(name||''); if(!m)return null;
+  const a=(sig&&sig[m[1]])==='#'?1:(sig&&sig[m[1]])==='b'?-1:0;
+  return (parseInt(m[2],10)+1)*12+LET_SEMI[m[1]]+a;
+}
+/* 잰 음표로 ♪ 줄을 만든다.
+   ★ 마디선은 **사진에서 잰 마디선(seg)** 을 그대로 쓴다(v54). 예전에는 음표 길이를 더해
+     박자표에 닿을 때마다 끊었는데, 길이를 하나만 잘못 재도 그 뒤 마디가 전부 밀렸다.
+     마디선은 오선을 꿰뚫는 세로줄이라 음표 길이보다 훨씬 정확하게 잡힌다. */
+function geomMelodyLine(geo,perBar,sig,seg){
   if(!geo||!geo.notes||geo.notes.length<3)return '';
   const per=perBar||4;
   const nts=geo.notes.map(n=>{
@@ -3477,22 +3650,30 @@ function geomMelodyLine(geo,perBar,sig){
     return {tok:m?(m[1]+((sig&&sig[m[1]])||'')+m[2]):String(n.name||''),
             beats:(n.beats>0?n.beats:1)};
   });
-  const total=+nts.reduce((a,n)=>a+n.beats,0).toFixed(4);
-  const k=Math.round(total/per);
-  const bars=!!geo.durSure&&k>=1&&Math.abs(total-k*per)<=0.13;
-  const out=[]; let acc=0;
-  for(const n of nts){
-    out.push(n.tok+':'+n.beats);
-    if(bars){
-      acc=+(acc+n.beats).toFixed(4);
-      if(acc>=per-1e-6){ out.push('|'); acc=Math.max(0,+(acc-per).toFixed(4)); }
+  const out=[];
+  if(seg&&seg.length>1){
+    seg.forEach((sg,si)=>{
+      for(let j=sg.i0;j<sg.i0+sg.cnt;j++){ const n=nts[j]; if(n)out.push(n.tok+':'+n.beats); }
+      if(si<seg.length-1)out.push('|');
+    });
+  }else{
+    const total=+nts.reduce((a,n)=>a+n.beats,0).toFixed(4);
+    const k=Math.round(total/per);
+    const bars=!!geo.durSure&&k>=1&&Math.abs(total-k*per)<=0.13;
+    let acc=0;
+    for(const n of nts){
+      out.push(n.tok+':'+n.beats);
+      if(bars){
+        acc=+(acc+n.beats).toFixed(4);
+        if(acc>=per-1e-6){ out.push('|'); acc=Math.max(0,+(acc-per).toFixed(4)); }
+      }
     }
   }
   while(out.length&&out[out.length-1]==='|')out.pop();
   return out.length?'♪ '+out.join(' '):'';
 }
-/* OCR 초안(코드·가사)에 픽셀로 잰 멜로디를 얹는다. Tesseract 를 다시 돌리지 않고
-   ocrDraft 가 이미 잘라 둔 단 그림만 다시 재므로 싸다(추가 API 호출 0회). */
+/* OCR 초안(코드·가사)에 픽셀로 잰 멜로디를 얹고, **코드가 빈 마디를 멜로디로 채운다**(v54).
+   Tesseract 를 다시 돌리지 않고 ocrDraft 가 이미 잘라 둔 단 그림만 다시 재므로 싸다. */
 async function addGeomMelody(draft,say){
   if(!draft||!draft.sys||!draft.sys.length)return draft;
   const N=draft.sys.length;
@@ -3503,16 +3684,72 @@ async function addGeomMelody(draft,say){
     try{ const geo=await staffGeom(s.url); if(geo&&geo.notes.length>=3)s.geo=geo; }
     catch(e){ /* 한 단을 못 재도 나머지는 그대로 간다 */ }
   }
+  /* 조. 읽어 낸 코드가 있으면 그걸 쓰고(가장 믿을 만하다), 하나도 없으면 멜로디로 어림한다.
+     ★ 코드를 하나도 못 읽었으면 조표를 알 길이 없어 멜로디가 전부 제자리음(C조)으로 적힌다.
+       그래도 **조 안에서의 관계는 맞으므로** 사용자가 이조 한 번으로 맞출 수 있다. */
+  let key=draft.key?{pc:draft.key.root,minor:/^m(?!aj)/.test(draft.key.suffix||'')}:null;
   const sig=keySigSet(draft.key);
-  let melN=0, melSys=0, melSure=0;
+  if(!key){
+    const all=[];
+    draft.sys.forEach(s=>{ if(s.geo&&geomSane(s.geo.notes))
+      s.geo.notes.forEach(n=>{ const mm=geomMidi(n.name,sig); if(mm!==null)all.push({midi:mm,beats:n.beats||1}); }); });
+    key=all.length>=6?guessKeyFromMelody(all):{pc:0,minor:false};
+  }
+  let melN=0, melSys=0, melSure=0, guessN=0, keepN=0;
   const pages=draft.sys.map(s=>{
-    const mel=(s.geo&&geomSane(s.geo.notes))?geomMelodyLine(s.geo,P.beats,sig):'';
+    const ok=s.geo&&geomSane(s.geo.notes);
+    const og=ok?origGeomOf(s.geo):null;
+    const seg=(og&&og.seg&&og.seg.length>1)?og.seg:null;
+    const mel=ok?geomMelodyLine(s.geo,P.beats,sig,seg):'';
     if(mel){ melN+=s.geo.notes.length; melSys++; if(s.geo.durSure)melSure++; }
-    return [mel,s.txt].filter(t=>t&&t.trim()).join('\n');
+    /* 마디선을 못 찾았으면 코드 줄을 새로 짜지 않는다 — 어느 마디인지 모르는 채로
+       코드를 늘어놓으면 없느니만 못하다. 그때는 OCR 이 읽은 줄을 그대로 쓴다. */
+    if(!seg)return (s.out=[mel,s.txt].filter(t=>t&&t.trim()).join('\n'));
+    const w=s.geo.w||1;
+    const bars=seg.map(sg=>{
+      const a=[];
+      for(let j=sg.i0;j<sg.i0+sg.cnt;j++){
+        const mm=geomMidi(s.geo.notes[j].name,sig);
+        if(mm!==null)a.push({midi:mm,beats:s.geo.notes[j].beats||1});
+      }
+      return a;
+    });
+    /* 읽어 낸 코드를 가로 자리로 마디에 배정한다 — 글자 칸이 아니라 **사진 위 x** 로 맞춘다 */
+    const cws=((s.words&&s.words.c)||[]).map(cw2=>({
+      ch:parseChord(fixChordToken((cw2.text||'').trim())),
+      f:(s.cw>0?cw2.bbox.x0/s.cw:-1)})).filter(o=>o.ch&&o.f>=0);
+    const fixed=seg.map(sg=>{
+      const hit=cws.filter(o=>o.f>=sg.x0-0.005&&o.f<sg.x1);
+      return hit.length?hit[0].ch:null;
+    });
+    const got=guessChords(bars,key.pc,key.minor,{fixed});
+    got.forEach(c=>{ if(c.guess)guessN++; else keepN++; });
+    /* 코드 줄을 다시 짠다. 가사와 칸을 맞춰야 하므로 **원래 낱말 배치기(wordsToChart)** 에
+       코드를 마디 시작 자리의 낱말로 끼워 넣는다 — 그러면 가사 칸이 저절로 맞는다. */
+    /* 새로 짜는 코드 줄은 **반드시 가사 줄보다 위에** 높여야 한다.
+       wordsToChart 는 낱말을 y 로 줄을 묶고, parseChart 는 코드 줄 **바로 아랫줄**을
+       가사로 붙인다. 그래서 y 를 잘못 주면 코드가 가사 아래로 가 버리고, 그럼 코드에
+       엉뚱한 가사가 붙는다(실측으로 잡았다 — 2절 가사 줄이 코드 위로 올라갔다). */
+    const ys=[].concat(((s.words&&s.words.c)||[]).map(o=>o.bbox.y0),
+                       ((s.words&&s.words.l)||[]).map(o=>o.bbox.y0),
+                       ((s.words&&s.words.v)||[]).map(o=>o.bbox.y0));
+    const topY=ys.length?Math.min.apply(null,ys):0;
+    const cy={y0:topY-24,y1:topY-6};
+    const cwords=[];
+    seg.forEach((sg,i)=>{
+      const x=Math.round(sg.x0*(s.cw||w));
+      if(i)cwords.push({text:'|',bbox:{x0:x-2,x1:x,y0:cy.y0,y1:cy.y1},kind:'c'});
+      cwords.push({text:showChord(got[i],0,PREF[mod(key.pc)]||'sharp'),
+                   bbox:{x0:x+2,x1:x+30,y0:cy.y0,y1:cy.y1},kind:'c'});
+    });
+    const txt=wordsToChart(cwords.concat((s.words&&s.words.l)||[]).concat((s.words&&s.words.v)||[]));
+    /* 다시 짜인 단 텍스트를 남긴다 — 사진 하이라이트용 단별 코드 개수(ch)는
+       예전 OCR 텍스트가 아니라 **이걸** 세야 마디가 맞는다. */
+    return (s.out=[mel,txt].filter(t=>t&&t.trim()).join('\n'));
   }).filter(t=>t.trim());
-  return Object.assign({},draft,{text:pages.join('\n\n'),melN,melSys,melSure,sigN:Object.keys(sig).length});
+  return Object.assign({},draft,{text:pages.join('\n\n'),melN,melSys,melSure,
+    sigN:Object.keys(sig).length,guessN,keepN,key2:key});
 }
-
 /* 오선이 모인 줄(단)을 찾아 한 단씩 잘라낸다.
    한 번에 보는 음표가 줄면 음높이 인식이 훨씬 정확해진다.
    반드시 가장 큰 사본(prepImage 의 hiUrl)에서 잘라야 한다 — 줄여 놓은 그림에서 오려내면
@@ -3526,14 +3763,26 @@ function splitSystems(url,targetW){
         const cv=document.createElement('canvas'); cv.width=W; cv.height=H;
         const ctx=cv.getContext('2d'); ctx.drawImage(img,0,0);
         const d=ctx.getImageData(0,0,W,H).data;
-        const rows=new Float32Array(H);
+        /* ★ 잉크 문턴값을 고정으로 두면 안 된다(v54에서 고친 버그).
+           예전에는 "밝기 150 미만 = 잉크, 그런 칸이 가로로 45% 넘으면 오선" 이었다.
+           그런데 prepImage 의 fitCanvas 가 **밝기를 1.05배 올려** 넣어서, 얇은 회색 오선이
+           150 위로 올라가 버렸다. 그 결과 **실제 사진에서는 단을 하나도 못 찾고**(null)
+           쪽 전체를 통짜로 넘겼고, 그러면 음표 측정(staffGeom)이 통째로 꺼진다 —
+           조용한 실패라 눈치채기 어려웠다(showUrl 은 보정을 안 거쳐서 혼자 잘 돌았다).
+           지금은 그림마다 문턴값을 직접 정하고(오츠), 오선 판정도 **가장 진한 행에 대한
+           비율**로 본다. 사진 밝기가 어떻든 같은 결과가 나오게 하는 게 핵심이다. */
+        const hist=new Uint32Array(256);
+        for(let i=0;i<d.length;i+=4)hist[(d[i]*.3+d[i+1]*.59+d[i+2]*.11)|0]++;
+        const th=Math.min(215,Math.max(60,otsuTh(hist,W*H)));
+        const rows=new Float32Array(H); let rmax=0;
         for(let y=0;y<H;y++){
           let c=0,o=y*W*4;
           for(let x=0;x<W;x++){const i=o+x*4;
-            if((d[i]*.3+d[i+1]*.59+d[i+2]*.11)<150)c++;}
-          rows[y]=c/W;
+            if((d[i]*.3+d[i+1]*.59+d[i+2]*.11)<th)c++;}
+          rows[y]=c/W; if(rows[y]>rmax)rmax=rows[y];
         }
-        const isLine=y=>rows[y]>0.45;              // 가로로 길게 이어진 줄 = 오선
+        const lineTh=Math.max(0.28,Math.min(0.45,rmax*0.55));
+        const isLine=y=>rows[y]>lineTh;            // 가로로 길게 이어진 줄 = 오선
         const bands=[]; let st=-1;
         for(let y=0;y<H;y++){
           if(isLine(y)){ if(st<0)st=y; }
@@ -3573,9 +3822,10 @@ function splitSystems(url,targetW){
           c2.width=Math.round(W*sc); c2.height=Math.round(hh*sc);
           const x2=c2.getContext('2d');
           x2.fillStyle='#fff'; x2.fillRect(0,0,c2.width,c2.height);
-          x2.filter='grayscale(1) contrast(1.2)';
+          /* 여기서도 대비를 올리지 않는다(v54) — 이 조각은 staffGeom 이 **재는** 그림이다.
+             얇은 오선을 살려 보내는 게 먼저다. 이진화는 staffGeom 이 오츠로 알아서 한다. */
           x2.drawImage(img,0,top,W,hh,0,0,c2.width,c2.height);
-          const u=c2.toDataURL('image/jpeg',.92);
+          const u=c2.toDataURL('image/jpeg',.95);
           /* t0/t1: 이 단이 원본 사진에서 차지한 세로 구간(0~1). 원본을 어떤 크기로 보여 주든
              비율은 그대로라, 사진 위에 하이라이트를 얹을 때 이 값을 그대로 쓴다. */
           out.push({url:u,b64:u.split(',')[1],t0:top/H,t1:bot/H});
@@ -3740,7 +3990,8 @@ function wordsToChart(words){
     for(const w of L.items){
       /* 절 번호 1은 표시하지 않음(코드 붙은 기본 절), 2 이상만 "2) " 형식으로 —
          나머지 파서가 그 형식으로 다음 절 가사를 알아본다. */
-      const text=isChord?fixChordToken(w.t):(w.kind==='v'?(w.t==='1'?'':w.t+') '):w.t);
+      /* '|' 는 마디선 표시다 — 코드로 고치려 들면 문자가 없어져 마디가 사라진다(v54) */
+      const text=isChord?(w.t==='|'?'|':fixChordToken(w.t)):(w.kind==='v'?(w.t==='1'?'':w.t+') '):w.t);
       if(!text)continue;
       const col=Math.round((w.x0-minX)/charW);
       while(vcol<col){line+=' ';vcol++;}
@@ -3824,7 +4075,13 @@ async function ocrDraft(photoUrls,say){
         key1=parseChord(fixChordToken(first.text.trim()))||null;
       }
       const txt=wordsToChart(chordWords.concat(lyricWords).concat(verseWords));
-      sys.push({txt,url:shots[j].url,page:i,t0:shots[j].t0,t1:shots[j].t1,whole:shots[j].whole});
+      /* 낱말들을 그대로 들고 간다(v54). 나중에 addGeomMelody 가 **사진에서 재 마디선**에
+         맞춰 코드 줄을 다시 짭는데, 그때 문자 인식이 읽은 코드를 **어느 마디에 놓을지**
+         가로 자리(x)로 정해야 하기 때문이다. 글자 칸 수로 맞추는 것보다 훨씬 튼튼하다.
+         cw = 그 bbox 들이 사는 그림의 폭(비율로 바꾸려면 필요하다). */
+      let cw=0; try{ cw=(await imgFrom(clean)).width; }catch(e){}
+      sys.push({txt,url:shots[j].url,page:i,t0:shots[j].t0,t1:shots[j].t1,whole:shots[j].whole,
+                cw,words:{c:chordWords,l:lyricWords,v:verseWords}});
     }
   }
   return {text:sys.map(s=>s.txt).filter(t=>t.trim()).join('\n\n'),chordN,lyricN,sys,key:key1};
@@ -3835,20 +4092,36 @@ async function runOCR(){
   say('OCR로 읽는 중…');
   try{
     /* 멜로디는 OCR(글자 인식)이 아니라 오선을 픽셀로 재서 얻는다 — 키가 없어도 나온다(v51) */
-    const {text:txt,chordN,lyricN,melN,melSys}=await addGeomMelody(
-      await ocrDraft(S.photos.map(p=>p.ocrUrl||p.url),say),say);
+    const draft=await addGeomMelody(
+      await ocrDraft(S.photos.map(p=>p.hiUrl||p.ocrUrl||p.url),say),say);
+    const {text:txt,chordN,lyricN,melN,melSys,keepN,guessN,key2}=draft;
     if(!txt.trim())throw new Error('읽어낸 내용이 없습니다');
-    S.raw=txt; S.semis=0; S.verse=1; stopPlay(); reparse(); renderAll(); addHistory();
+    S.raw=txt; S.semis=0; S.verse=1; stopPlay();
+    /* AI 없이 읽었어도 **원본 사진 보기는 똑같이 쓸 수 있어야 한다**(v54에서 빠져 있던 것).
+       사장님이 "핵심기술"이라 한 사진 위 마디 표시·건반이 여기 달려 있는데, 이 경로만
+       S.orig 를 안 만들어서 AI 없이 읽으면 그 화면이 통째로 없었다.
+       단마다 이미 오선을 재 놨으므로(geo) 마디 상자까지 그대로 나온다. */
+    const rec=(draft.sys||[]).map(s=>({s,t:s.out||s.txt||''})).filter(o=>o.t.trim())
+      .map(({s,t})=>({page:s.page||0,t0:s.t0||0,t1:(s.t1===undefined?1:s.t1),
+                      w:sysWeight(t),ch:sysChords(t),whole:!!s.whole,geo:s.geo||null}));
+    S.orig=buildOrig(rec.length?rec:S.photos.map((ph,pi)=>({page:pi,t0:0,t1:1,w:1,whole:true})));
+    if(hasSheet())S.mode='sheet';
+    reparse(); renderAll(); addHistory();
     const box=$('scanstate');
     if(box){
       box.className='callout ok';
-      box.innerHTML='<b>코드 '+chordN+'개, 가사 '+lyricN+'덩어리'
-        +(melN?', 멜로디 '+melN+'음('+melSys+'단)':'')+'을 읽었습니다'
-        +(S.photos.length>1?' ('+S.photos.length+'쪽)':'')+'.</b> '
-        +'코드·가사는 키 없이 글자만 읽은 것이라 빠지거나 틀린 게 많습니다. 원본과 비교하며 <b>직접 입력</b>에서 고쳐 주세요.'
-        +(melN?' 멜로디는 오선 위 음표 자리를 픽셀로 잰 것이라 자리·길이는 정확하지만, '
-              +'<b>조표는 첫 코드로 추정</b>했고 마디 안 임시표(#/b)와 쉼표는 반영되지 않습니다.'
-              :' 오선을 찾지 못해 멜로디(음표)는 읽지 못했습니다.');
+      const keyNm=key2?nm(key2.pc,'sharp')+(key2.minor?'m':''):'';
+      box.innerHTML='<b>멜로디 '+(melN||0)+'음'+(melSys?'('+melSys+'단)':'')
+        +', 코드 '+((keepN||0)+(guessN||0))+'개'+(keyNm?' · '+keyNm+'조':'')+'</b>'
+        +(S.photos.length>1?' ('+S.photos.length+'쪽)':'')+'. AI 없이 읽었습니다.<br>'
+        +(melN?'<b>음표는 잰 것입니다</b> — 오선 위 자리와 마디선을 픽셀로 재서 정했습니다. '
+              +'다만 마디 안 임시표(#/b)와 쉼표는 반영되지 않습니다.'
+              :'오선을 찾지 못해 음표는 읽지 못했습니다.')
+        +(guessN?'<br><b>코드 '+guessN+'개는 멜로디를 보고 짐작한 것입니다</b>'
+              +(keepN?'(글자로 읽어 낸 '+keepN+'개는 그대로 두었습니다)':'')
+              +'. 그 마디 음에 어울리는 코드를 고른 것이라 <b>원보와 다를 수 있습니다</b> — '
+              +'틀린 데는 <b>직접 입력</b>에서 고쳐 주세요.':'')
+        +'<br>가사는 글자 인식이라 빠지거나 틀린 게 많습니다.';
     }
     toast('OCR로 읽었습니다. 내용을 확인해 고쳐 주세요.');
   }catch(err){
@@ -4352,7 +4625,7 @@ async function runScan(){
     let ocrHint='';
     if(P.ocrBoost!==false){
       try{
-        ocrResult=await ocrDraft(S.photos.map(p=>p.ocrUrl||p.url),m=>say('OCR로 초안 대조 중… '+m));
+        ocrResult=await ocrDraft(S.photos.map(p=>p.hiUrl||p.ocrUrl||p.url),m=>say('OCR로 초안 대조 중… '+m));
         if(ocrResult.text.trim())ocrHint='\n\n참고용 OCR 초안(문자 인식 결과라 오타·오류가 있을 수 있습니다. '
           +'코드 기호나 헷갈리는 글자를 구분할 때만 참고하고, 실제 내용은 항상 사진 이미지를 기준으로 판단하세요):\n---\n'
           +ocrResult.text+'\n---';
@@ -4523,16 +4796,17 @@ async function ocrFallback(existing,say,fail,err){
   try{
     say((perDay?'하루 한도 소진':'분당 한도에 걸림')+' — AI 없이 읽는 중…');
     let draft=(existing&&existing.sys&&existing.sys.length)?existing
-             :await ocrDraft(S.photos.map(p=>p.ocrUrl||p.url),say);
+             :await ocrDraft(S.photos.map(p=>p.hiUrl||p.ocrUrl||p.url),say);
     draft=await addGeomMelody(draft,say);
-    const {text:txt,chordN,lyricN,melN,melSys}=draft;
+    const {text:txt,chordN,lyricN,melN,melSys,keepN,guessN}=draft;
     if(!txt||!txt.trim())throw new Error('AI 없이도 읽어낸 내용이 없습니다');
     S.raw=txt; S.semis=0; S.verse=1; stopPlay();
     /* 폴백이어도 원본 사진은 그대로 보여 준다 — 깨진 글자보다 원본이 훨씬 쓸모 있다.
        OCR 이 이미 단 단위로 잘라 봤으므로 그 구간을 그대로 하이라이트에 쓴다
        (예전엔 단 정보가 없다고 보고 쪽 전체를 한 덩어리로 잡았다). */
-    const rec=(draft.sys||[]).filter(s=>s.txt&&s.txt.trim())
-      .map(s=>({page:s.page||0,t0:s.t0||0,t1:(s.t1===undefined?1:s.t1),w:sysWeight(s.txt),ch:sysChords(s.txt),whole:!!s.whole,geo:s.geo||null}));
+    const rec=(draft.sys||[]).filter(s=>(s.out||s.txt||'').trim())
+      .map(s=>({page:s.page||0,t0:s.t0||0,t1:(s.t1===undefined?1:s.t1),
+                w:sysWeight(s.out||s.txt),ch:sysChords(s.out||s.txt),whole:!!s.whole,geo:s.geo||null}));
     S.orig=buildOrig(rec.length?rec:S.photos.map((ph,pi)=>({page:pi,t0:0,t1:1,w:1,whole:true})));
     if(hasSheet())S.mode='sheet';   // 인식이 깨져도 사진은 정확하다 — 사진을 기본 화면으로
     reparse(); renderAll(); addHistory();
@@ -4543,7 +4817,8 @@ async function ocrFallback(existing,say,fail,err){
       : '오선을 찾지 못해 <b>멜로디(음표)는 넣지 못했습니다.</b>';
     showResult('warn','한도에 걸려 AI 없이 옮겼습니다',
       why+'.<br>코드·가사는 키 없이 글자만 인식한 것이라 <b>깨져 나오는 경우가 많습니다</b>'
-      +'(코드 '+chordN+'개, 가사 '+lyricN+'덩어리). '+melTxt+'<br>'
+      +'(코드 '+((keepN||0)+(guessN||0))+'개, 가사 '+lyricN+'덩어리). '+melTxt
+      +(guessN?'<br><b>코드 '+guessN+'개는 멜로디를 보고 짐작했습니다</b> — 원보와 다를 수 있습니다.':'')+'<br>'
       +(perDay?'한도가 풀린 뒤':'1~2분 뒤')+' 다시 인식하시면 가사·코드까지 제대로 나옵니다.',
       [{label:(perDay?'직접 입력으로 고치기':'다시 시도'),pri:true,
         fn:()=>{ if(perDay)openPanel('input'); else {openPanel('scan');runScan();} }},
