@@ -3012,7 +3012,11 @@ async function staffGeom(url,clef){
   /* 사용자 요청으로 정확도를 속도보다 앞세운다(v50): 예전 1200px 로는 실제 찬송가
      한 단에서 오선 간격이 13px 밖에 안 나와 **빔 두 겹(16분음표)을 한 겹으로** 셌다.
      2000px 면 20px 가 되어 갈라진다. 느려지지만 호출 수는 그대로다(무료 한도 무관). */
-  const cap=2000, sc=Math.min(1,cap/Math.max(1,img.width));
+  /* ★ 들어온 그림을 **함부로 줄이지 않는다**(v53). 예전에는 무조건 2000px 로 깎았는데,
+     splitSystems 가 오선 간격 22px 에 맞춰 정성껏 키워 보낸 것을 여기서 도로 줄여 버렸다
+     (실측: 2400px 로 보내도 오선 간격이 16.3px 에서 더 올라가지 않았다 — 여기가 범인이었다).
+     메모리 상한만 지키고(4200px) 그 아래로는 받은 그대로 쓴다. */
+  const cap=Math.max(2000,Math.min(4200,img.width)), sc=Math.min(1,cap/Math.max(1,img.width));
   const W=Math.max(1,Math.round(img.width*sc)), H=Math.max(1,Math.round(img.height*sc));
   if(W<200||H<36)return null;
   const cv=document.createElement('canvas'); cv.width=W; cv.height=H;
@@ -3256,7 +3260,7 @@ async function staffGeom(url,clef){
 
   /* 5) 같은 x 에 쌓인 것은 맨 위만 = 소프라노 */
   cands.sort((a,b)=>a.cx-b.cx);
-  const cols=[];
+  let cols=[];
   for(const c of cands){
     const L=cols.length?cols[cols.length-1]:null;
     if(L){
@@ -3279,12 +3283,45 @@ async function staffGeom(url,clef){
      ★ 실측: 실제 찬송가 사진에서 단마다 앞에 가짜 음 2개(자리표 자리 x=42,58)가
        잡혀 개수가 어긋났고, 그 때문에 음높이 보정(v49)까지 통째로 못 쓰고 있었다.
        이 한 줄로 개수가 Audiveris 와 정확히 같아졌다. */
+  /* 조표(#/b)가 자리표 구간을 빠져나와 음표로 남는 일이 있다. 글자 모양으로는 잘 안 갈리지만
+     **간격으로는 확실히 갈린다** — 조표는 서로 한 칸 남짓 붙어 서고, 그다음 진짜 첫 음까지는
+     반드시 뚜렷한 여백이 있다(조판 규칙이다). 그래서 맨 왼쪽(폭의 22% 안)에 **1.6칸보다 촘촘히
+     붙어 선 무리**가 있고 그 뒤로 2.5칸 넘는 여백이 오면, 그 무리는 조표다.
+     ★ 음표에는 이 조건이 안 걸린다 — 가장 촘촘한 16분음표도 2칸 넘게 벌어지고, 무엇보다
+       진짜 음표 무리 뒤에는 이런 큰 여백이 없다. */
+  if(cols.length>2){
+    const xLim2=W*0.22, gapTight=sp*1.6, gapClear=sp*2.5;
+    let k=0;
+    while(k+1<cols.length&&cols[k+1].cx-cols[k].cx<gapTight&&cols[k+1].cx<xLim2)k++;
+    if(k>0&&cols[k].cx<xLim2&&cols[k+1]&&cols[k+1].cx-cols[k].cx>gapClear)cols=cols.slice(k+1);
+  }
+  if(cols.length<3)return null;
   const res=[], devs=[];
   cols.forEach((c,ci)=>{
     const nextX0=(ci+1<cols.length)?cols[ci+1].x0:W;
     const d=headDur(ink,vr,hr,W,c,sp,y0,y1,bot,nextX0,(c.ys||[]).filter(v=>Math.abs(v-c.cy)>sp*0.4),lineRow);
     if(!d.hollow&&!d.stem)return;
     const q=(bot-c.cy)/half, step=Math.round(q);
+    /* ★ 오선 밖으로 나간 음은 **덧줄이 있어야 진짜 음표다**(v53).
+       오선 바깥 자리에는 음표만 있는 게 아니다 — 위에는 **코드 이름(A, E/G♯, F♯m7)** 과
+       조표의 #, 아래에는 **가사 글자**가 있다. 이것들이 음표로 섞여 들어오면 개수가 어긋나
+       음높이 보정이 통째로 꺼진다(개수가 다르면 아무것도 안 하는 설계라 조용히 그렇게 된다).
+       조판 규칙은 딱 떨어진다: 맨 윗줄 바로 위 칸(step 9)까지는 덧줄이 없지만 **step 10
+       부터는 반드시 덧줄**이고, 아래도 맨 아랫줄 바로 아래 칸(step -1)까지는 덧줄이 없지만
+       **step -2 부터는 반드시 덧줄**이다. 그래서 오선에 가장 가까운 덧줄 자리에 가로줄이
+       실제로 있는지만 보면, 글자와 음표가 규칙 하나로 갈린다.
+       ★ 글자를 "기둥이 없다"로 거르려 하면 안 된다 — A·D 같은 글자에도 세로획이 있다. */
+    if(step>=10||step<=-2){
+      const ly=Math.round(bot-(step>=10?10:-2)*half);
+      const x0c=Math.round(c.cx-sp*0.7), x1c=Math.round(c.cx+sp*0.7);
+      let best=0;
+      for(let y=ly-1;y<=ly+1;y++){
+        if(y<0||y>=H)continue;
+        let n=0; for(let x=Math.max(0,x0c);x<=Math.min(W-1,x1c);x++)if(ink[y*W+x])n++;
+        best=Math.max(best,n/Math.max(1,x1c-x0c+1));
+      }
+      if(best<0.7)return;
+    }
     devs.push(Math.abs(q-step));
     res.push({x:c.cx/sc, cy:c.cy, step, abs:base+step, name:diaName(base+step),
               beats:d.beats, sure:d.sure, stem:d.stem, bands:d.bands, dot:d.dot, hollow:d.hollow});
@@ -3519,7 +3556,19 @@ function splitSystems(url,targetW){
           const top=Math.max(0,Math.floor((good[i][0]+prevEnd)/2)-6);
           const bot=Math.min(H,Math.ceil((good[i][1]+nextStart)/2)+6);
           const hh=bot-top; if(hh<20)continue;
-          const sc=Math.min(3,(targetW||1800)/W);   // 단 하나를 1800px 폭으로 — 오선 간격이 충분히 벌어진다
+          /* ★ 단 하나를 **오선 간격이 22px 이 되도록** 키우거나 줄인다(v53).
+             예전에는 폭을 1800px 으로 맞췄는데, 그건 **사진 해상도에 따라 오선 간격이
+             제멋대로가 된다는 뜻**이다. 3000px 짜리 사진 한 쪽은 1800px 으로 **줄어들면서**
+             오선 간격이 24px → 14px 로 깎였다. 음표 머리·빔·기둥을 재는 일은 전부 오선
+             간격을 기준으로 한 문턱값이라, 이 숫자가 곧 정확도다(v50 에서 1200→2000px 으로
+             올린 것도 같은 이유였지만, 폭으로 맞춰서는 해상도가 바뀌면 또 어긋난다).
+             오선 다섯 줄의 띠 높이가 4칸이므로 `띠높이/4` 가 지금 오선 간격이다 — 이미
+             재 놓은 값이라 공짜로 얻는다. 22px 은 research/omr-pitch 가 실측으로 고른 값이다.
+             ★ 사진이 나쁜데 무작정 키우면 흐린 것을 크게 만들 뿐이므로 3배까지만 키운다.
+               반대로 아주 큰 사진은 줄여도 되지만 원본보다 작게는 가지 않는다(0.5배 하한). */
+          const spNow=Math.max(1,(good[i][1]-good[i][0])/4);
+          const want=22/spNow;
+          const sc=Math.max(0.5,Math.min(3,targetW?Math.min(3,targetW/W):want,4200/W));
           const c2=document.createElement('canvas');
           c2.width=Math.round(W*sc); c2.height=Math.round(hh*sc);
           const x2=c2.getContext('2d');
@@ -5111,8 +5160,13 @@ function openPanel(name){
       +(S.photos.length
         ? '<div class="btns"><button class="btn lg on wide" id="go">코드 차트로 바꾸기'
           +(S.photos.length>1?' ('+S.photos.length+'쪽)':'')+'</button></div>'
-          +'<div class="btns"><button class="btn wide" id="ocr">OCR로 읽기 · 키 없이</button>'
+          +'<div class="btns"><button class="btn wide" id="ocr">AI 없이 읽기 · 키 없이</button>'
           +'<button class="btn" id="clr">전부 빼기</button></div>'
+          +'<p class="note"><b>AI 없이 읽기</b>는 음표(음높이·박자)와 마디선을 <b>사진에서 직접 재고</b>, '
+          +'코드·가사만 문자 인식으로 읽습니다. 음표는 AI와 상관없이 정확하지만, '
+          +'<b>코드 기호는 글자라서 문자 인식의 한계를 그대로 받습니다</b> — 실제 찬송가 사진에서 재 보니 '
+          +'46개 중 15개만 읽었고, <b>F♯m7·E/G♯ 처럼 ♯이 붙은 코드를 특히 놓칩니다.</b> '
+          +'코드가 틀리면 반주 소리가 틀리므로, 반주까지 쓰시려면 위의 <b>코드 차트로 바꾸기</b>를 권합니다.</p>'
         : '')
       +'<button class="more" id="cfgtoggle">'+(showCfg?'▾':'▸')+' 인식 설정'+(getGKey()||getKey()?'':' · 키 필요')+'</button>'
       +(showCfg
