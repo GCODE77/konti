@@ -45,7 +45,8 @@ header{position:sticky;top:0;z-index:30;background:var(--ink);border-bottom:1px 
 #meta{display:flex;align-items:center;gap:8px;margin-top:4px;font-size:11.5px;color:var(--dim);flex-wrap:wrap}
 #meta b{font-size:13px}
 
-main{flex:1;padding:16px 8px 182px;font-family:var(--mono);line-height:1.5}
+main{flex:1;padding:16px 8px;padding-bottom:calc(var(--footh,182px) + 18px);
+  font-family:var(--mono);line-height:1.5}
 .section{break-inside:avoid;margin:32px 0 14px 9px;display:inline-block;padding:4px 12px;border-radius:999px;
   background:var(--ribbon);color:#fff;font-family:var(--ui);font-size:12px;font-weight:800;
   letter-spacing:.16em;text-transform:uppercase}
@@ -60,7 +61,11 @@ main{flex:1;padding:16px 8px 182px;font-family:var(--mono);line-height:1.5}
 .ly{display:block;white-space:pre-wrap}
 /* 원본 사진 보기. 인식 결과를 못 믿을 때 결국 눈으로 보는 건 원본이다 —
    그래서 사진을 그대로 띄우고, 재생 위치를 사진 위에 하이라이트로 얹는다. */
-.origwrap{margin:0 0 6px}
+.origwrap{margin:0 0 6px;overflow-x:auto;overscroll-behavior-x:contain}
+/* 크게 보기 — 사진을 키우고 지금 치는 마디를 가운데로 끌고 다닌다 */
+.origwrap.zoom .origpg{max-width:none;width:calc(100% * var(--szoom,1))}
+.sheetbar{display:flex;gap:8px;align-items:center;margin:0 0 10px;flex-wrap:wrap}
+.sheetbar .btn{padding:7px 13px;font-size:12.5px}
 .origpg{position:relative;margin:0 auto 14px;max-width:1000px;line-height:0}
 .origpg img{width:100%;height:auto;display:block;border-radius:8px}
 .origsys{position:absolute;left:0;right:0;cursor:pointer;border-radius:5px;
@@ -74,6 +79,39 @@ main{flex:1;padding:16px 8px 182px;font-family:var(--mono);line-height:1.5}
   box-shadow:0 0 7px var(--ribbon);display:none;pointer-events:none}
 .origsys.on .origline{display:block}
 .orignote{font-size:13px;line-height:1.55;color:var(--dim);margin:0 0 12px;padding:0 2px}
+/* 음표 고치기 — 고치는 단추를 위에 붙여 두고(sticky), 오선보는 확대하지 않는다 */
+.noteedit{position:sticky;top:0;z-index:2;background:var(--raise);padding-bottom:6px;
+  border-bottom:1px solid var(--line);margin-bottom:10px}
+.noteedit .fontset button[disabled]{opacity:.3;cursor:default}
+#staffbox{background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:8px 6px;max-height:42vh;overflow:auto}
+#staffbox svg{max-width:760px;margin:0 auto}
+/* 마디 상자·건반 (v52) — 사진 위에 '지금 몇째 마디'를 그리고,
+   그 아래 건반에 '지금 어느 음'을 켜 둔다. */
+.origbar{position:absolute;top:0;bottom:0;border-radius:4px;pointer-events:none;opacity:0;transition:opacity .1s}
+.origbar.now{opacity:1;background:rgba(163,46,62,.26);box-shadow:inset 0 0 0 2px var(--ribbon)}
+.origsys .mno{position:absolute;left:3px;top:1px;font-size:9px;font-weight:800;color:var(--ribbon);
+  background:rgba(255,255,255,.82);border-radius:3px;padding:0 3px;line-height:1.5;opacity:0}
+.origbar.now .mno{opacity:1}
+#pianowrap{display:none;padding:0 10px 4px}
+body.piano-on #pianowrap{display:block}
+#pianolab{display:flex;align-items:center;gap:7px;font-family:var(--ui);font-size:11.5px;
+  color:var(--dim);line-height:1.5;padding:3px 2px 4px;min-height:20px;white-space:nowrap;overflow:hidden}
+#pianolab b{color:var(--brass);font-size:14px}
+#pianolab .mn{color:var(--paper);font-weight:800}
+#pianolab .mel{color:#fff;background:var(--ribbon);border-radius:999px;padding:1px 9px;font-weight:800}
+#pianolab .lg{margin-left:auto;display:flex;align-items:center;gap:4px;opacity:.8;font-size:10.5px}
+#pianolab .lg i{width:8px;height:8px;border-radius:2px;display:inline-block;margin-left:6px}
+#pianolab .lg i.m{background:var(--ribbon)}
+#pianolab .lg i.c{background:#5C8CB5}
+#piano{display:block;width:100%;height:auto}
+#piano .wk{fill:#F7F4EE;stroke:#8A929B;stroke-width:.5}
+#piano .bk{fill:#1A222B;stroke:#000;stroke-width:.5}
+#piano .wk.on,#piano .bk.on{fill:var(--ribbon)}
+#piano .wk.onc,#piano .bk.onc{fill:#5C8CB5}
+#piano .kl{font-family:var(--ui);font-weight:800;fill:#fff;text-anchor:middle;opacity:0}
+#piano .on+.kl,#piano .onc+.kl{opacity:1}
+#piano .oc{font-family:var(--ui);fill:#9AA5B1;text-anchor:middle}
 .staffline{overflow-x:auto;margin:0 0 14px;padding:2px 0 0}
 .suspect{border:1px solid var(--ribbon);border-radius:10px;padding:8px 11px;margin:0 0 12px;
   font-size:13px;line-height:1.5;color:var(--paper);background:color-mix(in srgb,var(--ribbon) 12%,transparent)}
@@ -163,7 +201,7 @@ label.btn{display:inline-flex;align-items:center}
 #cam{width:100%;border-radius:10px;border:1px solid var(--line);background:#000;display:block}
 body.focus header{display:none}
 body.focus nav{display:none}
-body.focus main{padding:14px 12px 96px}
+body.focus main{padding:14px 12px;padding-bottom:calc(var(--footh,96px) + 14px)}
 body.focus #transport{padding:7px 12px calc(7px + env(safe-area-inset-bottom))}
 #focusout{position:fixed;top:calc(10px + env(safe-area-inset-top));right:12px;z-index:35;display:none}
 body.focus #focusout{display:block}
@@ -228,6 +266,7 @@ body.focus #focusout{display:block}
 <main id="chart"></main>
 
 <footer class="noprint">
+<div id="pianowrap"><div id="pianolab"></div><svg id="piano" aria-hidden="true"></svg></div>
 <div id="progwrap"><div id="track"><div id="bar-fill"></div></div><span id="time">0:00 / 0:00</span></div>
 <div id="transport">
   <button class="btn on" id="play" aria-label="재생">&#9654;</button>
@@ -272,7 +311,7 @@ window.onerror=function(msg,src,ln){
    예) const SCAN_ENDPOINT = "https://konti-scan.내계정.workers.dev";
 */
 const SCAN_ENDPOINT = "";
-const APP_VER = "51";
+const APP_VER = "52";
 /* file:// 나 content:// 로 열면 브라우저가 외부 호출을 막는다(CORS). 미리 알려준다. */
 const LOCAL_FILE = !/^https?:$/.test(location.protocol);
 /* Claude 앱처럼 iframe 안에서 실행 중이면 키 없이도 인식이 통한다. */
@@ -820,7 +859,7 @@ function txtW(s,fs){ let w=0; for(const c of (s||''))w+=(dispW(c)===2?1.02:0.56)
 /* 마디의 가사를 음절로 쪼갠다 — 한글은 한 글자가 한 음절이라 글자 단위가 곧 음절 단위 */
 function sylsOf(grp){ return [...(grp||[]).map(p=>p.text||'').join('')].filter(ch=>ch.trim()); }
 
-function renderStaffSection(melM,chM,lyM,verses,measureStart,fitM,bassM,W){
+function renderStaffSection(melM,chM,lyM,verses,measureStart,fitM,bassM,W,breaks){
   fitM=fitM||[]; bassM=bassM||[]; W=Math.max(320,Math.round(W||1000));
   const pc=sigPc(origKey.pc+S.semis,origKey.minor), pref=S.flat||PREF[pc];
   const [sgn,cnt]=keySig(pc,pref), ord=sgn==='#'?SHARP_ORD:FLAT_ORD;
@@ -858,17 +897,24 @@ function renderStaffSection(melM,chM,lyM,verses,measureStart,fitM,bassM,W){
 
   /* ── 2단계: 행에 채워 넣는다. 폭이 되면 찬송가 관례대로 4마디, 좁은 화면이면 2~3마디 ── */
   const avail=Math.max(150,W-PAD-headW);
+  /* breaks: 원본 사진의 단 끝 마디 번호 모음. 있으면 **원본과 같은 자리에서 줄을 바꾼다**
+     (v52, 사용자 요청: "첫 줄 4마디, 둘째 줄 3마디면 채보도 같은 줄 같은 마디로 나와라").
+     다만 폭이 모자라면 그때는 잘라 넣는다 — 휴대폰에서 6마디를 한 줄에 밀어 넣으면
+     음표가 뭉개져 원본을 닮게 하려다 못 읽는 악보가 된다. 화면이 먼저다. */
   const rows=[]; let cur=[],curW=0;
   for(let m=0;m<N;m++){
     const w=Math.min(intr[m],avail);
-    if(cur.length&&(curW+w>avail||cur.length>=MAXPER)){rows.push(cur);cur=[];curW=0;}
+    const forced=!!(breaks&&cur.length&&breaks.has(measureStart+m-1));
+    const cap=breaks?99:MAXPER;
+    if(cur.length&&(forced||curW+w>avail||cur.length>=cap)){rows.push(cur);cur=[];curW=0;}
     cur.push(m); curW+=w;
   }
   if(cur.length)rows.push(cur);
   /* 마지막 행에 마디가 하나만 남으면 앞 행에서 한 마디를 넘겨 준다.
      한 마디만 오선 한 줄을 차지하면(게다가 낮은음자리표까지 딸려 오면)
-     화면이 텅 빈 오선으로 낭비된다. */
-  if(rows.length>1&&rows[rows.length-1].length===1&&rows[rows.length-2].length>=3)
+     화면이 텅 빈 오선으로 낭비된다. 원본을 따라갈 때는 하지 않는다 — 원본이 그렇다면
+     그게 맞는 모양이다. */
+  if(!breaks&&rows.length>1&&rows[rows.length-1].length===1&&rows[rows.length-2].length>=3)
     rows[rows.length-1].unshift(rows[rows.length-2].pop());
   return {svgs:rows.map(draw).filter(x=>x),count:N};
 
@@ -1430,7 +1476,8 @@ function applyGenre(k){
 
 /* ---- 시퀀서 ---- */
 const P={playing:false,bpm:84,genre:'',insts:['piano'],melInst:'ep',pattern:'block',beats:4,loop:true,click:false,melody:true,accomp:true,readMel:true,bySystem:true,ocrBoost:true,geomPitch:true,realInst:true,melOct:0,melFit:true,playBass:false,
-         evs:[],total:0,k:0,cursorT:0,lastAt:0,t0:0,timer:null,uiTimer:null,marks:[],vmarks:[],vnext:1,cur:-1};
+         evs:[],total:0,k:0,cursorT:0,lastAt:0,t0:0,timer:null,uiTimer:null,marks:[],vmarks:[],vnext:1,cur:-1,
+         sound:[],piano:true};
 
 function buildTimeline(){
   const evs=[], hasBar=blocks.some(b=>b.k==='pairs'&&b.pairs.some(p=>p.bar));
@@ -1541,10 +1588,19 @@ function schedule(){
     if(ev.type==='c'){
       if(P.accomp!==false)strike(ctx,ev.chord,S.semis,instList(),t,ev.beats*spb*.96,ev.beats,spb);
       P.marks.push({t,idx:ev.idx});
+      /* 건반 표시는 **예약한 그 시각 그대로** 적어 둔다 — 소리를 예약한 것과 같은 숫자를
+         쓰므로 화면과 소리가 어긋날 수가 없다(박자를 따로 어림하지 않는다). */
+      const vv=chordVoicing(ev.chord,S.semis);
+      P.sound.push({t,e:t+ev.beats*spb*.96,k:'c',ms:[vv.bass].concat(vv.upper),
+                    name:S.num?showNum(ev.chord,origKey.pc):showChord(ev.chord,chordSemis(),pref())});
     }else if(ev.type==='m'){
-      if(P.melody)voice(ctx,P.melInst,ev.midi+S.semis+(P.melOct||0)*12,t,ev.beats*spb*.92,P.accomp===false?.6:.46,0);
+      const mm=ev.midi+S.semis+(P.melOct||0)*12;
+      if(P.melody)voice(ctx,P.melInst,mm,t,ev.beats*spb*.92,P.accomp===false?.6:.46,0);
+      P.sound.push({t,e:t+ev.beats*spb*.92,k:'m',ms:[mm]});
     }else if(ev.type==='mb'){
-      if(P.playBass)voice(ctx,'bass',ev.midi+S.semis,t,ev.beats*spb*.92,.4,0);
+      const mm=ev.midi+S.semis;
+      if(P.playBass)voice(ctx,'bass',mm,t,ev.beats*spb*.92,.4,0);
+      P.sound.push({t,e:t+ev.beats*spb*.92,k:'b',ms:[mm]});
     }else{
       click(ctx,t,ev.strong);
     }
@@ -1573,6 +1629,8 @@ function tickUI(){
   }
   while(P.marks.length>1&&P.marks[1].t<=now)P.marks.shift();
   if(P.marks.length&&P.marks[0].t<=now&&P.marks[0].idx!==P.cur)mark(P.marks[0].idx);
+  while(P.sound.length&&P.sound[0].e<now-0.25)P.sound.shift();
+  paintPiano(now);
   if(S.mode==='sheet')paintSheet(sheetProgress());
 }
 function frame(){
@@ -1596,7 +1654,8 @@ function startPlay(){
   const tl=buildTimeline();
   if(!tl.evs.length){toast('재생할 내용이 없습니다.');return;}
   P.evs=tl.evs; P.total=tl.total;
-  P.playing=true; P.k=0; P.lastAt=0; P.marks=[]; P.vmarks=[]; P.vnext=S.verse; P.cur=-1;
+  P.playing=true; P.k=0; P.lastAt=0; P.marks=[]; P.vmarks=[]; P.vnext=S.verse; P.cur=-1; P.sound=[];
+  syncPiano(true); renderPiano(); measureFoot();   // 먼저 보이게 해야 폭을 잴 수 있다
   P.t0=ctx.currentTime+.25;
   P.cursorT=ctx.currentTime+.25;
   clearInterval(P.timer);
@@ -1610,9 +1669,11 @@ function startPlay(){
 function stopPlay(){
   P.playing=false; clearInterval(P.timer); P.timer=null;
   clearInterval(P.uiTimer); P.uiTimer=null;
-  P.marks=[]; P.vmarks=[]; P.cur=-1;
+  P.marks=[]; P.vmarks=[]; P.cur=-1; P.sound=[];
+  paintPiano(0); syncPiano(false); MEASURE.txt=''; measureFoot();
   document.querySelectorAll('.ch.now').forEach(e=>e.classList.remove('now'));
   document.querySelectorAll('#chart .origsys.on').forEach(e=>e.classList.remove('on'));
+  document.querySelectorAll('#chart .origbar.now').forEach(e=>e.classList.remove('now'));
   $('play').innerHTML='&#9654;';
   wakeOff();
 }
@@ -1631,7 +1692,7 @@ const SAMPLE=`[Verse 1]
 ♪ G4:1 A4:1 B4:1 A4:1 | G4:1 A4:1 B4:1 D5:1 | D5:1 C5:1 B4:1 A4:1 | B4:1 A4:1 G4:2 | A4:2 G4:2
 |[G]내 입술이 |[D/F#]잠잠할 |[C]수 |[D]없|[G]네`;
 
-const S={raw:SAMPLE,semis:0,flat:null,num:false,capo:false,font:20,staffScale:1,col:false,photos:[],verse:1,mode:'auto',orig:null};
+const S={raw:SAMPLE,semis:0,flat:null,num:false,capo:false,font:20,staffScale:1,col:false,photos:[],verse:1,mode:'auto',orig:null,sheetZoom:1};
 let blocks=[], origKey={pc:0,minor:false};
 function reparse(){
   blocks=parseChart(S.raw); origKey=detectKey(blocks);
@@ -1749,6 +1810,27 @@ function setMode(m){
   S.mode=m; renderAll();
   if(m==='sheet')toast('원본 사진 보기 — 재생하면 사진 위에서 따라갑니다');
 }
+/* 원본 사진의 단 나눔을 그대로 따라 줄을 바꾸기 위한 '끊을 마디 번호' 모음.
+   ★ applyGeomPitch 와 같은 원칙 — **마디 수가 정확히 같을 때만** 쓴다. 하나라도 다르면
+     어느 마디가 어느 단인지 맞출 근거가 없고, 어긋난 채로 따라가면 원본과 다른 자리에서
+     줄이 바뀌어 오히려 더 헷갈린다. 그때는 지금까지처럼 폭에 맞춰 넣는다. */
+function staffBreaks(){
+  if(!S.orig||!S.orig.pages)return null;
+  const ends=[]; let acc=0;
+  for(const pg of S.orig.pages)for(const sy of (pg.sys||[])){
+    if(!sy.seg||!sy.seg.length)return null;        // 마디선을 못 찾은 단이 하나라도 있으면 포기
+    acc+=sy.seg.length; ends.push(acc);
+  }
+  if(!ends.length)return null;
+  let total=0, pm=null;
+  for(const b of blocks){
+    if(b.k==='mel'){pm=b;continue;}
+    if(b.k!=='pairs')continue;
+    total+=measuresOfBlock(pm,b).N; pm=null;
+  }
+  if(total!==acc)return null;                      // 세어 본 마디 수가 다르면 손대지 않는다
+  return new Set(ends.slice(0,-1));                // 마지막 단 뒤에는 끊을 것이 없다
+}
 function renderChartStaff(){
   const el=$('chart');
   el.style.fontSize=S.font+'px'; el.style.columnCount=1;
@@ -1776,11 +1858,12 @@ function renderChartStaff(){
      휴대폰에서 글자가 3분의 1로 줄어들어 아예 읽을 수 없었다. */
   const zoom=Math.max(.5,Math.min(2,S.staffScale||1));
   const rowW=Math.max(320,Math.round((el.clientWidth||1000)/zoom));
+  const sysBreaks=staffBreaks();
   let accMel=[], accCh=[], accLy={}, accFit=[], accBass=[];
   const flush=()=>{
     if(!accMel.length)return;
     const verses=Object.keys(accLy).map(Number).sort((a,b)=>a-b);
-    const {svgs,count}=renderStaffSection(accMel,accCh,accLy,verses,measureNo,accFit,accBass,rowW);
+    const {svgs,count}=renderStaffSection(accMel,accCh,accLy,verses,measureNo,accFit,accBass,rowW,sysBreaks);
     measureNo+=count;
     if(svgs.length){
       const box=document.createElement('div');
@@ -1828,14 +1911,38 @@ function renderSheet(){
   if(!o||!o.pages||!o.pages.length){
     el.innerHTML='<div class="callout err"><b>원본 사진이 없습니다.</b><br>'
       +'<b>가져오기</b>에서 악보 사진을 다시 넣어 주세요. 직접 입력한 곡에는 원본 사진이 없습니다.</div>';
+    MEASURE.txt=''; MEASURE.total=0;
     return;
   }
+  /* 마디 번호는 단을 넘어가며 계속 센다 — 사진 위 번호와 아래 '12/34마디' 가 같은 수다 */
+  let mn=0;
+  o.pages.forEach(pg=>(pg.sys||[]).forEach(sy=>{ mn+=(sy.seg?sy.seg.length:0); }));
+  MEASURE.total=mn;
   const note=document.createElement('div');
   note.className='orignote';
-  note.innerHTML='재생하면 지금 연주 중인 단이 사진 위에 표시됩니다. <b>단을 누르면 그 자리부터 재생</b>합니다.'
-    +(o.approx?' 단 구분을 못 찾은 사진은 쪽 전체를 한 덩어리로 표시합니다.':'');
+  note.innerHTML=(mn
+      ? '재생하면 <b>지금 치는 마디</b>가 사진 위에 상자로 표시되고, 아래 건반에 <b>누르는 음</b>이 켜집니다. '
+      : '재생하면 지금 연주 중인 단이 사진 위에 표시됩니다. ')
+    +'<b>누른 자리부터 재생</b>합니다.'
+    +(o.approx?' 단 구분을 못 찾은 사진은 쪽 전체를 한 덩어리로 표시합니다.':'')
+    +(mn?' 마디선은 사진에서 직접 찾은 것이라 마디 수가 원본과 같습니다('+mn+'마디).':'');
   el.appendChild(note);
+  /* 사진을 키워서 보는 단추 — 원본 사진은 한 쪽을 통째로 띄우면 음표가 너무 작다.
+     키운 채로도 "지금 치는 마디"를 가운데로 끌고 다니므로 손으로 스크롤할 일이 없다. */
+  const zbar=document.createElement('div'); zbar.className='sheetbar';
+  const ZS=[1,1.6,2.4,3.4];
+  zbar.innerHTML='<span style="font-size:12px;color:var(--dim)">크게 보기</span>'
+    +ZS.map(z=>'<button class="btn'+(Math.abs((S.sheetZoom||1)-z)<.01?' on':'')+'" data-z="'+z+'">'
+      +(z===1?'원래 크기':'×'+z)+'</button>').join('');
+  zbar.querySelectorAll('[data-z]').forEach(bt=>bt.onclick=()=>{
+    S.sheetZoom=+bt.dataset.z; renderChart(); scheduleSave();
+    if(P.playing)paintSheet(sheetProgress());
+  });
+  el.appendChild(zbar);
   const wrap=document.createElement('div'); wrap.className='origwrap';
+  const Z=Math.max(1,S.sheetZoom||1);
+  if(Z>1){ wrap.classList.add('zoom'); wrap.style.setProperty('--szoom',Z); }
+  let acc=0;
   o.pages.forEach((pg,pi)=>{
     const d=document.createElement('div'); d.className='origpg';
     const img=document.createElement('img');
@@ -1847,9 +1954,23 @@ function renderSheet(){
       b.style.top=(sy.t0*100).toFixed(3)+'%';
       b.style.height=((sy.t1-sy.t0)*100).toFixed(3)+'%';
       b.dataset.b0=sy.b0; b.dataset.b1=sy.b1;
-      b.innerHTML='<span class="lab">'+(sy.n||'')+'</span><div class="origline"></div>';
-      b.onclick=()=>{ const t=songSeconds()*Math.max(0,Math.min(1,sy.b0));
-        if(!P.playing)startPlay(); seekTo(t); };
+      b._kx=sy.kx||null; b._kb=sy.kb||null;
+      let inner='<span class="lab">'+(sy.n||'')+'</span>';
+      (sy.seg||[]).forEach(sg=>{
+        acc++;
+        inner+='<div class="origbar" data-x0="'+sg.x0.toFixed(4)+'" data-x1="'+sg.x1.toFixed(4)+'"'
+          +' data-mn="'+acc+'" style="left:'+(sg.x0*100).toFixed(3)+'%;width:'
+          +((sg.x1-sg.x0)*100).toFixed(3)+'%"><span class="mno">'+acc+'</span></div>';
+      });
+      b.innerHTML=inner+'<div class="origline"></div>';
+      /* 누른 자리부터 재생 — 마디를 찾았으면 그 마디 머리로, 아니면 단 머리로 */
+      b.onclick=(ev)=>{
+        const r=b.getBoundingClientRect();
+        const fx=r.width>0?Math.max(0,Math.min(1,(ev.clientX-r.left)/r.width)):0;
+        const f=sysFrac(b,fx);
+        const t=songSeconds()*Math.max(0,Math.min(1,sy.b0+(sy.b1-sy.b0)*f));
+        if(!P.playing)startPlay(); seekTo(t);
+      };
       d.appendChild(b);
     });
     wrap.appendChild(d);
@@ -1864,26 +1985,174 @@ function sheetProgress(){
   if(P.loop&&el>total)el=el%total;
   return Math.max(0,Math.min(1,el/total));
 }
-/* 진행도에 맞춰 하이라이트와 재생선을 옮긴다. p<0 이면 전부 끈다. */
+/* 단 안에서의 진행도(f, 0~1) → 사진 가로 자리(0~1).
+   ★ 고르게 나누지 않는다. staffGeom 이 음표마다 **잰 x 자리**와 **잰 길이**를 갖고 있으니
+     그 사이를 잇는다 — 조판은 음 길이에 비례해 간격이 벌어지므로 직선 보간과 많이 다르다
+     (한 마디에 온음표 하나만 있는 곳에서 특히). 잰 값이 없으면 그대로 직선이다. */
+function sysX(b,f){
+  const kb=b._kb, kx=b._kx;
+  if(!kb||!kx||kb.length<2)return f;
+  let i=kb.length-1;
+  while(i>0&&kb[i]>f)i--;                 // 같은 박에 점이 둘이면 뒤엣것(다음 마디 첫 음)을 쓴다
+  const a=kb[i], b2=(i+1<kb.length)?kb[i+1]:1;
+  const xa=kx[i], xb=(i+1<kx.length)?kx[i+1]:1;
+  const t=(b2>a)?(f-a)/(b2-a):0;
+  return Math.max(0,Math.min(1,xa+(xb-xa)*Math.max(0,Math.min(1,t))));
+}
+/* sysX 의 반대 — 사진에서 누른 가로 자리(0~1)를 그 단 안의 진행도로 */
+function sysFrac(b,x){
+  const kb=b._kb, kx=b._kx;
+  if(!kb||!kx||kx.length<2)return x;
+  let i=kx.length-1;
+  while(i>0&&kx[i]>x)i--;
+  const xa=kx[i], xb=(i+1<kx.length)?kx[i+1]:1;
+  const a=kb[i], b2=(i+1<kb.length)?kb[i+1]:1;
+  const t=(xb>xa)?(x-xa)/(xb-xa):0;
+  return Math.max(0,Math.min(1,a+(b2-a)*Math.max(0,Math.min(1,t))));
+}
+/* 진행도에 맞춰 마디 상자와 재생선을 옮긴다. p<0 이면 전부 끈다. */
 function paintSheet(p){
   const boxes=document.querySelectorAll('#chart .origsys');
-  if(!boxes.length)return;
-  let cur=null;
+  if(!boxes.length){MEASURE.txt='';return;}
+  let cur=null, mtxt='', curX=0;
   boxes.forEach(b=>{
     const b0=+b.dataset.b0, b1=+b.dataset.b1;
     const on=p>=0&&p>=b0&&p<b1;
     b.classList.toggle('on',on);
-    if(on){ cur=b;
-      const f=(b1>b0)?(p-b0)/(b1-b0):0;
-      const h=b.querySelector('.origline');
-      if(h)h.style.left=(f*100).toFixed(2)+'%';
-    }
+    const bars=b.querySelectorAll('.origbar');
+    if(!on){ bars.forEach(x=>x.classList.remove('now')); return; }
+    cur=b;
+    const f=(b1>b0)?(p-b0)/(b1-b0):0;
+    const x=sysX(b,f);
+    const h=b.querySelector('.origline');
+    if(h)h.style.left=(x*100).toFixed(2)+'%';
+    curX=x;
+    bars.forEach(bx=>{
+      const hit=x>=+bx.dataset.x0&&x<+bx.dataset.x1;
+      bx.classList.toggle('now',hit);
+      if(hit)mtxt=bx.dataset.mn+(MEASURE.total?'/'+MEASURE.total:'')+'마디';
+    });
   });
+  MEASURE.txt=(p>=0)?mtxt:'';
   if(cur&&P.playing){
     const r=cur.getBoundingClientRect();
-    if(r.top<80||r.bottom>window.innerHeight-190)cur.scrollIntoView({block:'center',behavior:'smooth'});
+    const fh=(document.querySelector('footer')||{offsetHeight:180}).offsetHeight+24;
+    const top=80, bot=window.innerHeight-fh, vis=bot-top;
+    /* ★ scrollIntoView({block:'center'}) 를 쓰지 않는다 — 크게 보기(×2.4)에서는 한 단이
+       화면보다 커져서, 가운데 맞추면 오선이 통째로 화면 밖으로 밀려난다(위쪽에 검은 여백만
+       남았다). 단의 **위쪽**을 보이는 영역의 1/4 지점에 놓는 게 어느 배율에서나 맞다. */
+    if(r.top<top||r.bottom>bot||r.height>vis){
+      const y=window.scrollY+r.top-top-Math.max(0,(vis-Math.min(r.height,vis))*0.25);
+      window.scrollTo({top:Math.max(0,y),behavior:'smooth'});
+    }
+    /* 키워 놓았으면 가로로도 따라간다 — 지금 치는 마디가 늘 화면 가운데 오게 */
+    const wr=cur.closest('.origwrap');
+    if(wr&&wr.scrollWidth>wr.clientWidth+4){
+      const want=cur.offsetLeft+cur.offsetWidth*curX-wr.clientWidth/2;
+      const lim=Math.max(0,Math.min(wr.scrollWidth-wr.clientWidth,want));
+      if(Math.abs(wr.scrollLeft-lim)>8)wr.scrollLeft=lim;
+    }
   }
 }
+/* ============ 건반 표시 (v52) ============
+   사용자 요청의 핵심 — *"한글 채보보다 악보 음 높이·박자·쉼표·코드가 더 중요하다.
+   마디마디마다 보여 주고, 밑에 피아노 어떤 음이 눌렸는지도 표기해서 보여 줘라. 그럼
+   한글이나 가사 등을 따로 변환 안 해도 되고 실제 사진을 사용해서 위에다가 표시만 하면
+   된다."* 맞는 판단이다. 원본 사진은 항상 100% 정확한 악보이고, 앱이 보탤 수 있는 건
+   **지금 어디를(마디) · 무엇을(건반)** 둘뿐이다.
+   ★ 표시 시각은 schedule() 이 **소리를 예약할 때 쓴 그 시각**을 그대로 받아 쓴다.
+     박자를 따로 세지 않으므로 원리적으로 소리와 어긋날 수 없다. */
+const WHITE_PC=[0,2,4,5,7,9,11];
+const isWhiteKey=m=>WHITE_PC.indexOf(mod(m))>=0;
+let PIANO={lo:0,hi:0,el:null};
+let MEASURE={txt:'',total:0};
+
+/* 이 곡이 실제로 쓰는 음역만 그린다 — 88건반을 다 그리면 휴대폰에서 건반 하나가 2px 이 된다 */
+function pianoRange(){
+  let lo=127,hi=0;
+  const add=m=>{ if(m<lo)lo=m; if(m>hi)hi=m; };
+  for(const e of (P.evs||[])){
+    if(e.type==='m')add(e.midi+S.semis+(P.melOct||0)*12);
+    else if(e.type==='mb')add(e.midi+S.semis);
+    else if(e.type==='c'&&e.chord){ const v=chordVoicing(e.chord,S.semis); add(v.bass); v.upper.forEach(add); }
+  }
+  if(lo>hi){lo=48;hi=84;}
+  lo=Math.max(21,Math.floor(lo/12)*12); hi=Math.min(108,Math.ceil((hi+1)/12)*12);
+  while(hi-lo<36){ if(hi<=95)hi+=12; else if(lo>=33)lo-=12; else break; }
+  return {lo,hi};
+}
+function renderPiano(){
+  const svg=$('piano'); if(!svg||!window.innerWidth)return;   // 창이 접혀 있으면 비율을 못 잰다
+  const r=pianoRange();
+  /* SVG 는 폭 100% 로 늘어난다. 그래서 viewBox 의 가로:세로 비가 곧 화면에서의 높이다 —
+     건반 높이를 픽셀로 정해 두고 거기서 viewBox 세로를 거꾸로 구한다. 예전처럼 비율을
+     고정해 두면 넓은 화면에서 건반이 200px 로 치솟거나(잘려서 가운데 우표만 하게 보인다)
+     좁은 화면에서 뭉개진다. */
+  let cw=(svg.parentNode&&svg.parentNode.clientWidth)||0;
+  if(cw<240)cw=window.innerWidth||360;          // 아직 자리를 못 잡았으면 창 폭으로
+  cw=Math.max(240,cw);
+  if(PIANO.lo===r.lo&&PIANO.hi===r.hi&&PIANO.cw===cw&&PIANO.el)return;
+  PIANO.lo=r.lo; PIANO.hi=r.hi; PIANO.cw=cw;
+  const whites=[]; for(let m=r.lo;m<=r.hi;m++)if(isWhiteKey(m))whites.push(m);
+  if(!whites.length)return;
+  const WK=10, Wd=whites.length*WK;
+  /* 악보가 주인공이다 — 건반은 낮게 깔고, 좁은 화면일수록(세로 여유가 없다) 더 낮춘다 */
+  const TH=Math.max(46,Math.min(78,Math.round(cw*0.092),Math.round((window.innerHeight||700)*0.17)));
+  const H=Math.max(14,TH*Wd/cw), WH=H*0.88, BK=6.4, BH=WH*0.63;
+  const wi=new Map(); whites.forEach((m,i)=>wi.set(m,i));
+  let g='';
+  whites.forEach((m,i)=>{
+    g+='<rect class="wk" data-m="'+m+'" x="'+(i*WK)+'" y="0" width="'+WK+'" height="'+WH+'" rx="1.4"/>'
+      +'<text class="kl" x="'+(i*WK+WK/2)+'" y="'+(WH-H*0.09).toFixed(2)+'" font-size="'+(H*0.15).toFixed(2)+'">'+SHARP[mod(m)]+'</text>';
+    if(mod(m)===0)g+='<text class="oc" x="'+(i*WK+WK/2)+'" y="'+(H-H*0.015).toFixed(2)+'" font-size="'+(H*0.12).toFixed(2)+'">C'+(Math.floor(m/12)-1)+'</text>';
+  });
+  for(let m=r.lo;m<=r.hi;m++){
+    if(isWhiteKey(m))continue;
+    const i=wi.get(m-1); if(i===undefined)continue;
+    const x=(i+1)*WK-BK/2;
+    g+='<rect class="bk" data-m="'+m+'" x="'+x.toFixed(2)+'" y="0" width="'+BK+'" height="'+BH.toFixed(2)+'" rx="1.2"/>'
+      +'<text class="kl" x="'+(x+BK/2).toFixed(2)+'" y="'+(BH-H*0.06).toFixed(2)+'" font-size="'+(H*0.13).toFixed(2)+'">'+SHARP[mod(m)]+'</text>';
+  }
+  svg.setAttribute('viewBox','0 0 '+Wd+' '+H);
+  svg.innerHTML=g;
+  PIANO.el=new Map();
+  svg.querySelectorAll('[data-m]').forEach(k=>PIANO.el.set(+k.dataset.m,k));
+}
+/* now = 오디오 시계. 그 순간 실제로 울리고 있는 음만 켜 둔다. */
+function paintPiano(now){
+  if(!PIANO.el)return;
+  const onM=new Map();
+  let ch='', mel='';
+  if(P.playing&&now){
+    for(const sd of P.sound){
+      if(sd.t>now||sd.e<=now)continue;
+      for(const m of sd.ms) if(sd.k==='m'||!onM.has(m))onM.set(m,sd.k==='m'?'on':'onc');
+      if(sd.k==='c'&&sd.name)ch=sd.name;
+      if(sd.k==='m')mel=SHARP[mod(sd.ms[0])]+(Math.floor(sd.ms[0]/12)-1);
+    }
+  }
+  PIANO.el.forEach((el,m)=>{
+    const c=onM.get(m)||'';
+    el.classList.toggle('on',c==='on');
+    el.classList.toggle('onc',c==='onc');
+  });
+  const lab=$('pianolab');
+  if(lab)lab.innerHTML=(MEASURE.txt?'<span class="mn">'+esc(MEASURE.txt)+'</span>':'')
+    +(ch?'<b>'+esc(ch)+'</b>':'')
+    +(mel?'<span class="mel">'+esc(mel)+'</span>':'')
+    +'<span class="lg"><i class="m"></i>멜로디<i class="c"></i>반주</span>';
+}
+function syncPiano(on){ document.body.classList.toggle('piano-on',!!on&&P.piano!==false); }
+/* 아래 고정 막대가 실제로 몇 px 인지 재서 본문 아래 여백에 그대로 쓴다.
+   예전엔 182/296/96 같은 숫자를 박아 두었는데, 건반이 생기면서 화면마다 달라져
+   악보가 막대에 가리거나 반대로 빈 공간이 한 뼘씩 남았다. 재는 게 맞다. */
+function measureFoot(){
+  const f=document.querySelector('footer');
+  if(!f||!window.innerWidth||!window.innerHeight)return;   // 창이 접혀 있으면 잰 값이 거짓이다
+  const h=Math.round(f.getBoundingClientRect().height);
+  if(h>0&&h<window.innerHeight*0.75)document.documentElement.style.setProperty('--footh',h+'px');
+}
+
 function renderChartText(){
   const el=$('chart'),sm=chordSemis(),p=pref(),ci=capoInfo();
   el.style.fontSize=S.font+'px';
@@ -1957,7 +2226,7 @@ function seekTo(sec){
   P.k=k; P.lastAt=inPass; P.vnext=vi+1;
   P.cursorT=ctx.currentTime+0.08;
   P.t0=P.cursorT-sec;
-  P.marks=[]; P.vmarks=[]; P.cur=-1;
+  P.marks=[]; P.vmarks=[]; P.cur=-1; P.sound=[];
   if(S.verse!==vi+1){S.verse=vi+1;renderChart();renderToolbar();}
   renderTime(sec);
 }
@@ -2007,7 +2276,7 @@ function saveLast(){
       num:S.num, capo:S.capo, font:S.font, staffScale:S.staffScale, col:S.col, mode:S.mode,
       bpm:P.bpm, insts:P.insts, melInst:P.melInst, pattern:P.pattern,
       beats:P.beats, genre:P.genre, loop:P.loop, click:P.click, melody:P.melody, realInst:P.realInst,
-      playBass:P.playBass, orig:S.orig,
+      playBass:P.playBass, piano:P.piano!==false, sheetZoom:S.sheetZoom||1, orig:S.orig,
       at:Date.now()
     }));
   }catch(e){
@@ -2020,7 +2289,7 @@ function saveLast(){
         mode:S.mode,   /* 'sheet'(원본 사진 보기)도 그대로 저장한다 — 사진에서 가져온 곡의 기본 보기다 */
         bpm:P.bpm, insts:P.insts, melInst:P.melInst, pattern:P.pattern,
         beats:P.beats, genre:P.genre, loop:P.loop, click:P.click, melody:P.melody,
-        realInst:P.realInst, playBass:P.playBass, at:Date.now()
+        realInst:P.realInst, playBass:P.playBass, piano:P.piano!==false, at:Date.now()
       }));
     }catch(e2){}
   }
@@ -2043,7 +2312,8 @@ function restoreLast(){
   if(r.melInst)P.melInst=r.melInst;
   if(r.pattern)P.pattern=r.pattern; if(r.beats)P.beats=r.beats;
   P.genre=r.genre||''; P.loop=r.loop!==false; P.click=!!r.click; P.melody=r.melody!==false;
-  P.realInst=r.realInst!==false; P.playBass=!!r.playBass;
+  P.realInst=r.realInst!==false; P.playBass=!!r.playBass; P.piano=r.piano!==false;
+  S.sheetZoom=Math.max(1,Math.min(4,+r.sheetZoom||1));
   if(r.t)$('title').value=r.t;
   return true;
 }
@@ -2861,7 +3131,35 @@ async function staffGeom(url,clef){
   if(med>0.26)return null;                     // 격자에 안 맞으면 오선을 잘못 잡은 것이다
   const durSure=res.every(n=>n.sure);
   const total=+res.reduce((a,n)=>a+(n.beats||0),0).toFixed(4);
-  return {sp,top,bot,med,notes:res,durSure,total};
+
+  /* 7) 마디선 — 사진 위에 "지금 몇째 마디"를 표시하려면 이게 필요하다(v52).
+     오선 다섯 줄을 **위아래로 꽉 꿰뚫는 얇은 세로 잉크**만 마디선으로 본다.
+     ★ 기둥(stem)을 걸러내는 게 전부다. 기둥은 오선 높이(4칸)가 아니라 3.5칸이고
+       머리에 붙은 쪽 끝이 반드시 모자란다 — 아래 줄 음표의 위 기둥은 위쪽으로는
+       넘치지만 아래쪽이 반 칸 모자라고, 위 줄 음표의 아래 기둥은 그 반대다.
+       그래서 "위로도 아래로도 다 넘치는가"를 보면 기둥은 자동으로 빠진다.
+     ★ 오선 줄 지우기(2단계)는 이미 끝난 상태다. 마디선은 세로 런이 길어서 그 단계에
+       지워지지 않는다 — 지워지는 건 줄에 붙은 짧은 잉크뿐이다. */
+  const bars=[];
+  {
+    const yA=top+sp*0.25, yB=bot-sp*0.25, ya=Math.round(yA);
+    const lim=Math.max(2,Math.round(sp*0.55));
+    const full=new Uint8Array(W);
+    if(ya>=0&&ya<H)for(let x=0;x<W;x++){
+      if(!ink[ya*W+x])continue;
+      let t2=ya; while(t2-1>=0&&ink[(t2-1)*W+x])t2--;
+      let b2=ya; while(b2+1<H&&ink[(b2+1)*W+x])b2++;
+      if(t2<=yA&&b2>=yB)full[x]=1;
+    }
+    let s2=-1;
+    for(let x=0;x<=W;x++){
+      const on=x<W&&full[x];
+      if(on){ if(s2<0)s2=x; }
+      else if(s2>=0){ if(x-s2<=lim)bars.push(((s2+x-1)/2)/sc); s2=-1; }
+    }
+  }
+  /* w: notes[].x · bars[] 가 어떤 폭을 기준으로 한 값인지. 사진 위 비율로 바꿀 때 쓴다. */
+  return {sp,top,bot,med,notes:res,durSure,total,w:img.width,bars};
 }
 /* AI 결과의 ♪ 줄 음이름을 우리가 센 것으로 덮어쓴다. 개수가 정확히 같을 때만 한다. */
 function applyGeomPitch(text,names){
@@ -3414,6 +3712,49 @@ function melScore(txt){
    각 단에 곡 전체 진행도 구간 [b0,b1) 을 붙여, 재생 위치 → 어느 단인지 바로 찾게 한다.
    길이는 sysWeight 로 잰 박수 비율이라 재생 엔진의 계산과 완전히 같지는 않다 —
    눈으로 따라가는 보조 표시라 한 마디 정도 오차는 문제되지 않는다. */
+/* staffGeom 이 픽셀로 잰 음표·마디선 자리를 '사진 폭의 몇 %' 로 바꾼다(v52).
+   사진을 어떤 크기로 띄우든 비율은 그대로라, 그 위에 마디 상자와 재생선을 얹을 수 있다.
+     seg = 마디 구간 [{x0,x1,i0,cnt}] — 마디선 사이를 잘라 **음표가 든 칸만** 남긴다.
+           맨 앞 자리표 칸과 맨 뒤 빈 칸이 이걸로 저절로 빠진다(따로 세지 않는다).
+     kb/kx = 진행도(0~1) → 가로 자리(0~1) 꺾은선.
+
+   ★ 꺾은선을 음표 자리만으로 잇지 않는 이유(실측으로 잡은 버그다):
+     마디의 **마지막 음** 머리에서 다음 마디 **첫 음** 머리로 곧장 이으면, 그 사이에
+     마디선이 놓여 있어서 마지막 음이 아직 울리는 동안 재생선이 이미 마디선을 넘는다.
+     실제로 25번 재 보니 마디가 바뀌는 지점마다 표시가 **반 박 먼저** 넘어갔다.
+     그래서 마디의 끝 박은 **그 마디의 마디선(seg.x1)** 으로 이어 두고, 다음 마디는
+     첫 음 머리에서 새로 시작한다 — 같은 박에 점이 둘이지만 그게 실제 조판이다. */
+function origGeomOf(geo){
+  if(!geo||!geo.w||!geo.notes||geo.notes.length<2)return null;
+  const w=geo.w, cl=v=>Math.max(0,Math.min(1,v));
+  const nx=geo.notes.map(n=>cl(n.x/w));
+  const bt=geo.notes.map(n=>(n.beats>0?n.beats:1));
+  const tot=bt.reduce((a,b)=>a+b,0)||1;
+  const nb=[]; let acc=0;
+  for(const b of bt){ nb.push(acc/tot); acc+=b; }
+  const ends=nb.map((v,i)=>v+bt[i]/tot);
+  const bars=(geo.bars||[]).map(x=>cl(x/w)).sort((a,b)=>a-b);
+  const edges=[0].concat(bars,[1]), seg=[];
+  for(let i=0;i+1<edges.length;i++){
+    const a=edges[i], b=edges[i+1];
+    if(b-a<0.02)continue;
+    let i0=-1,cnt=0;
+    nx.forEach((x,j)=>{ if(x>=a&&x<b){ if(i0<0)i0=j; cnt++; } });
+    if(cnt)seg.push({x0:a,x1:b,i0,cnt});
+  }
+  const kb=[], kx=[];
+  if(seg.length){
+    seg.forEach(sg=>{
+      for(let j=sg.i0;j<sg.i0+sg.cnt;j++){ kb.push(nb[j]); kx.push(nx[j]); }
+      const last=sg.i0+sg.cnt-1;
+      kb.push(ends[last]); kx.push(Math.max(nx[last],sg.x1));   // 마디 끝 = 마디선
+    });
+  }else{
+    nb.forEach((v,i)=>{ kb.push(v); kx.push(nx[i]); });
+    kb.push(1); kx.push(Math.min(1,nx[nx.length-1]+0.03));
+  }
+  return {seg:seg.length?seg:null,kb,kx};
+}
 function buildOrig(sysRec){
   const recs=(sysRec||[]).filter(r=>r&&S.photos[r.page]);
   if(!recs.length)return null;
@@ -3424,7 +3765,7 @@ function buildOrig(sysRec){
     const w=Math.max(0,r.w||0);
     const b0=tot>0?acc/tot:0; acc+=w;
     const b1=tot>0?acc/tot:1;
-    pages[r.page].sys.push({t0:r.t0,t1:r.t1,b0,b1,n:++n+'단'});
+    pages[r.page].sys.push(Object.assign({t0:r.t0,t1:r.t1,b0,b1,n:++n+'단'},origGeomOf(r.geo)||{}));
   });
   const out={pages:pages.filter(p=>p.url&&p.sys.length),approx:recs.some(r=>r.whole)};
   return out.pages.length?out:null;
@@ -3434,19 +3775,33 @@ function buildOrig(sysRec){
    멜로디를 읽었으면 그 박수가 곧 정답이고, 못 읽었으면 마디·코드 개수로 어림한다.
    재생 엔진과 완전히 같은 계산은 아니다 — 눈으로 따라가는 보조 표시라 이 정도면 충분하다. */
 function sysWeight(txt){
+  /* ★ v52에서 세는 대상을 바꿨다 — 예전엔 **멜로디 박수**를 셌다. 그런데 실제 재생 길이를
+     정하는 건 멜로디가 아니라 **코드 마디**다: buildTimeline 은 마디마다 멜로디를
+     P.beats 로 늘려 맞추고(`put(g,barStarts[i],P.beats,…)`), 마디 길이는 코드가 정한다.
+     그래서 한 마디가 3박으로 적힐 단(2/4로 바뀌는 곳, 못갖춘마디, 못 읽은 음)이 하나만
+     있어도 하이라이트가 재생보다 앞서 나가고, 그 오차가 단마다 쌓인다 —
+     사용자가 "재생이랑 표시가 안 맞는다"고 한 것이 이것이다.
+     여기서 세는 방식은 buildTimeline 의 flush() 와 같은 규칙이어야 한다. */
+  const bl=parseChart(txt||'');
+  const hasBar=bl.some(b=>b.k==='pairs'&&b.pairs.some(p=>p.bar));
+  let bars=0;
+  for(const b of bl){
+    if(b.k!=='pairs')continue;
+    let cur=0;
+    for(const pr of b.pairs){
+      if(pr.bar){ if(hasBar&&cur){bars++;cur=0;} continue; }
+      if(pr.chord){ if(hasBar)cur++; else bars++; }
+    }
+    if(cur){bars++;cur=0;}
+  }
+  if(bars>0)return bars*(P.beats||4);
+  /* 코드가 하나도 없는 단(멜로디만 적힌 단)은 멜로디 박수로 어림하는 수밖에 없다 */
   let beats=0;
   for(const l of (txt||'').split('\n')){
     if(!/^\s*♪/.test(l))continue;
     for(const n of parseMelody(l))if(!n.bar)beats+=(n.beats||1);
   }
-  if(beats>0.5)return beats;
-  let ch=0,bars=0;
-  for(const b of parseChart(txt||'')){
-    if(b.k!=='pairs')continue;
-    ch+=b.pairs.filter(x=>x.chord).length;
-    bars+=b.pairs.filter(x=>x.bar).length;
-  }
-  return Math.max(1,bars||ch||1)*(P.beats||4);
+  return beats>0.5?beats:(P.beats||4);
 }
 /* 채보한 멜로디의 마지막 음이름 — 다음 단을 읽을 때 옥타브 기준으로 알려 준다 */
 function stripFence(t){ return (t||'').trim().replace(/^```[a-z]*\n?/i,'').replace(/```\s*$/,'').trim(); }
@@ -3712,13 +4067,13 @@ async function runScan(){
       /* 음높이는 AI에 맡기지 않고 픽셀로 잰다(v49). 잰 결과를 프롬프트에 넣어 주고,
          AI가 돌려준 음표 개수가 우리가 센 개수와 같으면 음이름을 그 값으로 덮어쓴다.
          한 단씩 자른 그림에서만 한다 — 쪽 전체 그림에서는 첫 단만 재게 되어 뜻이 없다. */
-      let geoNames=null, geoNotes=null;
+      let geoNames=null, geoNotes=null, geoRaw=null;
       if(withMel&&P.geomPitch!==false&&!shots[i].whole){
         say(tag+'오선 자리와 음표 길이를 재는 중…');
         try{ const geo=await staffGeom(shots[i].url);
-             if(geo&&geo.notes.length>=3){ geoNames=geo.notes.map(n=>n.name);
+             if(geo&&geo.notes.length>=3){ geoRaw=geo; geoNames=geo.notes.map(n=>n.name);
                if(geo.durSure)geoNotes=geo.notes; } }
-        catch(e){ geoNames=null; geoNotes=null; }
+        catch(e){ geoNames=null; geoNotes=null; geoRaw=null; }
       }
       say(tag+'악보를 읽는 중입니다…');
       const mkPrompt=extra=>makePrompt(withMel,Object.assign({lastNote:carryNote,geom:geoNames},extra||{}))+ocrHint;
@@ -3793,7 +4148,7 @@ async function runScan(){
       if(tm){ if(i===0)$('title').value=tm[1].trim(); t=t.replace(/^TITLE:\s*.+$/m,'').trim(); }
       if(t)pages.push(t);
       sysRec.push({page:shots[i].page||0,t0:shots[i].t0||0,t1:(shots[i].t1===undefined?1:shots[i].t1),
-                   w:t?sysWeight(t):0,whole:!!shots[i].whole});
+                   w:t?sysWeight(t):0,whole:!!shots[i].whole,geo:geoRaw});
       /* Gemini 는 gemPace 가 요청 직전에 간격을 지키므로 여기서 또 쉬면 두 번 쉰다 */
       if(i<NN-1&&!(prov==='gemini'&&!hosted))await new Promise(r=>setTimeout(r,1100));
     }
@@ -3855,7 +4210,7 @@ async function ocrFallback(existing,say,fail,err){
        OCR 이 이미 단 단위로 잘라 봤으므로 그 구간을 그대로 하이라이트에 쓴다
        (예전엔 단 정보가 없다고 보고 쪽 전체를 한 덩어리로 잡았다). */
     const rec=(draft.sys||[]).filter(s=>s.txt&&s.txt.trim())
-      .map(s=>({page:s.page||0,t0:s.t0||0,t1:(s.t1===undefined?1:s.t1),w:sysWeight(s.txt),whole:!!s.whole}));
+      .map(s=>({page:s.page||0,t0:s.t0||0,t1:(s.t1===undefined?1:s.t1),w:sysWeight(s.txt),whole:!!s.whole,geo:s.geo||null}));
     S.orig=buildOrig(rec.length?rec:S.photos.map((ph,pi)=>({page:pi,t0:0,t1:1,w:1,whole:true})));
     if(hasSheet())S.mode='sheet';   // 인식이 깨져도 사진은 정확하다 — 사진을 기본 화면으로
     reparse(); renderAll(); addHistory();
@@ -4576,30 +4931,60 @@ function openPanel(name){
   }
 
   if(name==='staff'){
-    const sel=S.selNote||null;
+    /* ★ v52에서 이 패널을 뒤집었다. 사용자 지적: *"음을 수정이 안 됨! 그리고 오선지가
+       너무너무 크다! 한글도 잘 안 보임! 진짜 가독성이 안 좋다."*
+       원인은 고칠 수 없어서가 아니라 **고치는 단추가 화면 밖에 있어서**였다 —
+       오선보를 먼저 그리고 그 아래에 ▲▼ 를 두었는데, 오선보가 폭 100% 로 늘어나
+       한 줄이 160px 이 넘다 보니 단추가 늘 스크롤 아래로 밀려났다. 그래서:
+         a. 고치는 단추를 **위로** 올리고 스크롤에 붙여 둔다(sticky).
+         b. 오선보는 확대하지 않는다(max-width 로 1:1 이하), 높이는 잘라 스크롤한다.
+         c. 음표를 눈으로 찾아 누르지 않아도 되게 **◀ ▶ 로 음을 옮겨 가며** 고친다. */
+    const mels=[]; blocks.forEach((b,bi)=>{ if(b.k==='mel')b.notes.forEach((n,ni)=>{ if(!n.bar&&!n.rest)mels.push({bi,ni}); }); });
+    let sel=S.selNote||null;
+    if(sel&&!mels.some(m=>m.bi===sel.bi&&m.ni===sel.ni))sel=null;
+    if(!sel&&mels.length){ sel=mels[0]; S.selNote=sel; }
+    const at=sel?mels.findIndex(m=>m.bi===sel.bi&&m.ni===sel.ni):-1;
     const cur=(()=>{ if(!sel)return null;
       const b=blocks[sel.bi]; if(!b||b.k!=='mel')return null;
       return b.notes[sel.ni]||null; })();
     const NM=['도','도♯','레','레♯','미','파','파♯','솔','솔♯','라','라♯','시'];
     const midiOf=n=>n&&(n.midi!==undefined?n.midi:60+mod(origKey.pc)+n.deg+(n.oct||0)*12);
+    const head=cur
+      ? '<div class="noteedit">'
+        +'<div class="rowline" style="border:none;padding:6px 0 8px">'
+        +'<span class="fontset"><button id="n-prev" '+(at<=0?'disabled':'')+'>◀</button>'
+        +'<button id="n-next" '+(at<0||at>=mels.length-1?'disabled':'')+'>▶</button></span>'
+        +'<span style="text-align:center;flex:1"><b style="font-size:19px;color:var(--brass)">'
+        +NM[mod(midiOf(cur))]+(Math.floor(midiOf(cur)/12)-1)+'</b>'
+        +'<small style="display:block;color:var(--dim);font-size:11px">'
+        +(at+1)+'/'+mels.length+'번째 · '+(cur.beats||1)+'박</small></span>'
+        +'<span class="fontset"><button id="n-dn">▼</button><button id="n-play">듣기</button>'
+        +'<button id="n-up">▲</button></span></div>'
+        +'<div class="btns"><button class="btn wide" id="n-oct-dn">한 옥타브 아래</button>'
+        +'<button class="btn wide" id="n-oct-up">한 옥타브 위</button></div></div>'
+      : '<p class="note">고칠 음이 없습니다 — 이 곡에는 멜로디가 없습니다.</p>';
     body.innerHTML=
       '<p class="note">읽어온 멜로디입니다. 원본 악보와 대조해 보세요. '
-      +'<b>음을 누르면 선택</b>되고, 아래 화살표로 반음씩 고칠 수 있습니다.</p>'
-      +'<div id="staffbox" style="background:var(--ink);border:1px solid var(--line);'
-      +'border-radius:10px;padding:10px 6px;overflow-x:auto">'+renderStaff(sel)+'</div>'
-      +(cur&&!cur.rest&&!cur.bar
-        ? '<div class="rowline"><span><b>'+NM[mod(midiOf(cur))]+(Math.floor(midiOf(cur)/12)-1)+'</b>'
-          +'<small>'+(cur.beats||1)+'박</small></span>'
-          +'<span class="fontset"><button id="n-dn">▼</button><button id="n-play">듣기</button>'
-          +'<button id="n-up">▲</button></span></div>'
-          +'<div class="btns"><button class="btn wide" id="n-oct-dn">한 옥타브 아래</button>'
-          +'<button class="btn wide" id="n-oct-up">한 옥타브 위</button></div>'
-        : '<p class="note">아직 고를 음이 없습니다. 위에서 음표를 눌러 보세요.</p>');
+      +'<b>◀ ▶ 로 음을 옮겨 가며</b> ▲▼ 로 반음씩 고칩니다(오선보의 음표를 눌러도 됩니다).</p>'
+      +head
+      +'<div id="staffbox">'+renderStaff(sel)+'</div>';
 
     const box=$('staffbox');
-    if(box)box.querySelectorAll('[data-bi]').forEach(r=>r.onclick=()=>{
-      S.selNote={bi:+r.dataset.bi,ni:+r.dataset.ni}; openPanel('staff');
-    });
+    if(box){
+      box.querySelectorAll('[data-bi]').forEach(r=>r.onclick=()=>{
+        S.selNote={bi:+r.dataset.bi,ni:+r.dataset.ni}; openPanel('staff');
+      });
+      /* 고른 음이 잘려 안 보이면 그 줄로 스크롤한다 — ◀ ▶ 로 넘길 때 늘 보이게 */
+      const svg=box.querySelector('svg');
+      if(svg&&sel){
+        const hit=box.querySelector('[data-bi="'+sel.bi+'"][data-ni="'+sel.ni+'"]');
+        if(hit&&hit.getBBox){ try{
+          const vb=(svg.getAttribute('viewBox')||'0 0 1 1').split(/\s+/).map(Number);
+          const k=svg.clientHeight/(vb[3]||1);
+          box.scrollTop=Math.max(0,hit.getBBox().y*k-box.clientHeight*0.35);
+        }catch(e){} }
+      }
+    }
     const shift=(d)=>{
       if(!cur||cur.rest||cur.bar)return;
       if(cur.midi===undefined){cur.midi=60+mod(origKey.pc)+cur.deg+(cur.oct||0)*12;delete cur.deg;delete cur.oct;}
@@ -4608,9 +4993,14 @@ function openPanel(name){
       const ctx=AC(); if(ctx)voice(ctx,P.melInst,cur.midi+S.semis,ctx.currentTime+.01,.7,.5,0);
       openPanel('staff');
     };
+    const go=(d)=>{ const j=at+d; if(j<0||j>=mels.length)return;
+      S.selNote=mels[j]; openPanel('staff');
+      const n=blocks[mels[j].bi].notes[mels[j].ni];
+      const ctx=AC(); if(ctx&&n)voice(ctx,P.melInst,midiOf(n)+S.semis,ctx.currentTime+.01,.5,.42,0); };
     const on=(id,fn)=>{const el=$(id); if(el)el.onclick=fn;};
     on('n-up',()=>shift(1)); on('n-dn',()=>shift(-1));
     on('n-oct-up',()=>shift(12)); on('n-oct-dn',()=>shift(-12));
+    on('n-prev',()=>go(-1)); on('n-next',()=>go(1));
     on('n-play',()=>{const ctx=AC(); if(ctx&&cur)voice(ctx,P.melInst,midiOf(cur)+S.semis,ctx.currentTime+.01,.8,.5,0);});
   }
 
@@ -4627,6 +5017,7 @@ function openPanel(name){
           +'<span class="fontset"><button id="v-staffminus">−</button><span id="v-staffsize">'+Math.round(S.staffScale*100)+'%</span>'
           +'<button id="v-staffplus">＋</button></span></div>'
         : '')
+      +T('v-piano',P.piano!==false,'건반 표시','재생 중 누르는 음을 화면 아래 건반에 표시')
       +T('v-num',S.num,'넘버 시스템','코드를 1·4·5 숫자로 표시')
       +T('v-capo',S.capo,'카포','기타용 잡는 자리 계산')
       +T('v-flat',S.flat==='flat','♭ 우선','올림표 대신 내림표로 표기')
@@ -4642,6 +5033,7 @@ function openPanel(name){
     on('v-plus',()=>{setFont(S.font+2);openPanel('view')});
     on('v-staffminus',()=>{setStaffScale(S.staffScale-.1);openPanel('view')});
     on('v-staffplus',()=>{setStaffScale(S.staffScale+.1);openPanel('view')});
+    on('v-piano',()=>{P.piano=(P.piano===false); syncPiano(P.playing); openPanel('view'); scheduleSave();});
     on('v-num',()=>{S.num=!S.num;up()});
     on('v-capo',()=>{if(!capoInfo()){toast('이 키에는 쓸 만한 카포 자리가 없습니다.');return;}S.capo=!S.capo;up()});
     on('v-flat',()=>{S.flat=S.flat==='flat'?null:'flat';up()});
@@ -4887,6 +5279,8 @@ document.addEventListener('keydown',e=>{
 function setFocus(on){
   document.body.classList.toggle('focus',on);
   $('b-focus').classList.toggle('on',on);
+  measureFoot();                       // 집중 모드는 아래 단추줄이 사라져 막대 높이가 바뀐다
+  if(P.playing)renderPiano();
   if(on)wakeOn(); else wakeOff();
 }
 $('b-sheet').onclick=()=>setMode(S.mode==='sheet'?(hasMelody()?'staff':'text'):'sheet');
@@ -4918,8 +5312,12 @@ document.addEventListener('visibilitychange',()=>{
 if($("ver"))$("ver").textContent=APP_VER;
 if(restoreLast())reparse();
 let rsT=null;
-window.addEventListener('resize',()=>{clearTimeout(rsT);rsT=setTimeout(()=>{if(S.mode!=='text')renderChart()},250);});
-renderAll();
+window.addEventListener('resize',()=>{clearTimeout(rsT);rsT=setTimeout(()=>{
+  if(S.mode!=='text')renderChart();
+  if(P.playing){renderPiano();paintPiano(actx?actx.currentTime:0);}   // 건반 비율은 창 폭에서 나온다
+  measureFoot();
+},250);});
+renderAll(); measureFoot();
 </script>
 </body>
 </html>

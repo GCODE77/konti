@@ -135,3 +135,77 @@ export function applyTest(){
   return {passed:T.filter(r=>r.pass).length,total:T.length,fails:T.filter(r=>!r.pass)};
 }
 if(typeof window!=='undefined')window.applyTest=applyTest;
+
+/* ── 마디선 찾기(staffGeom().bars) + 마디 나누기(origGeomOf) ─────────────────
+   v52에서 "사진 위에 지금 몇째 마디인지 표시" 하려고 넣은 것이다. 여기서 무서운 건
+   **기둥(stem)을 마디선으로 잘못 세는 것**이다 — 한 번이라도 잘못 세면 마디 수가
+   원본과 달라져 번호가 곡 끝까지 어긋난다. 기둥은 오선 높이(4칸)가 아니라 3.5칸이고
+   머리 쪽 끝이 반드시 모자라므로, "위로도 아래로도 다 넘치는가"만 보면 걸러진다.
+   아래 두 경우가 그 경계다: 맨 아랫줄 음의 위 기둥 / 맨 윗줄 음의 아래 기둥. */
+function drawBar(o){
+  o=o||{};
+  const sp=o.sp||24, W=o.W||1600, H=o.H||520, y0=100, x0=150, dx=o.dx||90;
+  const c=document.createElement('canvas'); c.width=W; c.height=H;
+  const g=c.getContext('2d'); g.fillStyle='#fff'; g.fillRect(0,0,W,H);
+  if(o.rot){ g.translate(W/2,H/2); g.rotate(o.rot); g.translate(-W/2,-H/2); }
+  g.strokeStyle='#000'; g.lineWidth=Math.max(2,Math.round(sp*0.11));
+  for(let k=0;k<5;k++){ const y=y0+k*sp; g.beginPath(); g.moveTo(10,y); g.lineTo(W-10,y); g.stroke(); }
+  const bot=y0+4*sp;
+  g.lineWidth=Math.round(sp*0.35);                 // 자리표 흉내(오선 위아래로 넘게 뻗은 획)
+  g.beginPath(); g.moveTo(34,y0-sp*1.4); g.lineTo(34,bot+sp*1.4); g.stroke();
+  const xs=o.sopr.map((s,i)=>x0+i*dx);
+  o.sopr.forEach((st,i)=>{
+    const cy=bot-st*sp/2, hollow=(o.hollowAt||[]).indexOf(i)>=0;
+    g.save(); g.translate(xs[i],cy); g.rotate(-0.32);
+    g.beginPath(); g.ellipse(0,0,sp*0.62,sp*0.44,0,0,Math.PI*2);
+    if(hollow){ g.lineWidth=Math.round(sp*0.16); g.strokeStyle='#000'; g.stroke(); }
+    else { g.fillStyle='#000'; g.fill(); } g.restore();
+    g.lineWidth=Math.max(2,Math.round(sp*0.1)); g.strokeStyle='#000';
+    const up=st<4, sx=up?xs[i]+sp*0.58:xs[i]-sp*0.58;
+    g.beginPath(); g.moveTo(sx,cy); g.lineTo(sx,up?cy-sp*3.5:cy+sp*3.5); g.stroke();
+    if(st<0||st>8){                                 // 덧줄
+      const n=st<0?Math.floor(-st/2):Math.floor((st-8)/2);
+      for(let k=1;k<=n;k++){ const ly=st<0?bot+k*sp:y0-k*sp;
+        g.lineWidth=Math.max(2,Math.round(sp*0.11)); g.beginPath();
+        g.moveTo(xs[i]-sp*0.95,ly); g.lineTo(xs[i]+sp*0.95,ly); g.stroke(); } }
+  });
+  g.strokeStyle='#000'; g.lineWidth=Math.max(2,Math.round(sp*0.12));
+  (o.barsAt||[]).forEach(k=>{ const x=x0+(k-0.5)*dx;
+    g.beginPath(); g.moveTo(x,y0); g.lineTo(x,bot); g.stroke(); });
+  if(o.lyric!==false){ g.fillStyle='#000'; g.font=Math.round(sp*1.05)+'px sans-serif';
+    xs.forEach(x=>g.fillText('오영이미하',x-sp*0.5,bot+sp*2.6)); }
+  return c.toDataURL('image/png');
+}
+
+const BAR_CASES=[
+  /* [이름, 그림, 기대하는 마디별 음표 수] */
+  ['마디선 2개 → 4음씩 두 마디',      {sopr:[0,2,4,5,7,5,4,2],barsAt:[4,8]},            [4,4]],
+  ['맨 윗줄 음(아래 기둥)을 마디선으로 세지 않는다',
+                                      {sopr:[8,8,7,8,8,7,8,8],barsAt:[4,8]},            [4,4]],
+  ['맨 아랫줄 음(위 기둥)을 마디선으로 세지 않는다',
+                                      {sopr:[0,0,1,0,0,1,0,0],barsAt:[4,8]},            [4,4]],
+  ['속 빈 머리(2분음표)가 섞여도 같다',{sopr:[0,2,4,5,7,5,4,2],hollowAt:[1,4,7],barsAt:[4,8]},[4,4]],
+  ['덧줄을 마디선으로 세지 않는다',    {sopr:[-2,-1,0,4,8,9,10,11],barsAt:[4,8]},        [4,4]],
+  ['1.5도 기울어져도 같다',            {sopr:[0,2,4,5,7,5,4,2],barsAt:[4,8],rot:0.026},  [4,4]],
+  ['마디선이 없으면 한 덩어리',        {sopr:[0,2,4,5,7,5,4,2]},                          [8]],
+  ['저해상도(오선 간격 8px)',          {sopr:[0,2,4,5,7,5,4,2],barsAt:[4,8],sp:8,W:600,H:200,dx:40,lyric:false},[4,4]]
+];
+
+export async function barTest(){
+  const rows=[];
+  for(const [label,o,want] of BAR_CASES){
+    let got='(null)', pass=false, err=null;
+    try{
+      const geo=await staffGeom(drawBar(o));
+      const og=geo?origGeomOf(geo):null;
+      got=(og&&og.seg)?JSON.stringify(og.seg.map(s=>s.cnt)):'(null)';
+      pass=got===JSON.stringify(want);
+    }catch(e){ err=String(e); }
+    rows.push({label,pass,want:JSON.stringify(want),got,err});
+  }
+  /* 자리표 왼쪽 칸은 음표가 없으므로 마디로 세지 않는다 — 위 기대값이 그걸 이미 담고 있다 */
+  const fails=rows.filter(r=>!r.pass);
+  console.table(rows.map(r=>({테스트:r.label,결과:r.pass?'통과':'실패',기대:r.want,실제:r.got})));
+  return {passed:rows.length-fails.length,total:rows.length,fails};
+}
+if(typeof window!=='undefined')window.barTest=barTest;
