@@ -311,7 +311,7 @@ window.onerror=function(msg,src,ln){
    예) const SCAN_ENDPOINT = "https://konti-scan.내계정.workers.dev";
 */
 const SCAN_ENDPOINT = "";
-const APP_VER = "58";
+const APP_VER = "59";
 /* file:// 나 content:// 로 열면 브라우저가 외부 호출을 막는다(CORS). 미리 알려준다. */
 const LOCAL_FILE = !/^https?:$/.test(location.protocol);
 /* Claude 앱처럼 iframe 안에서 실행 중이면 키 없이도 인식이 통한다. */
@@ -510,7 +510,7 @@ function parseChart(raw){
       if(pairs.length){
         pairs[pairs.length-1].text+=line.slice(last);
         if(lead)pairs.unshift({chord:null,raw:'',text:lead});
-        out.push({k:'pairs',pairs:withBars(pairs)}); continue;
+        out.push({k:'pairs',pairs:withBars(pairs),_cl:true}); continue;
       }
     }
     /* "2) …" 같은 절 가사 줄은 바로 위 1절 줄에 붙인다.
@@ -539,8 +539,12 @@ function parseChart(raw){
       const pos=[],re=/\S+/g; let m;
       while((m=re.exec(line))!==null)pos.push({col:m.index,raw:m[0]});
       const nx=lines[i+1];
-      const ly=(nx!==undefined&&nx.trim()&&!isChordLine(nx)&&!isSection(nx)&&!MEL_RE.test(nx))?nx:null;
+      let ly=(nx!==undefined&&nx.trim()&&!isChordLine(nx)&&!isSection(nx)&&!MEL_RE.test(nx))?nx:null;
       if(ly!==null)i++;
+      /* ★ 가사 줄 맨 앞의 절 번호("1." "3)")를 **같은 칸 수의 공백으로** 바꿔 지운다(v59).
+         전통 찬송가는 절마다 왼쪽에 번호가 있고, 그 때문에 첫 코드가 가사 글자 하나씩
+         밀려서 붙었다(실측: `D` 에 `) 거 기 못` 이 붙음). 칸 수를 유지해야 뒤 코드까지 안 밀린다. */
+      if(ly)ly=ly.replace(/^\s*[1-9]\s*[).]?(?=\s)/,m=>' '.repeat(m.length));
       const idx=pos.map(p=>ly?colToIndex(ly,p.col):p.col);
       const pairs=[];
       if(pos.length&&idx[0]>0)pairs.push({chord:null,raw:'',text:ly?ly.slice(0,idx[0]):''});
@@ -548,7 +552,20 @@ function parseChart(raw){
         const end=j+1<pos.length?idx[j+1]:undefined;
         pairs.push({chord:parseChord(p.raw),raw:p.raw,text:ly?ly.slice(idx[j],end):''});
       });
-      out.push({k:'pairs',pairs:withBars(pairs)}); continue;
+      out.push({k:'pairs',pairs:withBars(pairs),_cl:true}); continue;
+    }
+    /* ★ 코드 줄 밑에 가사 줄이 **잇달아** 나오면 그것은 다음 절이다 — 새 마디가 아니다(v59).
+       예전에는 "2)" 처럼 번호가 붙은 줄만 절로 붙였고, 번호 없는 줄은 **저마다 한 마디**가
+       됐다. 그래서 사진에서 읽은 찬송가처럼 절이 3개면 단마다 빈 마디가 두 개씩 더 생겨
+       20마디가 27마디로 불어났다(실측). 멜로디도 코드도 없는 빈 마디라 화면에서 바로 보였다.
+       가사만 있는 차트(코드도 마디선도 없는 줄)는 그대로 둔다 — `_cl`(코드 줄에서 만든 블록)일 때만 붙인다. */
+    {
+      const prev=out.length?out[out.length-1]:null;
+      if(prev&&prev.k==='pairs'&&prev._cl&&!MEL_RE.test(line)){
+        prev.alt=prev.alt||{};
+        let v=2; while(prev.alt[v]!==undefined)v++;
+        if(v<=8){ prev.alt[v]=line.trim(); continue; }
+      }
     }
     out.push({k:'pairs',pairs:withBars([{chord:null,raw:'',text:line}])});
   }
@@ -4081,31 +4098,76 @@ function geomMidi(name,sig){
    ★ 안 건드리는 경우: 이미 맞는 마디(그대로), 늘이거나 줄이는 배율이 터무니없는 마디
      (못갖춘마디·마지막 마디일 수 있다 — 건드리면 더 나빠진다). */
 const BEAT_GRID=[0.125,0.25,0.375,0.5,0.75,1,1.5,2,3,4,6,8];
-function fitBarBeats(bs,per){
+/* 한 마디의 길이 어림값을 **악보에 쓸 수 있는 길이로** 고르되, 합이 정확히 한 마디가
+   되게 한다(v59). 둘을 따로 놓고 보면 쉬워 보이지만 함께 만족하기는 어렵다 — 예전에는
+   낱낱이 가장 가까운 길이로 스냅하고 남는 박을 가장 긴 음표에 떠넘겼고, 그게 안 되면
+   스냅을 포기했다. 그래서 0.875 · 0.375 · 2.5 같은 **악보에 없는 길이**가 그대로 나갔다
+   (실측: 점8분+16분 리듬이 있는 단 세 개가 전부 이렇게 나왔다).
+
+   지금은 **동적계획법**으로 한 번에 푼다. 칸은 1/8박, 값은 BEAT_GRID 만 쓴다.
+   비용은 두 가지를 더한다:
+     ① 어림값과의 비율 오차 log(g/v)² — 길이는 비율로 틀리므로 차가 아니라 비율로 재야 한다
+        (2박이 2.5박으로 읽힌 것보다 0.25박이 0.5박으로 읽힌 게 훨씬 큰 잘못이다).
+     ② **박자리 벌점** — 조판 규칙이다: 1박 이상은 정박에서, 반박 이상은 반박자리에서
+        시작한다. 이게 없으면 합이 맞는 **다른** 조합이 더 싸게 나온다(실측: 진짜 1·0.75·0.25 를
+        0.75·0.75·0.5 로 골랐다). 싱코페이션을 막을 만큼 세게 주지는 않는다(0.25). */
+function snapBeats(v,per,v2,w1){
+  const U=8, T=Math.round(per*U), n=v.length;
+  if(!(T>0)||!n||n>64)return null;
+  const G=BEAT_GRID, NG=G.length, gu=G.map(g=>Math.round(g*U));
+  const un=G.map(g=>g>=1?U:g>=0.5?U/2:g>=0.25?U/4:1);   // 그 길이가 시작해야 하는 자리의 간격
+  const w=(v2&&v2.length===n)?Math.max(0,Math.min(1,w1)):1;
+  const LAM=0.25, INF=1e30;
+  let prev=new Float64Array(T+1).fill(INF); prev[0]=0;
+  const pick=[];
+  for(let i=0;i<n;i++){
+    const cur=new Float64Array(T+1).fill(INF), ch=new Int8Array(T+1).fill(-1);
+    const a=(v[i]>1e-6?v[i]:1e-6), b=(w<1&&v2[i]>1e-6)?v2[i]:a;
+    for(let t=0;t<=T;t++){
+      if(prev[t]>=INF)continue;
+      for(let k=0;k<NG;k++){
+        const t2=t+gu[k]; if(t2>T)continue;
+        const da=Math.log(G[k]/a), db=Math.log(G[k]/b);
+        const c=prev[t]+w*da*da+(1-w)*db*db+((t%un[k])?LAM:0);
+        if(c<cur[t2]){ cur[t2]=c; ch[t2]=k; }
+      }
+    }
+    pick.push(ch); prev=cur;
+  }
+  if(prev[T]>=INF)return null;
+  const out=new Array(n); let t=T;
+  for(let i=n-1;i>=0;i--){ const k=pick[i][t]; if(k<0)return null; out[i]=G[k]; t-=gu[k]; }
+  return out;
+}
+/* bs = 재서 알아낸 길이, gaps = 간격으로 되짚은 길이(합이 이미 per), durSure = 잰 길이가
+   스스로 앞뒤가 맞는가.
+
+   ★ 잰 길이를 믿는 기준을 "합이 맞는가" 에서 "스스로 앞뒤가 맞는가(durSure)" 로 바꿨다(v59).
+   headDur 는 기둥·꼬리·빔을 세지만 **점(·)은 보지 못한다**. 그래서 점음표 리듬을 항상
+   ‘같은 8분음표 둘’로 읽고(3·0.75·0.25 → 3·0.5·0.5), 그러면 **합은 우연히 맞는다**.
+   합만 보고 믿으면 그런 마디는 영영 못 고친다. 잰 길이가 흔들리는 단(durSure=false)에서는
+   **간격만** 본다 — 이 악보에서 잰 길이를 조금이라도 섞으면(0.1~0.3) 점음표 마디가 다시 무너졌다
+   (실측: 0 → 스무 마디 전부 정답, 0.1 → 1마디 틀림, 0.3 → 6마디 틀림). */
+function fitBarBeats(bs,per,gaps,durSure){
   const sum=bs.reduce((a,b)=>a+(b>0?b:0),0);
   if(!(sum>0)||!(per>0))return bs;
-  if(Math.abs(sum-per)<=0.06&&bs.every(b=>BEAT_GRID.some(g=>Math.abs(g-b)<1e-6)))return bs;
+  const gp=(gaps&&gaps.length===bs.length)?gaps:null;
+  if(Math.abs(sum-per)<=0.06&&bs.every(b=>BEAT_GRID.some(g=>Math.abs(g-b)<1e-6))
+     &&(durSure||!gp))return bs;
   const k=per/sum;
   if(k<0.2||k>6)return bs;                      // 못갖춘마디로 보이면 손대지 않는다
-  const GRID=BEAT_GRID;
   const sc=bs.map(b=>(b>0?b:0)*k);
-  const sn=sc.map(v=>GRID.reduce((a,g)=>Math.abs(g-v)<Math.abs(a-v)?g:a,GRID[0]));
-  let s2=sn.reduce((a,b)=>a+b,0);
-  if(Math.abs(s2-per)>1e-6){
-    let mi=0; for(let i=1;i<sn.length;i++)if(sn[i]>sn[mi])mi=i;
-    const f=+(sn[mi]+(per-s2)).toFixed(4);
-    if(f>=0.125)sn[mi]=f;
-    else return sc.map(v=>+v.toFixed(4));       // 스냅이 망가지면 비례만 맞춘다
-  }
-  return sn;
+  return snapBeats(sc,per,gp,durSure?0.7:0)||sc.map(v=>+v.toFixed(4));   // 풀 수 없으면 비례만 맞춘다
 }
 /* ★ 잰 길이의 합이 박자표와 안 맞으면 **음표 사이 간격**으로 갈아탄다(v57).
    조판 규칙이 하나 더 있다: 긴 음표일수록 다음 음표까지 넓게 띄운다. 찬송가처럼 단순한
-   조판에서는 이게 거의 비례해서, 마디 안 간격 비율만으로 길이를 되짚을 수 있다.
+   조판에서는 마디 안 간격만으로 길이를 되짚을 수 있다(단, 아래 ★ 대로 비례는 아니다).
    실측 검증: 잰 길이가 **정확했던 단**(1단)에서 간격으로 되짚은 값이 네 마디 모두
    (2,1,1)(1,1,2)(2,1,1)(2,2) 로 정확히 같았다. 그리고 잰 길이가 무너진 단(2단 1마디,
    실제 2,1,1 인데 2,0.125,0.125 로 읽힘)에서는 간격이 2,1,1 을 되찾았다.
-   그래서 **잰 길이가 스스로 앞뒤가 맞을 때만 그걸 쓰고, 아니면 간격을 쓴다.** */
+   ★ v59 부터는 둘 중 하나를 고르지 않고 **둘 다 비용에 넣어** 한 번에 고른다(fitBarBeats).
+   합만 맞으면 잰 것을 믿던 예전 규칙은, 점이 안 보여 3·0.75·0.25 를 3·0.5·0.5 로 읽은
+   마디처럼 **우연히 합이 맞는 틀린 답**을 영영 못 고쳤다(실측). */
 function fitBeatsToBars(geo,seg,per){
   if(!geo||!geo.notes||!seg||seg.length<2)return false;
   let changed=false;
@@ -4116,14 +4178,20 @@ function fitBeatsToBars(geo,seg,per){
       bs.push(geo.notes[j]?(geo.notes[j].beats>0?geo.notes[j].beats:1):1);
       xs.push(geo.notes[j]?geo.notes[j].x/(geo.w||1):0);
     }
-    let src=bs;
-    const sum=bs.reduce((a,b)=>a+b,0);
-    if(Math.abs(sum-per)>0.06&&xs.length){
-      const gaps=xs.map((x,i)=>Math.max(1e-4,(i+1<xs.length?xs[i+1]:sg.x1)-x));
+    let gp=null;
+    {
+      /* ★ 간격은 길이에 **그대로 비례하지 않는다**(v59). 어느 음표든 머리 폭과
+         최소 여백은 같이 차지하므로, 실제 간격 = (고정분) + (길이에 비례하는 분) 이다.
+         그 고정분을 빼지 않고 비례로만 나누면 **짧은 음이 실제보다 길게** 나온다 —
+         실측으로 16분음표(0.25박)가 0.4박으로 읽혔고, 그 때문에 점8분+16분 리듬이 전부
+         무너졌다. 고정분은 오선 간격과 같은 단위로 재는 게 맞다(머리 폭 ≈ 오선 한 칸).
+         1.05칸은 이 악보 스무 마디를 전부 맞추는 값이고, 0.9~1.2 칸 사이에서 결과가 같다. */
+      const sp=(geo.sp>0&&geo.iw>0)?geo.sp/geo.iw:0, c0=sp*1.05, fl=sp>0?sp*0.15:1e-4;  // sp 는 재는 그림(iw) 기준, x 는 원본 폭(w) 기준 — 비율로 맞춤
+      const gaps=xs.map((x,i)=>Math.max(fl,(i+1<xs.length?xs[i+1]:sg.x1)-x-c0));
       const t=gaps.reduce((a,b)=>a+b,0);
-      if(t>0)src=gaps.map(v=>v/t*per);
+      if(t>0)gp=gaps.map(v=>v/t*per);
     }
-    const fx=fitBarBeats(src,per);
+    const fx=fitBarBeats(bs,per,gp,!!geo.durSure);
     for(let j=sg.i0,k=0;j<sg.i0+sg.cnt;j++,k++)
       if(geo.notes[j]&&geo.notes[j].beats!==fx[k]){ geo.notes[j].beats=fx[k]; changed=true; }
   }

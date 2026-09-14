@@ -178,6 +178,99 @@ export default async function scoreTest(){
   });
   ok('코드가 아닌 것은 버린다',splitChordRun('가나').length===0,splitChordRun('가나'));
 
+  /* 4) 리듬 스냅(v59) — 점음표를 살리고, 악보에 없는 길이를 내보내지 않는다.
+     여기 쓰는 숫자는 전부 실제 찬송가 한 쪽(966×1366)에서 쟴 값이다.
+     ① 잰 길이는 점을 못 보고 간격은 점을 본다 — 간격 쪽이 이긴다.
+     ② 합이 맞는 조합이 여럿이면 **박자리**가 가른다(1박은 정박에서 시작한다). */
+  {
+    const S1=[0.5,0.5,0.5,0.5,0.5,0.5], G1=[0.946,0.748,0.388,0.953,0.748,0.218];
+    const r1=fitBarBeats(S1,4,G1,false);
+    ok('간격으로 점8분+16분을 되찾는다 (실제 '+r1.join(' ')+')',
+       JSON.stringify(r1)==='[1,0.75,0.25,1,0.75,0.25]',r1);
+
+    /* 잰 길이가 3·0.5·0.5 — **합은 우연히 4박**이라 예전에는 그대로 나갔다.
+       잰 길이가 믿을 만하지 않을 때(durSure=false)는 간격이 고쳐야 한다. */
+    const r2=fitBarBeats([3,0.5,0.5],4,[3.20,0.63,0.17],false);
+    ok('점을 놓쳐 합만 맞는 마디도 고친다 (실제 '+r2.join(' ')+')',
+       JSON.stringify(r2)==='[3,0.75,0.25]',r2);
+    const r3=fitBarBeats([3,0.5,0.5],4,[3.20,0.63,0.17],true);
+    ok('잰 길이가 스스로 맞으면(durSure) 그것을 믿는다',
+       JSON.stringify(r3)==='[3,0.5,0.5]',r3);
+
+    /* 옆에 놓고 보면 합은 둘 다 4박이지만, 0.75가 반박자리에서 시작하는 쪽은 조판이 아니다 */
+    const r4=snapBeats([0.946,0.748,0.388,0.953,0.748,0.218],4);
+    ok('박자리 규칙을 지킨다 (실제 '+(r4||[]).join(' ')+')',
+       !!r4&&JSON.stringify(r4)==='[1,0.75,0.25,1,0.75,0.25]',r4);
+
+    /* 어떤 경우에도 악보에 쓸 수 없는 길이(0.875·0.375·2.5)를 내보내지 않는다 */
+    const odd=fitBarBeats([0.5,0.25,0.125,1,0.375,1],4,null,false);
+    ok('악보에 없는 길이를 만들지 않는다 (실제 '+odd.join(' ')+')',
+       odd.every(v=>BEAT_GRID.some(g=>Math.abs(g-v)<1e-9))&&Math.abs(odd.reduce((a,b)=>a+b,0)-4)<1e-6,odd);
+  }
+
+  /* 4-2) 간격 → 길이: **고정분을 빼고** 나눠야 한다(v59).
+     조판 규칙대로 음표 자리를 직접 만들어 fitBeatsToBars 에 넣는다 — 검출기를 거치지
+     않으므로 이 검사는 오로지 ‘간격을 길이로 되짚는 산수’만 본다.
+     그릴 쌇의 고정분은 머리 폭(1.3칸)+여백 = **1.45칸**로 두었다. 코드가 쓰는 1.05칸과
+     일부러 다르게 잡은 것이다 — 같은 숫자를 쓰면 내 모형을 내가 다시 확인하는 꼴이 된다. */
+  {
+    const sp=21, W=2000, HEAD=sp*1.45, durs=[1,0.75,0.25,1,0.75,0.25];
+    const span=W*0.2;                                  // 한 마디 폭(실제 찬송가와 같은 비율)
+    const K=(span-HEAD*durs.length)/durs.reduce((a,b)=>a+b,0);
+    const xs=[]; let cx=W*0.1;
+    durs.forEach(d=>{ xs.push(cx); cx+=HEAD+K*d; });
+    const geo={sp,iw:W,w:W,durSure:false,
+      notes:durs.map((d,i)=>({name:'E4',x:xs[i],beats:0.5}))};
+    const seg=[{x0:W*0.1/W,x1:cx/W,i0:0,cnt:durs.length},{x0:cx/W,x1:1,i0:-1,cnt:0}];
+    fitBeatsToBars(geo,seg,4);
+    const got=geo.notes.map(n=>n.beats);
+    ok('조판 간격에서 점8분+16분을 되찾는다 (실제 '+got.join(' ')+')',
+       JSON.stringify(got)===JSON.stringify(durs),got);
+  }
+
+  /* 5) 절 가사 줄은 마디를 만들지 않는다(v59).
+     실제 사진에서 읽은 찬송가는 한 단 아래에 가사 줄이 2~3개다. 예전에는 번호 없는
+     가사 줄이 저마다 한 마디가 돼서 20마디짜리가 27마디로 불어났다(멜로디도 코드도
+     없는 빈 마디). 가사만 있는 차트는 예전 그대로여야 한다. */
+  {
+    const keep={raw:S.raw,verse:S.verse,semis:S.semis};
+    try{
+      S.raw=`♪ C4:4 | D4:4
+A        | D
+1. 가 사
+   두 절
+   세 절`;
+      S.semis=0; S.verse=1; reparse();
+      const pr=blocks.filter(b=>b.k==='pairs');
+      ok('가사 줄 셋은 블록 하나다 (실제 '+pr.length+')',pr.length===1,pr.length);
+      ok('둘째·셋째 줄은 2·3절이 된다',
+         !!pr[0]&&JSON.stringify(Object.keys(pr[0].alt||{}))==='["2","3"]',pr[0]&&pr[0].alt);
+      /* ★ 블록 하나가 아니라 **차트 전체의 마디 수**를 센다 — 가짜 마디는 다른 블록으로
+         생기므로 첫 블록만 보면 놓친다(실제로 이 검사가 무름했다). */
+      let N=0, pm=null;
+      for(const b of blocks){
+        if(b.k==='mel'){ pm=b; continue; }
+        if(b.k==='pairs'){ N+=measuresOfBlock(pm,b).N; pm=null; }
+      }
+      ok('차트 전체가 2마디다 — 가사 줄로 늘지 않는다 (실제 '+N+')',N===2,N);
+
+      /* 코드도 마디선도 없는 가사만의 차트는 줄마다 그대로 남아야 한다 */
+      S.raw=`첫째 줄
+둘째 줄
+셋째 줄`; reparse();
+      ok('가사만 있는 차트는 그대로 둔다',blocks.filter(b=>b.k==='pairs').length===3,
+         blocks.filter(b=>b.k==='pairs').length);
+
+      /* 절 번호가 가사 줄 맨 앞에 있어도 코드가 밀리지 않는다 */
+      S.raw=`D        A
+3) 가 나  다  라`; reparse();
+      const p2=blocks.find(b=>b.k==='pairs');
+      const first=p2&&p2.pairs.find(x=>x.chord);
+      ok('절 번호가 코드에 붙지 않는다 (실제 "'+((first&&first.text)||'')+'")',
+         !!first&&!/^[)\].]/.test((first.text||'').trim()),first&&first.text);
+    }finally{ S.raw=keep.raw; S.verse=keep.verse; S.semis=keep.semis; reparse(); }
+  }
+
   console.table(T.map(t=>({검사:t.name,결과:t.cond?'통과':'실패'})));
   console.log((fail?'✗ ':'✓ ')+'score: '+pass+' 통과 / '+fail+' 실패');
   return {pass,fail};
