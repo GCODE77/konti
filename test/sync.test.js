@@ -160,6 +160,42 @@ export default async function syncTest(){
     ok('5도 도약이 섞여도 믿는다',geomSane(mk([0,4,2,6,4,2,0])));
     ok('제멋대로 튀면 안 믿는다',!geomSane(mk([0,14,-9,12,-7,15,1])));
     ok('음이 3개 미만이면 안 믿는다',!geomSane(mk([0,2])));
+
+    /* 8. 채보한 오선보 위의 재생 위치 표시 (v60).
+       사용자 요청: *"원본사진으로 안볼때도 지금 진행하는 위치 사진처럼 악보에 표기바람"*.
+       사진 하이라이트와 **똑같은 성질**을 지켜야 한다 —
+         (가) 재생 엔진이 소리를 예약한 그 음이 화면에서 켜진다(따로 세지 않는다)
+         (나) 켜진 음은 **켜진 마디 안에** 있다(마디 음영과 음 표시가 절대 어긋나지 않는다)
+       ★ 이 검사가 실제로 깨지는지 확인해 둘 것 — 음표 상자를 반 마디만 밀어도 (나)가 터진다. */
+    S.raw=['[Verse]',
+      '♪ C4:1 D4:1 E4:1 F4:1 | G4:2 E4:1 C4:1 | D4:1.5 E4:0.5 F4:2 | G4:4',
+      '|[C]도레 미파 |[G]솔미 도 |[F]레미 파 |[C]솔'].join('\n');
+    S.mode='staff'; S.verse=1; S.semis=0; P.beats=4;
+    reparse(); renderAll();
+    const tl8=buildTimeline();
+    const melEv=tl8.evs.filter(e=>e.type==='m');
+    ok('멜로디 이벤트에 음표 자리(bi/ni)가 실려 있다',
+       melEv.length>0&&melEv.every(e=>e.bi!==undefined&&e.ni!==undefined),
+       melEv.slice(0,3));
+    ok('음표마다 표시용 상자가 하나씩 있다 ('+document.querySelectorAll('#chart .nowbox').length+'/'+melEv.length+')',
+       document.querySelectorAll('#chart .nowbox').length===melEv.length);
+    ok('마디마다 음영 상자가 있다 ('+document.querySelectorAll('#chart .mbox').length+')',
+       document.querySelectorAll('#chart .mbox').length===4);
+    let bad8=[];
+    for(const ev of melEv){
+      markNote({bi:ev.bi,ni:ev.ni});
+      const nb=document.querySelector('#chart .nowbox.on'), mb=document.querySelector('#chart .mbox.on');
+      if(!nb||!mb||nb.ownerSVGElement!==mb.ownerSVGElement){ bad8.push([ev.bi,ev.ni,'없음']); continue; }
+      const x=+nb.getAttribute('x')+(+nb.getAttribute('width'))/2;
+      const bx=+mb.getAttribute('x'), bw=+mb.getAttribute('width');
+      if(!(x>=bx-1&&x<=bx+bw+1))bad8.push([ev.bi,ev.ni,x,bx,bw]);
+      /* 켜진 음은 **하나뿐**이어야 한다 — 남아 있으면 지나온 음이 계속 밝다 */
+      if(document.querySelectorAll('#chart .nowbox.on').length!==1)bad8.push([ev.bi,ev.ni,'여럿']);
+    }
+    eq('모든 음이 자기 마디 안에서 켜진다(어긋난 것)',bad8,[]);
+    clearStaffNow();
+    ok('멈추면 표시가 전부 꺼진다',
+       document.querySelectorAll('#chart .nowbox.on,#chart .mbox.on').length===0);
   }finally{
     S.raw=keep.raw; S.orig=keep.orig; S.mode=keep.mode; S.verse=keep.verse; S.semis=keep.semis;
     P.beats=keep.beats; P.bpm=keep.bpm; reparse(); renderAll();
