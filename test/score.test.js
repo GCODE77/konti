@@ -271,6 +271,49 @@ A        | D
     }finally{ S.raw=keep.raw; S.verse=keep.verse; S.semis=keep.semis; reparse(); }
   }
 
+  /* ── 5) AI 결과와 **마디 단위로** 맞추기 (v62) ──
+     사용자 신고: *"업데이트 된 버전으로 돌려도 같은곳에 파, 미 라고 표기 해야하는데 파(4박)"*.
+     실제 악보를 재 보니 `staffGeom` 은 그 마디를 `F4:2 E4:2` 로 **정확히 읽고 있었는데**,
+     AI 가 온음표 하나로 읽는 바람에 "개수가 다르면 아무것도 안 한다"는 규칙에 걸려
+     **잰 값을 통째로 버리고** AI 의 틀린 값을 내보냈다. 맞추는 단위가 단 전체였던 것이 문제다.
+     ★ 지키는 성질(중요도 순):
+       - 잰 것이 **더 적은** 마디는 절대 건드리지 않는다(지우면 되돌릴 수 없다)
+       - 잰 것이 **더 많은** 마디만 채운다(AI 가 뭉쳐 읽은 것이다)
+       - 어느 경우든 그 마디 박수 합이 박자표와 같을 때만 손댄다
+       - 마디 수가 다르면 통째로 포기한다(예전 방식으로 되돌아간다) */
+  if(geo){
+    const acc=geomAccs(geo);
+    const right='♪ '+BARS.map(b=>b.map(n=>'A4:'+n.dur).join(' ')).join(' | ');
+    /* ① AI 가 마지막 마디의 두 음(2박+4박… 이 그림에서는 2분+온음표)을 하나로 뭉쳐 읽었다 */
+    const merged='♪ '+BARS.slice(0,3).map(b=>b.map(n=>'A4:'+n.dur).join(' ')).join(' | ')+' | A4:4';
+    const r1=applyGeomBars(merged,geo,acc,4);
+    ok('마디 단위로 맞춘다',r1.matched,r1.why);
+    ok('AI 가 뭉쳐 읽은 음표를 되찾는다 ('+r1.filled+'개)',r1.filled>=1,r1);
+    const lastBar=(r1.text.split('\n')[0].split('|').pop()||'').trim().split(/\s+/).filter(Boolean);
+    ok('마지막 마디가 두 음이 된다 ('+lastBar.join(' ')+')',lastBar.length===2,lastBar);
+    ok('되찾은 마디의 박수 합이 4박이다',
+       Math.abs(lastBar.reduce((a,t)=>a+parseFloat(t.split(':')[1]||1),0)-4)<0.02,lastBar);
+
+    /* ② AI 가 **더 많이** 적었으면(우리가 놓쳤을 수 있다) 그 마디는 손대지 않는다 */
+    const extra='♪ '+BARS.slice(0,3).map(b=>b.map(n=>'A4:'+n.dur).join(' ')).join(' | ')
+      +' | A4:1 A4:1 A4:1 A4:1 A4:1 A4:1';
+    const r2=applyGeomBars(extra,geo,acc,4);
+    ok('잰 것이 더 적은 마디는 건드리지 않는다',
+       /A4:1 A4:1 A4:1 A4:1 A4:1 A4:1\s*$/.test(r2.text.split('\n')[0]),r2.text.split('\n')[0]);
+
+    /* ③ 마디 수가 다르면 통째로 포기한다 */
+    const fewer='♪ A4:4 | A4:4';
+    ok('마디 수가 다르면 손대지 않는다',!applyGeomBars(fewer,geo,acc,4).matched,
+       applyGeomBars(fewer,geo,acc,4).why);
+
+    /* ④ AI 가 맞게 적었으면 마디 수·음표 수가 그대로 유지된다 */
+    const r4=applyGeomBars(right,geo,acc,4);
+    const bars4=r4.text.split('\n')[0].split('|').length;
+    ok('맞게 적은 줄은 마디 수가 그대로다 ('+bars4+')',bars4===BARS.length,r4.text.split('\n')[0]);
+    ok('맞게 적은 줄은 음표 수가 그대로다',
+       (r4.text.match(/A4:|[A-G][#b]?\d:/g)||[]).length===nNote,r4.text.split('\n')[0]);
+  }
+
   console.table(T.map(t=>({검사:t.name,결과:t.cond?'통과':'실패'})));
   console.log((fail?'✗ ':'✓ ')+'score: '+pass+' 통과 / '+fail+' 실패');
   return {pass,fail};

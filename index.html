@@ -338,7 +338,7 @@ window.onerror=function(msg,src,ln){
    예) const SCAN_ENDPOINT = "https://konti-scan.내계정.workers.dev";
 */
 const SCAN_ENDPOINT = "";
-const APP_VER = "61";
+const APP_VER = "62";
 /* file:// 나 content:// 로 열면 브라우저가 외부 호출을 막는다(CORS). 미리 알려준다. */
 const LOCAL_FILE = !/^https?:$/.test(location.protocol);
 /* Claude 앱처럼 iframe 안에서 실행 중이면 키 없이도 인식이 통한다. */
@@ -756,6 +756,100 @@ function noteDur(beats){
             flags:v<=0.0625?4:v<=0.125?3:v<=0.25?2:v<=0.5?1:0};
   }
 }
+/* ============ 빔(음표를 잇는 굵은 가로줄) ============
+   사용자 요청 (v62): *"음표가 2번째 사진처럼 연결되어 있는건데 이렇게 표기 해라"*.
+   맞는 지적이다 — 조판에서 8분음표 이하는 낱개로 깃발을 달지 않고 **한 박 안에서 빔으로
+   묶는다.** 묶어 그려야 박이 눈에 보이고 원본 악보와 같은 모양이 된다. 깃발만 줄줄이
+   그리면 "이 셋이 한 박"이라는 정보가 통째로 사라진다.
+   ★ 묶는 단위는 **한 박**이다. 박을 넘어가면 끊고, 쉼표·4분음표 이상에서도 끊는다.
+     겹박자(6/8·9/8)는 점4분(1.5박)이 한 묶음이다. */
+function beamGroups(notes,perBar){
+  const per=perBar||4, unit=(per>3&&per%3===0)?1.5:1;
+  const out=[]; let cur=null, pos=0;
+  for(let i=0;i<notes.length;i++){
+    const n=notes[i].n||notes[i];
+    if(n.bar)continue;
+    const d=noteDur(n.beats), beat=Math.floor(pos/unit+1e-6);
+    if(!n.rest&&d.v<=0.5&&d.flags>=1){
+      if(cur&&cur.beat===beat)cur.ix.push(i);
+      else { cur={beat,ix:[i]}; out.push(cur); }
+    }else cur=null;
+    pos=+(pos+(n.beats||1)).toFixed(6);
+  }
+  return out.filter(x=>x.ix.length>=2).map(x=>x.ix);
+}
+const BEAM_W=4, BEAM_GAP=5.5, STEM_MIN=13, STEM_LEN=26, STEM_DX=6;
+/* 기둥·깃발·빔을 그린다.
+   ND: [{X,y,step,D,col}|null] (쉼표 자리는 null) · groups: 빔으로 묶을 인덱스 묶음
+   midStep: 기둥 방향이 바뀌는 자리(높은음자리표 36 = 가운데 줄 B4, 낮은음자리표 24)
+   ★ 빔 하나에는 **기둥 방향이 하나**다. 무리의 평균 자리로 정한다 — 낱개로 정하면
+     빔이 음표를 가로지른다. 그리고 빔은 **직선**이라, 기둥 길이가 음마다 달라진다.
+     기울기를 제한하고(±0.22) 가장 짧은 기둥이 13px 은 되게 빔을 밀어낸다. */
+function stemsSvg(ND,groups,midStep){
+  let svg='', hi=Infinity, lo=-Infinity;
+  const inG=new Set(); groups.forEach(g=>g.forEach(i=>inG.add(i)));
+  ND.forEach((d,i)=>{
+    if(!d||!d.D.stem||inG.has(i))return;
+    const up=d.step<midStep, tip=d.y+(up?-STEM_LEN:STEM_LEN), sx=d.X+(up?STEM_DX:-STEM_DX);
+    svg+='<line x1="'+sx.toFixed(1)+'" y1="'+d.y+'" x2="'+sx.toFixed(1)+'" y2="'+tip.toFixed(1)+'" stroke="'+d.col+'" stroke-width="1.4"/>';
+    for(let f=0;f<d.D.flags;f++)
+      svg+='<path d="M'+sx.toFixed(1)+' '+(up?tip+f*6:tip-f*6).toFixed(1)+' q7 4 6 12" stroke="'+d.col+'" stroke-width="1.4" fill="none"/>';
+    hi=Math.min(hi,Math.min(d.y,tip)-4);
+    lo=Math.max(lo,Math.max(d.y,tip)+(up?4:(d.D.flags>1?24:d.D.flags?18:4)));
+  });
+  groups.forEach(g=>{
+    const ns=g.map(i=>ND[i]).filter(Boolean);
+    if(ns.length<2)return;
+    const up=(ns.reduce((a,d)=>a+d.step,0)/ns.length)<midStep;
+    ns.forEach(d=>{ d._sx=d.X+(up?STEM_DX:-STEM_DX); });
+    const x0=ns[0]._sx, x1=ns[ns.length-1]._sx;
+    const t0=ns[0].y+(up?-STEM_LEN:STEM_LEN), t1=ns[ns.length-1].y+(up?-STEM_LEN:STEM_LEN);
+    let slope=(x1>x0)?(t1-t0)/(x1-x0):0;
+    slope=Math.max(-0.22,Math.min(0.22,slope));
+    let b0=(t0+t1)/2-slope*((x0+x1)/2-x0);
+    const at=x=>b0+slope*(x-x0);
+    let shift=0;
+    ns.forEach(d=>{
+      const room=up?(d.y-STEM_MIN)-at(d._sx):at(d._sx)-(d.y+STEM_MIN);
+      if(room>=0)return;
+      if(up)shift=Math.min(shift,room); else shift=Math.max(shift,-room);
+    });
+    b0+=shift;
+    ns.forEach(d=>{
+      const by=at(d._sx);
+      svg+='<line x1="'+d._sx.toFixed(1)+'" y1="'+d.y+'" x2="'+d._sx.toFixed(1)+'" y2="'+by.toFixed(1)+'" stroke="'+d.col+'" stroke-width="1.4"/>';
+      hi=Math.min(hi,Math.min(d.y,by)-4); lo=Math.max(lo,Math.max(d.y,by)+4);
+    });
+    const col=ns[0].col;
+    const beam=(xa,xb,k)=>{
+      const off=(up?1:-1)*k*BEAM_GAP, h=up?BEAM_W:-BEAM_W;
+      const ya=at(xa)+off, yb=at(xb)+off;
+      hi=Math.min(hi,ya-Math.abs(h)-2,yb-Math.abs(h)-2);
+      lo=Math.max(lo,ya+Math.abs(h)+2,yb+Math.abs(h)+2);
+      return '<path d="M'+xa.toFixed(1)+' '+ya.toFixed(1)+' L'+xb.toFixed(1)+' '+yb.toFixed(1)
+        +' L'+xb.toFixed(1)+' '+(yb+h).toFixed(1)+' L'+xa.toFixed(1)+' '+(ya+h).toFixed(1)+' Z" fill="'+col+'"/>';
+    };
+    svg+=beam(x0,x1,0);
+    /* 둘째·셋째 빔 — 실제로 필요한 음표 사이에만. 혼자면 이웃 쪽으로 짧은 토막을 낸다
+       (점8분+16분 리듬이 정확히 이 모양이다 — 사용자가 보내 준 사진의 그 자리다). */
+    const maxF=Math.max.apply(null,ns.map(d=>d.D.flags));
+    for(let k=1;k<maxF;k++){
+      let run=[];
+      const flush=()=>{
+        if(run.length>=2)svg+=beam(run[0]._sx,run[run.length-1]._sx,k);
+        else if(run.length===1){
+          const d=run[0], j=ns.indexOf(d), dir=(j>0)?-1:1;
+          const xa=d._sx, xb=d._sx+dir*9;
+          svg+=beam(Math.min(xa,xb),Math.max(xa,xb),k);
+        }
+        run=[];
+      };
+      ns.forEach(d=>{ if(d.D.flags>k)run.push(d); else flush(); });
+      flush();
+    }
+  });
+  return {svg,hi,lo};
+}
 /* 박수를 사람 말로 — "1.5박" 보다 "점4분음표" 가 악보와 바로 이어진다 */
 const DUR_NAME={8:'온음표 ×2',4:'온음표',2:'2분음표',1:'4분음표',0.5:'8분음표',
                 0.25:'16분음표',0.125:'32분음표',0.0625:'64분음표'};
@@ -1104,6 +1198,9 @@ function renderStaffSection(melM,chM,lyM,verses,measureStart,fitM,bassM,W,breaks
       const cx=[]; { let c=inner; sw.forEach(w=>{ const ww=w/swSum*iw; cx.push(c+ww/2); c+=ww; }); }
       spans.push({m,x0,x1});
 
+      /* ★ 머리·덧줄·점·임시표를 먼저 다 그리고, **기둥과 빔은 무리 단위로 뒤에** 그린다(v62).
+         낱개로 깃발을 달면 "이 셋이 한 박"이라는 정보가 사라진다 — beamGroups/stemsSvg 참고. */
+      const ND=[];
       notes.forEach((it,i)=>{
         const n=it.n, X=cx[i], slot=sw[i]/swSum*iw;
         if(n.rest){
@@ -1116,6 +1213,7 @@ function renderStaffSection(melM,chM,lyM,verses,measureStart,fitM,bassM,W,breaks
           notesSvg+='<rect x="'+(X-rw/2).toFixed(1)+'" y="'+ry.toFixed(1)+'" width="'+rw+'" height="'+rh.toFixed(1)+'" fill="'+C+'" opacity=".5" rx="1"/>';
           for(let d=0;d<RD.dots;d++)
             notesSvg+='<circle cx="'+(X+rw/2+4+d*5).toFixed(1)+'" cy="'+(TOP+3*GAP-GAP*0.5).toFixed(1)+'" r="2" fill="'+C+'" opacity=".6"/>';
+          ND.push(null);
           return;
         }
         const midi=(n.midi!==undefined)?n.midi+S.semis:(60+pc+n.deg+(n.oct||0)*12);
@@ -1131,14 +1229,7 @@ function renderStaffSection(melM,chM,lyM,verses,measureStart,fitM,bassM,W,breaks
           +(D.hollow?'fill="none" stroke="'+col+'" stroke-width="1.6"':'fill="'+col+'"')+'/>';
         const pad=n.warn?11:6;
         hi=Math.min(hi,y-pad); lo=Math.max(lo,y+pad);
-        if(D.stem){
-          const up=sp.step<36, tip=up?y-25:y+25, sx2=up?X+6:X-6;
-          notesSvg+='<line x1="'+sx2.toFixed(1)+'" y1="'+y+'" x2="'+sx2.toFixed(1)+'" y2="'+tip+'" stroke="'+col+'" stroke-width="1.4"/>';
-          for(let f=0;f<D.flags;f++)
-            notesSvg+='<path d="M'+sx2.toFixed(1)+' '+(up?tip+f*6:tip-f*6)+' q7 4 6 12" stroke="'+col+'" stroke-width="1.4" fill="none"/>';
-          /* 깃발은 늘 아래로 향한다 — 기둥이 아래로 뻗은 음표에서만 잉크가 더 내려간다 */
-          if(up)hi=Math.min(hi,tip-4); else lo=Math.max(lo,tip+(D.flags>1?24:D.flags?18:4));
-        }
+        ND.push({X,y,step:sp.step,D,col});
         if(D.dots){
           const dy=(sp.step%2===0)?y-GAP:y;
           for(let d=0;d<D.dots;d++)
@@ -1149,6 +1240,10 @@ function renderStaffSection(melM,chM,lyM,verses,measureStart,fitM,bassM,W,breaks
         hits.push({x:X-Math.max(10,slot/2),w:Math.max(20,slot),bi:it.bi,ni:it.ni,on,m:measureStart+m});
         nowRects.push({x:X-Math.max(9,slot/2),w:Math.max(18,slot),bi:it.bi,ni:it.ni,top:TOP-6,h:8*GAP+12});
       });
+      { const st=stemsSvg(ND,beamGroups(notes,P.beats),36);
+        notesSvg+=st.svg;
+        if(isFinite(st.hi))hi=Math.min(hi,st.hi);
+        if(isFinite(st.lo))lo=Math.max(lo,st.lo); }
 
       /* 가사: 음절이 음표 수 이하면 음표마다 하나씩, 넘치면 마디 폭에 고르게 —
          어느 경우에도 음절을 버리지 않는다 */
@@ -1251,9 +1346,10 @@ function renderStaffSection(melM,chM,lyM,verses,measureStart,fitM,bassM,W,breaks
         const inner=spn.x0+8, iw=Math.max(16,spn.x1-inner-6);
         const tw=grp.reduce((a,it)=>a+16+Math.min(4,it.n.beats||1)*13,0)||1;
         let c=inner;
+        const BND=[];
         grp.forEach(it=>{
           const n=it.n, slot=(16+Math.min(4,n.beats||1)*13)/tw*iw, X=c+slot/2; c+=slot;
-          if(n.rest){ b+='<rect x="'+(X-5).toFixed(1)+'" y="'+(TOP2+3*GAP)+'" width="10" height="'+GAP+'" fill="'+C+'" opacity=".5" rx="1"/>'; return; }
+          if(n.rest){ b+='<rect x="'+(X-5).toFixed(1)+'" y="'+(TOP2+3*GAP)+'" width="10" height="'+GAP+'" fill="'+C+'" opacity=".5" rx="1"/>'; BND.push(null); return; }
           const midi=(n.midi!==undefined)?n.midi+S.semis:(48+pc+n.deg+(n.oct||0)*12);
           const spx=spell(midi,pref,sigSet), y=yOf2(spx.step);
           const on=(S.selNote&&S.selNote.bi===it.bi&&S.selNote.ni===it.ni);
@@ -1265,13 +1361,7 @@ function renderStaffSection(melM,chM,lyM,verses,measureStart,fitM,bassM,W,breaks
           b+='<ellipse cx="'+X.toFixed(1)+'" cy="'+y+'" rx="6" ry="4.5" transform="rotate(-18 '+X.toFixed(1)+' '+y+')" '
             +(BD.hollow?'fill="none" stroke="'+col+'" stroke-width="1.6"':'fill="'+col+'"')+'/>';
           bLo=Math.max(bLo,y+6); bHi=Math.min(bHi,y-6);
-          if(BD.stem){
-            const up=spx.step<24, tip=up?y-25:y+25, sx3=up?X+6:X-6;
-            b+='<line x1="'+sx3.toFixed(1)+'" y1="'+y+'" x2="'+sx3.toFixed(1)+'" y2="'+tip+'" stroke="'+col+'" stroke-width="1.4"/>';
-            for(let f=0;f<BD.flags;f++)
-              b+='<path d="M'+sx3.toFixed(1)+' '+(up?tip+f*6:tip-f*6)+' q7 4 6 12" stroke="'+col+'" stroke-width="1.4" fill="none"/>';
-            if(up)bHi=Math.min(bHi,tip-4); else bLo=Math.max(bLo,tip+(BD.flags>1?24:BD.flags?18:4));
-          }
+          BND.push({X,y,step:spx.step,D:BD,col});
           if(BD.dots){
             const dy=(spx.step%2===0)?y-GAP:y;
             for(let d=0;d<BD.dots;d++)b+='<circle cx="'+(X+10+d*5).toFixed(1)+'" cy="'+dy+'" r="2" fill="'+col+'"/>';
@@ -1281,6 +1371,10 @@ function renderStaffSection(melM,chM,lyM,verses,measureStart,fitM,bassM,W,breaks
           b+='<rect x="'+(X-slot/2).toFixed(1)+'" y="'+(TOP2-16)+'" width="'+slot.toFixed(1)+'" height="'+(8*GAP+32)+'" fill="transparent" style="cursor:pointer" data-bi="'+it.bi+'" data-ni="'+it.ni+'"/>';
           nowRects.push({x:X-slot/2,w:slot,bi:it.bi,ni:it.ni,top:TOP2-6,h:8*GAP+12});
         });
+        { const st=stemsSvg(BND,beamGroups(grp,P.beats),24);
+          b+=st.svg;
+          if(isFinite(st.hi))bHi=Math.min(bHi,st.hi);
+          if(isFinite(st.lo))bLo=Math.max(bLo,st.lo); }
       });
       out+=b; y1=Math.max(bLo,bottom2)+10;
     }
@@ -1391,12 +1485,12 @@ const INSTRUMENTS={
   piano  :{label:'피아노',    partials:[[1,.52],[2,.20],[3,.09],[4,.05],[6,.02]], a:.004,d:.6,sus:.26,r:.35, wave:'triangle', spread:0, rev:.30},
   ep     :{label:'일렉피아노', partials:[[1,.58],[2,.10],[4,.16],[7,.05]],        a:.006,d:.9,sus:.28,r:.40, wave:'sine',     spread:0, rev:.34, trem:[5.4,.12]},
   organ  :{label:'오르간',    partials:[[1,.40],[2,.24],[3,.15],[4,.10],[6,.07],[8,.04]], a:.02,d:.08,sus:.90,r:.10, wave:'sine', spread:0, rev:.28},
-  strings:{label:'현악·바이올린', partials:[[1,.30],[2,.19],[3,.11],[4,.07],[5,.05],[6,.03]], a:.24,d:.35,sus:.86,r:.55, wave:'sawtooth', spread:.012, rev:.48, vib:[5.1,.30], lp:[2700,1.1]},
-  cello  :{label:'첼로',      partials:[[1,.34],[2,.20],[3,.12],[4,.06],[5,.03]], a:.16,d:.3,sus:.84,r:.5,  wave:'sawtooth', spread:.01, rev:.44, vib:[4.6,.26], lp:[1500,1.0], oct:-1},
+  strings:{label:'현악·바이올린', partials:[[1,.30],[2,.19],[3,.11],[4,.07],[5,.05],[6,.03]], a:.16,d:.35,sus:.86,r:.55, wave:'sawtooth', spread:.012, rev:.48, vib:[5.1,.30], lp:[2700,1.1]},
+  cello  :{label:'첼로',      partials:[[1,.34],[2,.20],[3,.12],[4,.06],[5,.03]], a:.10,d:.3,sus:.84,r:.5,  wave:'sawtooth', spread:.01, rev:.44, vib:[4.6,.26], lp:[1500,1.0], oct:-1},
   brass  :{label:'트럼펫·금관', partials:[[1,.28],[2,.22],[3,.17],[4,.12],[5,.08],[6,.05]], a:.045,d:.2,sus:.80,r:.22, wave:'sawtooth', spread:.006, rev:.36, vib:[5.6,.16], fenv:[600,3400,.13]},
   flute  :{label:'플루트',    partials:[[1,.62],[2,.08],[3,.03]],                a:.08,d:.22,sus:.82,r:.28, wave:'sine', spread:0, rev:.42, vib:[5.9,.28], breath:.06},
-  choir  :{label:'합창',      partials:[[1,.40],[2,.14],[3,.08],[4,.05]],        a:.30,d:.4,sus:.88,r:.7,  wave:'sawtooth', spread:.015, rev:.58, vib:[4.4,.22], lp:[1900,.9]},
-  pad    :{label:'신스 패드',  partials:[[1,.34],[1.006,.30],[2,.10]],            a:.45,d:.4,sus:.85,r:.65, wave:'sawtooth', spread:0, rev:.55, lp:[1800,.8]},
+  choir  :{label:'합창',      partials:[[1,.40],[2,.14],[3,.08],[4,.05]],        a:.20,d:.4,sus:.88,r:.7,  wave:'sawtooth', spread:.015, rev:.58, vib:[4.4,.22], lp:[1900,.9]},
+  pad    :{label:'신스 패드',  partials:[[1,.34],[1.006,.30],[2,.10]],            a:.28,d:.4,sus:.85,r:.65, wave:'sawtooth', spread:0, rev:.55, lp:[1800,.8]},
   guitar :{label:'어쿠스틱 기타', pluck:true, spread:.020, rev:.28},
   bass   :{label:'베이스',    partials:[[1,.82],[2,.12],[3,.04]],                a:.006,d:.5,sus:.24,r:.3,  wave:'triangle', spread:0, rev:.12, bassOnly:true}
 };
@@ -1457,9 +1551,23 @@ function playSampleVoice(ctx,I,buf,octShift,t,dur,vel,out2){
   src.start(t); src.stop(t+dur+(I.r||.3)+.4);
 }
 
+/* ★★ 느리게 올라오는 악기는 **미리 시작해야 박에 맞는다** (v62).
+   사용자 신고: *"다른 악기들을 넣으면 싱크가 안맞다(박자 밀리는 느낌)"*. 맞는 말이었고,
+   원인은 재생 엔진이 아니라 **악기의 어택(소리가 올라오는 시간)** 이었다. 현악 0.24초·
+   합창 0.30초·패드 0.45초로 잡혀 있었는데, 84BPM 에서 한 박이 0.71초다 —
+   패드는 소리가 **반 박 넘게 늦게** 들린다. 화면 표시는 예약한 시각 그대로라
+   "표시는 맞는데 소리가 뒤에서 따라온다"가 된다.
+   ★ 소리를 **예약 시각보다 앞당겨 시작**해서, 귀에 들리는 꼭짓점이 박에 오게 한다.
+     (피아노·오르간처럼 어택이 빠른 악기는 lead 가 거의 0 이라 아무 영향이 없다)
+   ★ 앞당기는 한계는 0.18초다. `startPlay` 가 첫 음 앞에 0.25초를 비워 두므로 안전하고,
+     그보다 더 당기면 앞 음표를 침범한다.
+   ★ 샘플(실제 악기 녹음)은 자체 어택이 짧아 조금만 당긴다 — 많이 당기면 오히려 빨라진다. */
+const leadOf=I=>Math.max(0,Math.min(.18,(I.a||0)*.62));
 function voice(ctx,inst,midi,t,dur,vel,pan){
   const I=INSTRUMENTS[inst]||INSTRUMENTS.piano;
   if(I.oct)midi+=I.oct*12;
+  const lead=leadOf(I);
+  if(lead>0){ const lo=ctx.currentTime+.002; t=Math.max(lo,t-lead); }
   const f=mtof(midi);
   let out2=master;
   if(pan!==undefined&&ctx.createStereoPanner){
@@ -1471,7 +1579,8 @@ function voice(ctx,inst,midi,t,dur,vel,pan){
   if(sampleFolder){
     const oct=Math.floor(midi/12)-1, pc=mod(midi);
     const hit=getCachedSample(sampleFolder,pc,oct);
-    if(hit){ playSampleVoice(ctx,I,hit.buffer,hit.octShift,t,dur,vel,out2); return; }
+    /* 샘플은 녹음 자체에 어택이 있어 합성음만큼 당기면 안 된다 — 당긴 만큼 절반을 되돌린다 */
+    if(hit){ playSampleVoice(ctx,I,hit.buffer,hit.octShift,t+lead*0.55,dur,vel,out2); return; }
     warmSample(sampleFolder,pc,oct);   // 이번 음은 합성음으로, 다음부터는 실제 소리로
   }
   if(I.pluck){
@@ -1598,11 +1707,45 @@ const PATTERNS={
     return out;}}
 };
 
-function chordVoicing(chord,semis){
+/* ============ 화음 자리잡기 (보이싱) ============
+   ★ v61까지는 코드를 늘 **기본 위치**로만 쳤다(`upper: iv.map(i=>60+rp+i)`). 그래서
+     코드가 바뀔 때마다 세 소리가 통째로 뛰어다녔다 — 성부 진행이 아예 없었다.
+     사용자 지적: *"악기를 추가하면 화음이 넣어야하는데 굉장히 조잡해보이는 별로이다"*.
+   반주가 조잡하게 들리는 이유는 대개 **음이 틀려서가 아니라 자리가 틀려서**다:
+     ① 코드마다 통째로 점프한다 → 귀에 "화성 진행"이 아니라 "덩어리 이동"으로 들린다
+     ② 악기를 여럿 고르면 **전부 같은 음을 같은 옥타브로** 겹쳐 쳐서 뭉갠다
+   ①은 전위(inversion) 중에서 **앞 코드에서 가장 적게 움직이는 것**을 고르면 사라진다.
+   ②는 악기마다 맡는 자리를 나눠 주면 사라진다(strike 의 layerOf). */
+const VOICE_LO=55, VOICE_HI=79;                 // G3~G5 — 반주가 멜로디를 덮지 않는 자리
+function voiceLead(pcs,prev){
+  const uniq=[]; pcs.forEach(x=>{ const m2=mod(x); if(uniq.indexOf(m2)<0)uniq.push(m2); });
+  const n=uniq.length;
+  if(!n)return [];
+  let best=null,bestCost=Infinity;
+  for(let rot=0;rot<n;rot++){
+    const v=[];
+    let m=VOICE_LO+mod(uniq[rot]-VOICE_LO);
+    v.push(m);
+    for(let k=1;k<n;k++){
+      const pc=uniq[(rot+k)%n];
+      let x=v[v.length-1]+1; while(mod(x)!==pc)x++;
+      v.push(x);
+    }
+    while(v[v.length-1]>VOICE_HI&&v[0]-12>=VOICE_LO-5)for(let i=0;i<v.length;i++)v[i]-=12;
+    /* 앞 코드의 어느 소리에서든 가장 가까운 거리의 합 — 공통음이 제자리에 남으면 싸진다 */
+    const cost=(prev&&prev.length)
+      ? v.reduce((a,x)=>a+Math.min.apply(null,prev.map(q=>Math.abs(x-q))),0)
+        +Math.abs(v[0]-prev[0])*0.6
+      : Math.abs(v[0]-60)+Math.abs(v[v.length-1]-72);
+    if(cost<bestCost){bestCost=cost;best=v;}
+  }
+  return best;
+}
+function chordVoicing(chord,semis,prev){
   let iv=[0,4,7]; for(const[re,x] of QUAL) if(re.test(chord.suffix)){iv=x;break;}
   const rp=mod(chord.root+semis);
   const bassPc=mod((chord.bass===null?chord.root:chord.bass)+semis);
-  return {bass:36+bassPc, upper:iv.map(i=>60+rp+i)};
+  return {bass:36+bassPc, upper:voiceLead(iv.map(i=>rp+i),prev), rootPc:rp};
 }
 
 /* 여러 악기를 동시에 울린다 */
@@ -1610,28 +1753,59 @@ function instList(){
   const l=(P.insts&&P.insts.length)?P.insts:['piano'];
   return l.filter(k=>INSTRUMENTS[k]);
 }
-function strike(ctx,chord,semis,insts,t,dur,beats,spb){
+/* 악기마다 맡을 자리를 나눈다 — **전부 같은 음을 겹쳐 치면 뭉갠다**(v62).
+   0번째: 화음 전체 · 1번째: 밑음과 5도를 한 옥타브 아래(깔개) · 2번째: 꼭대기 음만(색깔)
+   3번째부터: 가운데 한 음만. 뒤로 갈수록 소리도 작아진다.
+   ★ 1번째를 '밑음+3도'로 하면 안 된다 — 낮은 자리의 3도는 탁하다. 빈 5도가 깔개로 맞다. */
+const LAYER_G=[1,.6,.52,.42];
+function layerOf(ii,v,total){
+  const u=(v.upper||[]).slice(), n=Math.max(1,total||1);
+  if(u.length<2)return u;
+  if(ii===1){
+    /* 깔개 — 밑음과 5도를 한 옥타브 아래로. ★ 3도를 깔면 안 된다(낮은 자리의 3도는 탁하다).
+       화음이 11반음 안에 쌓여 있으므로 −12 한 음은 **언제나 화음보다 아래**다 = 겹치지 않는다. */
+    const root=u.find(m=>mod(m)===v.rootPc);
+    const fifth=u.find(m=>mod(m)===mod(v.rootPc+7));
+    const a=(root===undefined?u[0]:root)-12;
+    const b=(fifth===undefined?u[u.length-1]:fifth)-12;
+    return a===b?[a]:[Math.min(a,b),Math.max(a,b)];
+  }
+  if(ii===2)return [u[u.length-1]];                 // 꼭대기 = 색깔
+  if(ii>=3)return [u[(ii-3)%u.length]];
+  /* 0번째(주 악기)는 **악기가 늘수록 자리를 내준다** — 안 그러면 2·3번째가 치는 음을
+     그대로 또 쳐서 같은 음이 둘씩 겹친다(그게 '조잡함'의 정체다). */
+  if(n<=2)return u;
+  if(n===3)return u.slice(0,-1);
+  return u.length>2?u.slice(1,-1):u;
+}
+function strike(ctx,chord,semis,insts,t,dur,beats,spb,pre){
   const list=(insts&&insts.length?insts:['piano']).filter(k=>INSTRUMENTS[k]);
   if(!list.length)return;
   setReverb(list);
   const mix=1/Math.sqrt(list.length);          // 겹칠수록 각각을 낮춰 뭉개지지 않게
-  const v=chordVoicing(chord,semis);
+  const v=pre||chordVoicing(chord,semis);
   const P2=PATTERNS[P.pattern]||PATTERNS.block;
-  const evs=P2.build(v,beats).filter(e=>e.t<beats&&e.t>=0);
   list.forEach((inst,ii)=>{
     const I=INSTRUMENTS[inst];
     if(I.bassOnly){
-      evs.forEach(e=>{ if(e.n.some(m=>m<52))voice(ctx,inst,v.bass,t+e.t*spb,Math.max(.14,e.d*spb),e.g*mix,0); });
+      const evs0=P2.build(v,beats).filter(e=>e.t<beats&&e.t>=0);
+      evs0.forEach(e=>{ if(e.n.some(m=>m<52))voice(ctx,inst,v.bass,t+e.t*spb,Math.max(.14,e.d*spb),e.g*mix,0); });
       return;
     }
+    /* 반주 패턴을 **그 악기가 맡은 음들로** 다시 짠다 — 아르페지오·알베르티도 자기 자리에서 돈다 */
+    const vl={bass:v.bass,upper:layerOf(ii,v,list.length),rootPc:v.rootPc};
+    if(!vl.upper.length)return;
+    const evs=P2.build(vl,beats).filter(e=>e.t<beats&&e.t>=0);
+    const lg=LAYER_G[Math.min(ii,LAYER_G.length-1)];
     const off=ii*.008;                          // 악기마다 아주 살짝 어긋나게 = 합주 느낌
     for(const e of evs){
       const n=e.n.length;
       e.n.forEach((m,i)=>{
         const low=m<52;
         const pan=low?0:((n>1?(i/(n-1)):.5)-.5)*.62+(ii-(list.length-1)/2)*.12;
-        voice(ctx,inst,m,t+e.t*spb+i*(I.spread||0)+off,Math.max(.14,e.d*spb),e.g*mix,pan);
-        if(low&&e.g>.28)voice(ctx,inst,m-12,t+e.t*spb+off,Math.max(.14,e.d*spb),e.g*.4*mix,0);
+        voice(ctx,inst,m,t+e.t*spb+i*(I.spread||0)+off,Math.max(.14,e.d*spb),e.g*mix*lg,pan);
+        /* 옥타브 겹쳐 치기는 **악기가 하나일 때만** — 여럿이면 그것만으로 이미 두껍다 */
+        if(low&&e.g>.28&&list.length===1)voice(ctx,inst,m-12,t+e.t*spb+off,Math.max(.14,e.d*spb),e.g*.4*mix,0);
       });
     }
   });
@@ -1689,6 +1863,7 @@ function buildTimeline(){
   const tlBars=[];
   const evs=[], hasBar=blocks.some(b=>b.k==='pairs'&&b.pairs.some(p=>p.bar));
   let beat=0, pendingMel=null, pendingBass=null, drift=0, melNotes=0, bassNotes=0;
+  let prevUp=null;                 // 앞 코드의 화음 자리 — 성부 진행의 기준
 
   /* ★ 음표마다 **어느 블록의 몇 번째 음인지**(bi/ni)를 이벤트에 실어 보낸다 (v60).
      채보한 오선보 위에 "지금 치는 음"을 표시하려면 이것이 필요하다. 화면이 박자를 따로
@@ -1755,7 +1930,14 @@ function buildTimeline(){
       barStarts.push(beat);
       tlBars.push({at:beat,beats:P.beats,idx0:bar[0].idx});
       const per=P.beats/bar.length;
-      bar.forEach(x=>{evs.push({type:'c',chord:x.chord,idx:x.idx,beats:per,at:beat});beat+=per;});
+      /* 화음 자리를 **여기서 한 번만** 정한다(v62). 앞 코드에서 가장 적게 움직이는 자리를
+         고르므로 순서가 중요하다 — 재생할 때마다 다시 고르면 같은 곡이 달리 들린다. */
+      bar.forEach(x=>{
+        const vv=chordVoicing(x.chord,S.semis,prevUp);
+        prevUp=vv.upper;
+        evs.push({type:'c',chord:x.chord,idx:x.idx,beats:per,at:beat,v:vv});
+        beat+=per;
+      });
       bar=[]; };
     for(const pr of b.pairs){
       if(pr.bar){ if(hasBar)flush(); continue; }
@@ -1801,11 +1983,11 @@ function schedule(){
     const ev=P.evs[P.k], t=P.cursorT+(ev.at-P.lastAt)*spb;
     if(t>now+.25)return;
     if(ev.type==='c'){
-      if(P.accomp!==false)strike(ctx,ev.chord,S.semis,instList(),t,ev.beats*spb*.96,ev.beats,spb);
+      if(P.accomp!==false)strike(ctx,ev.chord,S.semis,instList(),t,ev.beats*spb*.96,ev.beats,spb,ev.v);
       P.marks.push({t,idx:ev.idx});
       /* 건반 표시는 **예약한 그 시각 그대로** 적어 둔다 — 소리를 예약한 것과 같은 숫자를
          쓰므로 화면과 소리가 어긋날 수가 없다(박자를 따로 어림하지 않는다). */
-      const vv=chordVoicing(ev.chord,S.semis);
+      const vv=ev.v||chordVoicing(ev.chord,S.semis);
       P.sound.push({t,e:t+ev.beats*spb*.96,k:'c',ms:[vv.bass].concat(vv.upper),
                     name:S.num?showNum(ev.chord,origKey.pc):showChord(ev.chord,chordSemis(),pref())});
     }else if(ev.type==='m'){
@@ -2482,7 +2664,7 @@ function pianoRange(){
   for(const e of (P.evs||[])){
     if(e.type==='m')add(e.midi+S.semis+(P.melOct||0)*12);
     else if(e.type==='mb')add(e.midi+S.semis);
-    else if(e.type==='c'&&e.chord){ const v=chordVoicing(e.chord,S.semis); add(v.bass); v.upper.forEach(add); }
+    else if(e.type==='c'&&e.chord){ const v=e.v||chordVoicing(e.chord,S.semis); add(v.bass); v.upper.forEach(add); }
   }
   if(lo>hi){lo=48;hi=84;}
   lo=Math.max(21,Math.floor(lo/12)*12); hi=Math.min(108,Math.ceil((hi+1)/12)*12);
@@ -4320,6 +4502,103 @@ function applyGeomDur(text,notes,perBar){
   return {text:lines.join('\n'),changed,matched:true,why:fitsBar?'마디가 딱 맞음':'AI와 합계 일치'};
 }
 
+/* ============ 마디 단위로 맞추기 (v62) ============
+   ★★ v61까지 가장 큰 구멍이 여기 있었다. 우리가 픽셀로 **정확히 잰 것을 버리고 있었다.**
+   사용자 신고: *"업데이트 된 버전으로 돌려도 같은곳에 파, 미 라고 표기 해야하는데
+   파(4박자로 되어 있음)"* — 실제 악보 사진을 앱의 실제 경로로 태워 재 보니
+   `staffGeom` 은 그 마디를 **`F4:2 E4:2` 로 정확히 읽고 있었다.** 그런데 AI 는 그 둘을
+   온음표 하나로 읽었고, `applyGeomPitch` 는 "개수가 다르면 아무것도 안 한다"는 규칙 때문에
+   **잰 값을 통째로 버리고 AI 의 틀린 값을 그대로 내보냈다.**
+
+   그 규칙 자체는 옳다 — 줄 전체를 한 줄로 늘어놓고 맞추면 하나만 어긋나도 뒤가 전부 밀린다.
+   틀린 것은 **맞추는 단위**였다. 마디선은 우리가 픽셀로 따로 잰 값이고(v52) 음표 검출보다
+   훨씬 튼튼하다. 그러니 **마디 단위로 맞추면** 한 마디가 어긋나도 그 마디 안에 갇힌다.
+
+   마디마다 셋 중 하나를 한다:
+     ① 개수가 같다 → 음이름·임시표·길이를 잰 값으로 덮어쓴다(여태 하던 일, 범위만 마디로)
+     ② 잰 것이 **더 많다** → 그 마디를 잰 값으로 통째로 바꾼다(AI 가 음표를 뭉쳐 읽은 것이다)
+     ③ 잰 것이 **더 적다** → 손대지 않는다. 우리가 놓쳤을 수 있고, 지우는 것은 되돌릴 수 없다.
+   ★ ②③ 의 비대칭이 핵심이다 — **채우기만 하고 지우지는 않는다.**
+   ★ 어느 경우든 그 마디의 박수 합이 박자표와 정확히 같을 때만 손댄다(`fitBeatsToBars` 가
+     마디선에 맞춰 길이를 이미 바로잡아 둔다). 합이 안 맞으면 마디가 밀리므로 포기한다. */
+const GB_NT=/^([A-G])([#♯b♭]?)(-?\d+)(?::([\d.]+))?$/;
+/* AI 가 이 단에서 쓴 조표를 그 줄에서 되짚는다 — 같은 음이름에 가장 자주 붙인 임시표.
+   바꿔 넣는 마디가 나머지 줄과 어긋나지 않게 하려는 것이라, 밖에서 조를 받아올 필요가 없다. */
+function sigFromTokens(toks){
+  const cnt={};
+  toks.forEach(t=>{ const m=t.match(GB_NT); if(!m)return;
+    const L=m[1].toUpperCase(), a=(m[2]||'').replace('♯','#').replace('♭','b');
+    (cnt[L]=cnt[L]||{})[a]=(cnt[L][a]||0)+1; });
+  const out={};
+  for(const L in cnt){ let best='',bn=0;
+    for(const a in cnt[L])if(cnt[L][a]>bn){bn=cnt[L][a];best=a;}
+    if(best)out[L]=best; }
+  return out;
+}
+function applyGeomBars(text,geo,accs,perBar){
+  const none={text,changed:0,filled:0,matched:false,why:''};
+  if(!geo||!geo.notes||geo.notes.length<3)return none;
+  const per=perBar||4;
+  const lines=text.split('\n');
+  const idx=[]; lines.forEach((l,i)=>{ if(/^\s*♪/.test(l))idx.push(i); });
+  if(idx.length!==1)return {...none,why:'♪ 줄이 하나가 아님'};
+  const i0=idx[0];
+  const toks=lines[i0].replace(/^\s*♪\s*/,'').split(/\s+/).filter(Boolean);
+  const aiBars=[[]];
+  for(const t of toks){ if(/^\|+$/.test(t))aiBars.push([]); else aiBars[aiBars.length-1].push(t); }
+
+  const og=origGeomOf(geo);
+  const seg=(og&&og.seg&&og.seg.length>1)?og.seg:null;
+  if(!seg)return {...none,why:'마디선을 못 찾음'};
+  fitBeatsToBars(geo,seg,per);          // 마디마다 합을 박자표에 맞춰 둔다(v57)
+  if(aiBars.length!==seg.length)
+    return {...none,why:'마디 수 불일치(AI '+aiBars.length+' / 잰 것 '+seg.length+')'};
+
+  const sig=sigFromTokens(toks);
+  let changed=0, filled=0;
+  const gTok=j=>{
+    const nm2=geo.notes[j].name, L=nm2[0], oc=nm2.slice(1);
+    const seen=accs&&accs[j];
+    const acc=(seen==='#'||seen==='b')?seen:(seen==='n')?'':(sig[L]||'');
+    return L+acc+oc+':'+geo.notes[j].beats;
+  };
+  const outBars=aiBars.map((bar,bi)=>{
+    const sg=seg[bi];
+    const gi=[]; for(let j=sg.i0;j<sg.i0+sg.cnt;j++)if(geo.notes[j])gi.push(j);
+    if(!gi.length)return bar;
+    const sum=+gi.reduce((a,j)=>a+(geo.notes[j].beats||0),0).toFixed(4);
+    if(Math.abs(sum-per)>0.02)return bar;          // 합이 박자표와 다르면 손대지 않는다
+    const pos=[]; bar.forEach((t,k)=>{ if(GB_NT.test(t))pos.push(k); });
+    if(pos.length===gi.length){
+      const nb=bar.slice();
+      pos.forEach((k,n)=>{
+        const m=nb[k].match(GB_NT), j=gi[n];
+        const nm3=geo.notes[j].name, L=nm3[0], oc=nm3.slice(1);
+        const seen=accs&&accs[j];
+        /* 임시표를 직접 본 자리만 덮어쓰고, 못 본 자리는 AI 것을 유지한다(v60 과 같은 원칙) */
+        const acc=(seen==='#'||seen==='b')?seen
+                 :(seen==='n')?''
+                 :((m[1].toUpperCase()===L)?(m[2]||''):'');
+        const nt=L+acc+oc+':'+geo.notes[j].beats;
+        if(nt!==nb[k])changed++;
+        nb[k]=nt;
+      });
+      /* 이 마디의 쉼표는 버린다 — 잰 길이만으로 이미 박자표를 채웠으므로 더하면 넘친다 */
+      return nb.filter((t,k)=>pos.indexOf(k)>=0);
+    }
+    if(gi.length>pos.length){                       // ② 잰 것이 더 많다 = AI 가 뭉쳐 읽었다
+      filled+=gi.length-pos.length;
+      changed+=gi.length;
+      return gi.map(gTok);
+    }
+    return bar;                                     // ③ 잰 것이 더 적다 → 손대지 않는다
+  });
+  const flat=[];
+  outBars.forEach((b,i)=>{ if(i)flat.push('|'); flat.push.apply(flat,b); });
+  lines[i0]='♪ '+flat.join(' ');
+  return {text:lines.join('\n'),changed,filled,matched:true,why:''};
+}
+
 /* ============ AI 없이 멜로디 만들기 (v51) ============
    staffGeom/headDur 은 픽셀을 재는 계산이라 AI 와 아무 상관이 없다. 그런데 v50 까지는
    그 결과를 "AI가 적어 온 ♪ 줄을 덮어쓰는" 데만 썼다 — 그래서 Gemini 가 없거나
@@ -5982,6 +6261,7 @@ async function runScan(){
     const pages=[];
     let carryNote='', rechecked=0;   // 앞 단의 마지막 음(옥타브 기준), 다시 읽은 단 수
     let geomSys=0, geomFixed=0;      // 오선 자리를 직접 재서 음높이를 확정한 단 수 / 고친 음 수
+    let geomFilled=0;                // AI 가 뭉쳐 읽은 것을 마디 단위로 되찾은 음 수 (v62)
     let durSys=0, durFixed=0;        // 음표 길이(박자)까지 확정한 단 수 / 고친 음 수
     const sysRec=[];                 // 원본 사진 위 하이라이트용: 단마다 {page,t0,t1,w}
     for(let i=0;i<NN;i++){
@@ -6064,14 +6344,22 @@ async function runScan(){
           }catch(e){ /* 다시 읽기가 실패하면(한도 등) 첫 결과를 그대로 쓴다 */ }
         }
       }
-      /* 우리가 잰 음높이로 덮어쓴다 — 개수가 정확히 같을 때만(applyGeomPitch 안에서 검사) */
-      if(geoNames&&withMel){
-        const ap=applyGeomPitch(t,geoNames,geoAcc);
-        if(ap.matched){ t=ap.text; geomSys++; geomFixed+=ap.changed; }
-        /* 음높이를 확정한 단에서만 박자도 덮어쓴다 — 개수가 맞았다는 게 이미 확인된 상태다 */
-        if(ap.matched&&geoNotes){
-          const ad=applyGeomDur(t,geoNotes,P.beats);
-          if(ad.matched){ t=ad.text; durSys++; durFixed+=ad.changed; }
+      /* 우리가 잰 값으로 덮어쓴다. **마디 단위로 먼저 시도하고**(v62), 마디선을 못 찾았거나
+         마디 수가 안 맞을 때만 예전처럼 단 전체로 맞춘다.
+         마디 단위가 훨씬 세다 — AI 가 두 음을 하나로 뭉쳐 읽어도 그 마디만 잰 값으로 채우고
+         나머지 마디는 그대로 둔다(예전에는 개수가 하나만 달라도 단 전체를 포기했다). */
+      if(geoNames&&geoRaw&&withMel){
+        const ab=applyGeomBars(t,geoRaw,geoAcc,P.beats);
+        if(ab.matched){
+          t=ab.text; geomSys++; geomFixed+=ab.changed; durSys++; geomFilled+=ab.filled;
+        }else{
+          const ap=applyGeomPitch(t,geoNames,geoAcc);
+          if(ap.matched){ t=ap.text; geomSys++; geomFixed+=ap.changed; }
+          /* 음높이를 확정한 단에서만 박자도 덮어쓴다 — 개수가 맞았다는 게 이미 확인된 상태다 */
+          if(ap.matched&&geoNotes){
+            const ad=applyGeomDur(t,geoNotes,P.beats);
+            if(ad.matched){ t=ad.text; durSys++; durFixed+=ad.changed; }
+          }
         }
       }
       carryNote=lastMelNote(t)||carryNote;
@@ -6102,6 +6390,8 @@ async function runScan(){
       +(geomFixed?'(AI가 잘못 본 '+geomFixed+'음 교정)':''));
     if(durSys)bits.push(durSys+'단은 음표 길이(박자)까지 재서 확정했습니다'
       +(durFixed?'(AI가 잘못 본 '+durFixed+'음 교정)':''));
+    if(geomFilled)bits.push('<b>AI가 뭉쳐 읽은 음표 '+geomFilled+'개를 되찾았습니다</b>'
+      +'(마디선을 기준으로 잰 값과 맞춰 넣었습니다)');
     if(rechecked)bits.push(rechecked+'단은 음높이가 이상해서 다시 읽었습니다');
     /* 무료 등급은 모델마다 하루 20회씩 따로 세므로 여러 모델을 돌려 쓴다 —
        한도 걱정이 있는 사용자가 이걸 눈으로 확인할 수 있어야 한다(v51) */
