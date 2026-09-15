@@ -111,8 +111,12 @@ export function drawScan(o){
     g.fillText(t,(bi?barX[bi-1]:x0)+sp*0.4,top-sp*0.8);
   });
   /* 오선 아래 가사(검정) */
+  /* ★ lyricY = 가사 글자의 밑줄 자리(칸 단위, 오선 아래쪽 기준).
+     찬송가처럼 가사를 **바짝 붙여** 짜는 조판이 흔하다. 그럴 때 오선 아래
+     덧줄 음의 **기둥 반대쪽이 가사 글자와 겹친다** — v64 전에는 그 글자 때문에
+     기둥을 부정해서 그 음을 통째로 버렸다(실측: 참 반가운 성도여 1단에서 3음). */
   if(o.lyric){ g.fillStyle='#000'; g.font=Math.round(sp*1.3)+'px sans-serif';
-    for(let k=0;k<n;k++)g.fillText('가',x0+dx*(k+0.3),bot+sp*2.2); }
+    for(let k=0;k<n;k++)g.fillText('가',x0+dx*(k+0.3),bot+sp*(o.lyricY||2.2)); }
   return c.toDataURL('image/jpeg',0.65);   // JPEG 손실까지 넣는다
 }
 
@@ -168,6 +172,49 @@ export default async function scoreTest(){
   ok('간격 비율 1.19:1.15:1.66 → 1,1,2',JSON.stringify(fitBarBeats([1.19,1.15,1.66],4))==='[1,1,2]',
      fitBarBeats([1.19,1.15,1.66],4));
   ok('못갖춘마디로 보이면 손대지 않는다',JSON.stringify(fitBarBeats([0.25],4))==='[0.25]',fitBarBeats([0.25],4));
+
+  /* ★★ 2-2) **오선 아래 덧줄 음 + 바로 밑에 붙은 가사** (v64).
+     사용자 악보(참 반가운 성도여)에서 찾은 버그다. 덧줄 음은 기둥이 **위로** 뻗는데,
+     기둥을 확인할 때 "반대쪽(아래)에 잉크가 없어야 한다"를 오선 **밖까지** 봤다.
+     그 자리에 가사 글자가 있으면 기둥이 부정되고, 그러면 "속도 안 비었고 기둥도 없다"로
+     그 음이 **통째로 사라졌다**(실측: 사진 1단에서 10개만 찾고 3개를 버렸다).
+     ★ 검사 범위를 **오선 안쪽으로** 줌여서 고쳤다 — 걸러내려는 상대(마디선·조표)는
+       전부 오선 안에 산다. */
+  {
+    const LB=[[{st:-2,dur:1},{st:-1,dur:1},{st:0,dur:1},{st:2,dur:1}],
+              [{st:-3,dur:1},{st:-1,dur:2},{st:1,dur:1}]];
+    /* ★ 속 빈 머리를 **덧줄 위(짝수 자리)**에 두지 않는다 — 거기는 덧줄이 구멍을
+       반으로 가르지르기 때문에 아직 못 찾는다(알고 있는 한계 — CLAUDE.md 45번 항목).
+       여기서 보려는 것은 '가사 글자 때문에 기둥을 부정하는가'라 칸 자리(-1)에 둔다. */
+    const nL=LB.reduce((a,b)=>a+b.length,0);
+    const urlL=drawScan({sp:14,W:1200,sharps:3,bars:LB,lyric:true,lyricY:3.2});
+    let gL=null;
+    try{ const ps=await splitSystems(urlL); gL=await staffGeom((ps&&ps.length===1)?ps[0].url:urlL); }catch(e){}
+    ok('가사가 바짝 붙어도 덧줄 음을 다 찾는다 ('+(gL?gL.notes.length:0)+'/'+nL+')',
+       !!gL&&gL.notes.length===nL,gL&&gL.notes.map(n=>n.name+':'+n.beats));
+    if(gL&&gL.notes.length===nL){
+      const wantL=[].concat.apply([],LB).map(n=>n.st).join(',');
+      ok('그 음들의 자리도 맞다 ('+gL.notes.map(n=>n.step).join(',')+')',
+         gL.notes.map(n=>n.step).join(',')===wantL,wantL);
+    }
+  }
+
+  /* ★★ 2-3) **단 끝에 걸친 조각 마디는 늘리지 않는다** (v64).
+     못갖춘마디로 시작하는 악보는 줄바꿈이 마디 한가운데에서 일어난다 —
+     그런 조각을 4박으로 늘리면 압운표 한 음이 온음표가 된다(실측: E4:1 → E4:4). */
+  ok('단 끝 조각(한 음 1박)은 그대로 둔다',
+     JSON.stringify(fitBarBeats([1],4,null,true,true))==='[1]',fitBarBeats([1],4,null,true,true));
+  ok('단 끝 조각(2박+1박=3박)도 그대로 둔다',
+     JSON.stringify(fitBarBeats([2,1],4,null,true,true))==='[2,1]',fitBarBeats([2,1],4,null,true,true));
+  ok('가운데 마디는 여전히 4박으로 맞춘다',
+     Math.abs(fitBarBeats([2,1],4,null,true,false).reduce((a,b)=>a+b,0)-4)<1e-6,
+     fitBarBeats([2,1],4,null,true,false));
+  ok('한 박만 모자라는 것은 조각이 아니라 잘못 잴 마디다(3.5박 → 4박)',
+     Math.abs(fitBarBeats([2,1,0.5],4,null,true,true).reduce((a,b)=>a+b,0)-4)<1e-6,
+     fitBarBeats([2,1,0.5],4,null,true,true));
+  ok('잴 값이 믿을 만하지 않으면(durSure=false) 조각이라도 맞춘다',
+     Math.abs(fitBarBeats([1],4,null,false,true).reduce((a,b)=>a+b,0)-4)<1e-6,
+     fitBarBeats([1],4,null,false,true));
 
   /* 3) 코드 글자 오인 되돌리기 — 실제 Tesseract 출력에서 본 것들만 */
   const C=[['Fim','F#m'],['B71','B7'],['B87','B7'],['EsusdE','Esus4,E'],['EsusiE','Esus4,E'],
