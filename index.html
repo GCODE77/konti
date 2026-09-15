@@ -338,7 +338,7 @@ window.onerror=function(msg,src,ln){
    예) const SCAN_ENDPOINT = "https://konti-scan.내계정.workers.dev";
 */
 const SCAN_ENDPOINT = "";
-const APP_VER = "60";
+const APP_VER = "61";
 /* file:// 나 content:// 로 열면 브라우저가 외부 호출을 막는다(CORS). 미리 알려준다. */
 const LOCAL_FILE = !/^https?:$/.test(location.protocol);
 /* Claude 앱처럼 iframe 안에서 실행 중이면 키 없이도 인식이 통한다. */
@@ -938,6 +938,9 @@ function measuresOfBlock(mel,blk,forceN){
    포함) → 행에 채워 넣고 → 남는 폭을 비례 배분해 행을 꽉 채우고 → 음표가 실제로
    차지한 세로 범위를 재서 그 아래에 가사를 놓는다. */
 const LY_FS=15, CH_FS=17;
+/* 가사 음절보다 음표가 모자란 마디의 개수. **reparse 에서 한 번 센다** — 화면을 어느 모드로
+   보고 있든(사진 보기여도) 인식 직후 결과 안내에 바로 적을 수 있어야 하기 때문이다. */
+let LACK=0;
 /* 글자의 대략적인 렌더 폭(px). 한글·한자는 폰트 크기와 거의 같고 라틴/숫자는 절반 남짓 */
 function txtW(s,fs){ let w=0; for(const c of (s||''))w+=(dispW(c)===2?1.02:0.56)*fs; return w; }
 /* 마디의 가사를 음절로 쪼갠다 — 한글은 한 글자가 한 음절이라 글자 단위가 곧 음절 단위 */
@@ -955,7 +958,11 @@ function renderStaffSection(melM,chM,lyM,verses,measureStart,fitM,bassM,W,breaks
   const headW=PAD+32+(cnt?cnt*9+6:0);      // 음자리표 + 조표 자리
 
   /* ── 1단계: 마디마다 필요한 폭을 잰다(음표 간격 + 가사 글자 폭 + 코드 이름 폭) ── */
-  const slotW=[], intr=[], sylM=[], soundIx=[];
+  /* intr = 넉넉히 줬을 때 쓰고 싶은 폭 · minr = **여기서 더 줄이면 글자가 겹치는** 한계.
+     둘을 따로 재는 이유(v61): 원본 단을 한 줄에 넣으려면 줄여야 하는데, 얼마나 줄여도
+     되는지를 알아야 한다. 음표 간격은 줄여도 읽히지만 **한글 가사는 한 글자가 통째로
+     겹쳐 버린다** — 그 경계가 minr 이다. */
+  const slotW=[], intr=[], minr=[], sylM=[], soundIx=[];
   for(let m=0;m<N;m++){
     const notes=(melM[m]||[]).filter(it=>it&&!it.n.bar);
     const chs=(chM[m]||[]).filter(p=>p.chord);
@@ -976,24 +983,59 @@ function renderStaffSection(melM,chM,lyM,verses,measureStart,fitM,bassM,W,breaks
       need=Math.max(need,g.reduce((a,p)=>a+txtW((p.text||'').trim(),LY_FS)+11,0));
     });
     need=Math.max(need,chs.reduce((a,p)=>a+txtW(chLabel(p),CH_FS)+12,0));
-    slotW[m]=sw; soundIx[m]=si; sylM[m]=syl; intr[m]=Math.max(MINM,need)+12;
+    /* 최소 폭 — 음표 간격은 머리 하나 들어갈 22px 까지 줄이고, 가사·코드 글자 폭은 그대로 둔다 */
+    const swm=notes.map(()=>22);
+    verses.forEach(v=>{ const s2=syl[v];
+      if(s2.length&&s2.length<=si.length)
+        s2.forEach((ch,j)=>{ const i=si[j]; swm[i]=Math.max(swm[i],txtW(ch,LY_FS)+3); });
+    });
+    let low=swm.reduce((a,b)=>a+b,0);
+    verses.forEach(v=>{ const s2=syl[v];
+      if(s2.length>si.length)low=Math.max(low,s2.reduce((a,ch)=>a+txtW(ch,LY_FS)+3,0));
+    });
+    if(!notes.length)verses.forEach(v=>{
+      const g=(lyM[v]&&lyM[v][m])||[];
+      low=Math.max(low,g.reduce((a,p)=>a+txtW((p.text||'').trim(),LY_FS)+8,0));
+    });
+    low=Math.max(low,chs.reduce((a,p)=>a+txtW(chLabel(p),CH_FS)+10,0));
+    slotW[m]=sw; soundIx[m]=si; sylM[m]=syl;
+    intr[m]=Math.max(MINM,need)+12;
+    minr[m]=Math.min(intr[m],Math.max(56,low)+8);
   }
 
   /* ── 2단계: 행에 채워 넣는다. 폭이 되면 찬송가 관례대로 4마디, 좁은 화면이면 2~3마디 ── */
   const avail=Math.max(150,W-PAD-headW);
-  /* breaks: 원본 사진의 단 끝 마디 번호 모음. 있으면 **원본과 같은 자리에서 줄을 바꾼다**
+  /* breaks: 원본 사진의 단 끝 마디 번호 모음. 있으면 **원본과 같은 자리에서만 줄을 바꾼다**
      (v52, 사용자 요청: "첫 줄 4마디, 둘째 줄 3마디면 채보도 같은 줄 같은 마디로 나와라").
-     다만 폭이 모자라면 그때는 잘라 넣는다 — 휴대폰에서 6마디를 한 줄에 밀어 넣으면
-     음표가 뭉개져 원본을 닮게 하려다 못 읽는 악보가 된다. 화면이 먼저다. */
+
+     ★★ v60까지는 여기에 **폭 검사가 하나 더 걸려 있었다** — "폭이 모자라면 잘라 넣는다,
+        화면이 먼저다". 그 규칙이 강제 줄바꿈과 부딪혀 사용자가 신고한 모양을 만들었다:
+        *"12마디는 왜 자기 혼자만 1마디가 한줄 다 차지 하는가? 원본사진 악보를 보면
+          4마디씩 한줄이면 사진과 동일하게 나타내야한다"*
+        원본 9~12마디가 한 단인데 9·10·11 을 넣고 나면 폭이 모자라 12가 다음 줄로 밀리고,
+        바로 뒤에 **단 끝 강제 줄바꿈**이 오니 12마디가 혼자 한 줄을 차지했다.
+     → 원본 단은 절대 쪼개지 않는다. 폭이 모자라면 **가로로 넘겨 스크롤**한다
+        (`.staffline` 이 이미 overflow-x:auto 다). 음표 크기를 지키면서 원본과 같은
+        마디 배열이 나오고, 재생 중에는 지금 치는 마디를 가로로 따라가 준다. */
   const rows=[]; let cur=[],curW=0;
   for(let m=0;m<N;m++){
     const w=Math.min(intr[m],avail);
     const forced=!!(breaks&&cur.length&&breaks.has(measureStart+m-1));
-    const cap=breaks?99:MAXPER;
-    if(cur.length&&(forced||curW+w>avail||cur.length>=cap)){rows.push(cur);cur=[];curW=0;}
+    const over=!breaks&&cur.length&&(curW+w>avail||cur.length>=MAXPER);
+    if(forced||over){rows.push(cur);cur=[];curW=0;}
     cur.push(m); curW+=w;
   }
   if(cur.length)rows.push(cur);
+  /* ── 행의 논리 폭(VW). 기본은 화면 폭이고, **글자가 겹칠 때만** 넓혀서 가로로 넘긴다.
+     원본 단을 한 줄에 다 넣어야 하므로(위 규칙) 대개는 줄여서 맞추면 된다 — 음표 간격만
+     좁아지고 읽는 데는 지장이 없다. 가사가 겹치기 시작하는 선(minr)을 넘어설 때만
+     넓혀서 `.staffline` 이 가로로 스크롤되게 한다. 그때도 음표 크기는 그대로다.
+     ★ 행마다 따로 넓히면 오선이 줄마다 다른 자리에서 끝나 너덜너덜하다 — 가장 넓은 행에
+       맞춰 **모두 같은 폭**을 쓴다. 가로 스크롤도 한 번에 움직인다. */
+  let VW=W;
+  rows.forEach(ms=>{ let low=0; ms.forEach(m=>low+=minr[m]);
+    VW=Math.max(VW,Math.round(headW+20+low+PAD)); });
+  VW=Math.min(VW,Math.round(W*2.6));
   /* 마지막 행에 마디가 하나만 남으면 앞 행에서 한 마디를 넘겨 준다.
      한 마디만 오선 한 줄을 차지하면(게다가 낮은음자리표까지 딸려 오면)
      화면이 텅 빈 오선으로 낭비된다. 원본을 따라갈 때는 하지 않는다 — 원본이 그렇다면
@@ -1006,9 +1048,15 @@ function renderStaffSection(melM,chM,lyM,verses,measureStart,fitM,bassM,W,breaks
     const C='var(--paper)', A='var(--brass)', R='var(--ribbon)';
     const showTime=(measureStart===1&&ms[0]===0);          // 곡 맨 처음 한 번만 박자표
     const left=headW+(showTime?20:0);
-    const room=Math.max(150,W-PAD-left);
+    /* ── 3단계: 이 행의 논리 폭을 정한다.
+       마디들이 원하는 폭의 합이 화면보다 넓으면 **논리 폭을 늘려 잡고**(VW) SVG 를 그만큼
+       넓게 그린다 — 그러면 `.staffline` 이 가로로 스크롤되고 음표·글자 크기는 그대로다.
+       줄여서 욱여넣지 않는 이유: 한글 가사는 한 글자가 8분음표 칸보다 넓어서 조금만 줄여도
+       글자끼리 겹쳐 **읽을 수 없는 악보**가 된다(v47에서 이미 한 번 겪은 일이다).
+       ★ 2.6배까지만 넓힌다. 그보다 넘어가면 가로로도 못 읽으므로 그때는 줄인다. */
     let sum=0; ms.forEach(m=>sum+=Math.min(intr[m],avail));
-    const k=sum>0?room/sum:1;                              // ── 3단계: 남는 폭을 비례 배분해 행을 꽉 채운다
+    const room=Math.max(150,VW-PAD-left);
+    const k=sum>0?room/sum:1;                              // 남는 폭은 비례 배분해 행을 꽉 채운다
     const TOP=40, bottom=TOP+8*GAP, yOf=st=>bottom-(st-30)*GAP;
     const staffRow=ms.some(m=>(melM[m]||[]).some(it=>it&&!it.n.bar));
     const bassRow=ms.some(m=>(bassM[m]||[]).some(it=>it&&!it.n.bar));   // 이 행에 베이스 음표가 있을 때만 낮은음자리표를 그린다
@@ -1032,8 +1080,24 @@ function renderStaffSection(melM,chM,lyM,verses,measureStart,fitM,bassM,W,breaks
       const beatSum=notes.length?notes.reduce((a,it)=>a+(it.n.beats||1),0):null;
       const pickup=(measureStart+m===1);      // 못갖춘마디는 박수가 모자라도 정상 — 경고하지 않는다
       const bad=beatSum!==null&&!fitM[m]&&!pickup&&Math.abs(beatSum-P.beats)>0.75;
-      barOut.push({x:x0,bad});
-      numOut.push({x:x0+3,txt:(measureStart+m)+(bad?' ⚠'+(beatSum%1?beatSum.toFixed(1):beatSum)+'박':''),bad});
+      /* ★ 음표를 빠뜨렸는지 **가사로 검산한다** (v61, 사용자 신고로 넣었다).
+         *"예수 내 구주. 파, 미 인데 파만 나왔다!"* — 한 마디에 가사 음절이 둘인데 소리나는
+         음표가 하나면 음표를 하나 놓친 것이다. 찬송가·복음성가는 한 음절에 한 음이 원칙이고,
+         이음줄로 한 음절을 여러 음에 붙이는 반대 경우는 여기 걸리지 않는다(음표가 더 많다).
+         ★ **모든 절이 한목소리로 모자랄 때만** 경고한다(음절 수의 최솟값을 쓴다). 가사는
+           글자 인식이라 한 절이 깨지는 일이 흔한데, 그걸로 경고를 띄우면 곧 무시하게 된다.
+         ★ 박수 검사로는 절대 못 잡는다 — 온음표 하나(4박)나 2분음표 둘(2+2박)이나 합은 같다.
+           그래서 이 검산이 따로 필요하다. */
+      let lack=0;
+      if(notes.length&&si.length){
+        const vs=verses.filter(v=>(syl[v]||[]).length);
+        if(vs.length)lack=Math.max(0,Math.min.apply(null,vs.map(v=>syl[v].length))-si.length);
+      }
+      barOut.push({x:x0,bad:bad||!!lack});
+      numOut.push({x:x0+3,bad:bad||!!lack,
+        txt:(measureStart+m)
+          +(bad?' ⚠'+(beatSum%1?beatSum.toFixed(1):beatSum)+'박':'')
+          +(lack?' ⚠음표 '+lack+'개':'')});
 
       const inner=x0+8, iw=Math.max(16,x1-inner-6);
       const swSum=sw.reduce((a,b)=>a+b,0)||1;
@@ -1233,7 +1297,15 @@ function renderStaffSection(melM,chM,lyM,verses,measureStart,fitM,bassM,W,breaks
         +'" width="'+r.w.toFixed(1)+'" height="'+r.h.toFixed(1)+'" rx="4" pointer-events="none"/>';
     });
     const H=Math.max(40,y1-y0);
-    return '<svg viewBox="0 0 '+W+' '+Math.round(H)+'" width="100%" style="display:block">'
+    /* 화면보다 넓으면 **먼저 줄여서 맞춘다**(SVG 는 viewBox 라 통째로 축소되므로 글자가
+       겹치지 않는다 — 그냥 작아질 뿐이다). 그래도 68% 아래로 작아져야 한다면 그때만
+       가로 스크롤로 넘긴다. 68% 는 가사 15px 이 10px 이 되는 선이고, 그보다 작으면
+       보면대 거리에서 못 읽는다(더 크게 보려면 설정 → 보기 → 오선보 크기).
+       ★ 줄이지 않고 곧장 스크롤하게 두면 4마디 중 하나가 늘 화면 밖에 있다 —
+         원본과 같은 줄에 넣어 놓고 정작 다 못 보는 셈이라 뜻이 없다. */
+    const disp=Math.max(100,Math.round(0.68*VW/W*100));
+    const mw=disp>100?';min-width:'+disp+'%':'';
+    return '<svg viewBox="0 0 '+VW+' '+Math.round(H)+'" width="100%" style="display:block'+mw+'">'
       +'<g transform="translate(0,'+(-y0).toFixed(1)+')">'+back+out+'</g></svg>';
   }
 }
@@ -1245,10 +1317,16 @@ function writeBackMelody(){
   let k=0;
   for(let i=0;i<lines.length;i++){
     if(!MEL_RE.test(lines[i]))continue;
-    if(k<mels.length)lines[i]=melLine(mels[k].notes,0,S.flat||'flat',mels[k].clef);
+    /* ★ 이 곡의 조에 맞는 표기로 쓴다. 예전엔 무조건 'flat' 이라 A장조 곡에서 음 하나만
+       고쳐도 원문 전체가 Gb4·Db5 로 바뀌었다 — 소리는 같지만 편집 화면에서 읽을 수가 없다. */
+    if(k<mels.length)lines[i]=melLine(mels[k].notes,0,
+      S.flat||PREF[sigPc(origKey.pc,origKey.minor)]||'sharp',mels[k].clef);
     k++;
   }
   S.raw=lines.join('\n');
+  /* 음표를 넣거나 지웠으면 "음표가 모자란 마디" 수도 바로 다시 센다 — 고치자마자
+     경고가 사라져야 다 고쳤는지 알 수 있다(이 경로는 reparse 를 부르지 않는다). */
+  LACK=countLackNotes();
   scheduleSave();
 }
 
@@ -1820,6 +1898,17 @@ function setStaffMeasure(m,anchor){
     const fh=(document.querySelector('footer')||{offsetHeight:180}).offsetHeight+24;
     if(r.top<80||r.bottom>window.innerHeight-fh)
       el.scrollIntoView({block:'center',behavior:'smooth'});
+    /* 원본 단이 화면보다 넓어 가로로 넘겼으면(v61) 그쪽도 따라간다 —
+       사진 보기에서 크게 보기를 했을 때와 똑같이. 안 그러면 넘어간 마디는 볼 수 없다. */
+    const line=el.closest?el.closest('.staffline'):null;
+    if(line&&line.scrollWidth>line.clientWidth+4&&cur){
+      const bx=+cur.getAttribute('x'), bw=+cur.getAttribute('width');
+      const svg=cur.ownerSVGElement;
+      const vb=(svg&&svg.getAttribute('viewBox')||'0 0 1 1').split(/\s+/).map(Number);
+      const px=(bx+bw/2)/(vb[2]||1)*line.scrollWidth;
+      const want=Math.max(0,Math.min(line.scrollWidth-line.clientWidth,px-line.clientWidth/2));
+      if(Math.abs(line.scrollLeft-want)>8)line.scrollLeft=want;
+    }
   }
 }
 function markNote(nm2){
@@ -1900,6 +1989,32 @@ function reparse(){
     if(b.k==='pairs')for(const p of b.pairs)if(p.chord)p.idx=n++;
   }
   SUSPECT=markSuspectNotes();   // 조성·코드를 다 안 뒤에 판단해야 한다
+  LACK=countLackNotes();
+}
+/* 가사 음절보다 소리나는 음표가 적은 마디를 센다 — 인식이 음표를 빠뜨린 자리다 (v61).
+   사용자 신고: *"예수 내 구주. 파, 미 인데 파만 나왔다!"*
+   ★ 박수 검사로는 절대 못 잡는다 — 온음표 하나(4박)나 2분음표 둘(2+2박)이나 합은 같다.
+   ★ **모든 절이 한목소리로 모자랄 때만** 센다(음절 수의 최솟값). 가사는 글자 인식이라
+     한 절이 깨지는 일이 흔한데, 그것까지 경고하면 곧 무시하게 된다. */
+function countLackNotes(){
+  let n=0, pm=null;
+  for(const b of blocks){
+    if(b.k==='mel'){pm=b;continue;}
+    if(b.k!=='pairs')continue;
+    let M=null; try{ M=measuresOfBlock(pm,b); }catch(e){ M=null; }
+    pm=null;
+    if(!M)continue;
+    for(let m=0;m<M.N;m++){
+      const notes=(M.melM[m]||[]).filter(it=>it&&!it.n.bar);
+      const si=notes.filter(it=>!it.n.rest).length;
+      if(!si)continue;
+      const vs=M.verses.filter(v=>sylsOf(M.lyM[v]&&M.lyM[v][m]).length);
+      if(!vs.length)continue;
+      const need=Math.min.apply(null,vs.map(v=>sylsOf(M.lyM[v][m]).length));
+      if(need>si)n++;
+    }
+  }
+  return n;
 }
 let SUSPECT=0;
 reparse();
@@ -2040,6 +2155,14 @@ function renderChartStaff(){
     const d=document.createElement('div'); d.className='suspect';
     d.innerHTML='<b>확인이 필요한 음 '+SUSPECT+'개</b> — 동그라미 친 음표를 눌러 원본과 대조해 고쳐 주세요. '
       +'<span style="opacity:.7">조성에 없는 음, 옥타브가 튄 음, 저희가 옥타브를 자동으로 고친 음입니다.</span>';
+    el.appendChild(d);
+  }
+  if(LACK){
+    const d=document.createElement('div'); d.className='suspect';
+    d.innerHTML='<b>음표를 빠뜨린 것 같은 마디 '+LACK+'개</b> — 마디 번호 옆에 '
+      +'<b>⚠음표 N개</b> 라고 적힌 곳입니다. 가사 음절보다 음표가 그만큼 적습니다. '
+      +'<span style="opacity:.7">그 마디 음표를 누른 뒤 <b>설정 → 오선보</b>에서 '
+      +'<b>둘로 쪼개기</b>(두 음을 하나로 읽은 경우) 또는 <b>＋ 넣기</b>로 채워 주세요.</span>';
     el.appendChild(d);
   }
   let pendMel=null, pendBass=null, measureNo=1;
@@ -5984,6 +6107,12 @@ async function runScan(){
        한도 걱정이 있는 사용자가 이걸 눈으로 확인할 수 있어야 한다(v51) */
     if(GEM_USED.length>1)bits.push('무료 하루 한도를 나눠 쓰려고 모델 '+GEM_USED.length+'개를 돌려 썼습니다('+GEM_USED.join(', ')+')');
     if(SUSPECT)bits.push('확인이 필요한 음 '+SUSPECT+'개를 동그라미로 표시했습니다');
+    /* 음표를 빠뜨린 마디는 **인식이 끝난 그 자리에서** 알려 준다(v61). 사용자가 나중에
+       눈으로 찾아내야 했던 것을 앱이 먼저 짚어 주는 것이 요구사항이었다 —
+       *"처음부터 잘 발견할수 있도록 해야한다. 누락없이!!"* */
+    if(LACK)bits.push('<b style="color:var(--ribbon)">음표를 빠뜨린 것 같은 마디 '+LACK+'개</b>를 '
+      +'⚠ 로 표시했습니다(가사 음절보다 음표가 적습니다) — 그 음표를 누르고 '
+      +'<b>설정 → 오선보</b>에서 <b>둘로 쪼개기</b>나 <b>＋ 넣기</b>로 채워 주세요');
     if(LAST_TRUNCATED)bits.push('길이 제한으로 뒷부분이 잘렸을 수 있습니다 — 악보를 반씩 나눠 찍으면 더 잘 됩니다');
     showResult('ok','악보를 옮겼습니다',bits.join('. ')+'.<br>'
       +(hasSheet()?'<b>올린 사진을 그대로 띄웠습니다</b> — 재생하면 사진 위에서 따라갑니다.'
@@ -6225,7 +6354,9 @@ function openPanel(name){
          a. 고치는 단추를 **위로** 올리고 스크롤에 붙여 둔다(sticky).
          b. 오선보는 확대하지 않는다(max-width 로 1:1 이하), 높이는 잘라 스크롤한다.
          c. 음표를 눈으로 찾아 누르지 않아도 되게 **◀ ▶ 로 음을 옮겨 가며** 고친다. */
-    const mels=[]; blocks.forEach((b,bi)=>{ if(b.k==='mel')b.notes.forEach((n,ni)=>{ if(!n.bar&&!n.rest)mels.push({bi,ni}); }); });
+    /* 쉼표도 목록에 넣는다(v61) — 넣은 쉼표를 다시 지우거나 길이를 고칠 수 있어야 한다.
+       오선보에서 쉼표는 눌러 고를 수 없으므로 ◀ ▶ 가 유일한 길이다. */
+    const mels=[]; blocks.forEach((b,bi)=>{ if(b.k==='mel')b.notes.forEach((n,ni)=>{ if(!n.bar)mels.push({bi,ni}); }); });
     let sel=S.selNote||null;
     if(sel&&!mels.some(m=>m.bi===sel.bi&&m.ni===sel.ni))sel=null;
     if(!sel&&mels.length){ sel=mels[0]; S.selNote=sel; }
@@ -6235,20 +6366,37 @@ function openPanel(name){
       return b.notes[sel.ni]||null; })();
     const NM=['도','도♯','레','레♯','미','파','파♯','솔','솔♯','라','라♯','시'];
     const midiOf=n=>n&&(n.midi!==undefined?n.midi:60+mod(origKey.pc)+n.deg+(n.oct||0)*12);
+    const isRest=!!(cur&&cur.rest);
     const head=cur
       ? '<div class="noteedit">'
         +'<div class="rowline" style="border:none;padding:6px 0 8px">'
         +'<span class="fontset"><button id="n-prev" '+(at<=0?'disabled':'')+'>◀</button>'
         +'<button id="n-next" '+(at<0||at>=mels.length-1?'disabled':'')+'>▶</button></span>'
         +'<span style="text-align:center;flex:1"><b style="font-size:19px;color:var(--brass)">'
-        +NM[mod(midiOf(cur))]+(Math.floor(midiOf(cur)/12)-1)+'</b>'
+        +(isRest?'쉼표':NM[mod(midiOf(cur))]+(Math.floor(midiOf(cur)/12)-1))+'</b>'
         +'<small style="display:block;color:var(--dim);font-size:11px">'
         +(at+1)+'/'+mels.length+'번째 · '+(durLabel(cur.beats)||'')+' '+(cur.beats||1)+'박</small></span>'
-        +'<span class="fontset"><button id="n-dn">▼</button><button id="n-play">듣기</button>'
-        +'<button id="n-up">▲</button></span></div>'
-        +'<div class="btns"><button class="btn wide" id="n-oct-dn">한 옥타브 아래</button>'
-        +'<button class="btn wide" id="n-oct-up">한 옥타브 위</button></div></div>'
-      : '<p class="note">고칠 음이 없습니다 — 이 곡에는 멜로디가 없습니다.</p>';
+        +'<span class="fontset"><button id="n-dn" '+(isRest?'disabled':'')+'>▼</button>'
+        +'<button id="n-play" '+(isRest?'disabled':'')+'>듣기</button>'
+        +'<button id="n-up" '+(isRest?'disabled':'')+'>▲</button></span></div>'
+        +(isRest?''
+          :'<div class="btns"><button class="btn wide" id="n-oct-dn">한 옥타브 아래</button>'
+           +'<button class="btn wide" id="n-oct-up">한 옥타브 위</button></div>')
+        /* 길이 — 음을 새로 넣으려면 길이를 정할 수 있어야 한다. 악보에 실제로 쓰는 값만 돈다. */
+        +'<div class="rowline" style="border:none;padding:4px 0 2px">'
+        +'<span><b>음 길이</b><small>'+(durLabel(cur.beats)||'')+' · '+(cur.beats||1)+'박</small></span>'
+        +'<span class="fontset"><button id="n-short">짧게</button><button id="n-long">길게</button>'
+        +'<button id="n-dot">'+(noteDur(cur.beats).dots?'점 빼기':'점 붙이기')+'</button></span></div>'
+        /* ★ 추가·삭제 (v61, 사용자 요청). 인식이 음표를 하나 빠뜨리면 여태 **고칠 방법이
+           아예 없었다** — 높이만 바꿀 수 있었다. 사용자 말 그대로:
+           *"파, 미 인데 파만 나왔다! 내가 추가하려는 추가버튼이 따로 없네?"* */
+        +'<div class="btns"><button class="btn wide" id="n-ins-before">＋ 앞에 넣기</button>'
+        +'<button class="btn wide" id="n-ins-after">＋ 뒤에 넣기</button></div>'
+        +'<div class="btns"><button class="btn wide" id="n-split">둘로 쪼개기</button>'
+        +'<button class="btn wide" id="n-ins-rest">＋ 쉼표 넣기</button></div>'
+        +'<div class="btns"><button class="btn wide" id="n-del">이 음 지우기</button></div></div>'
+      : '<p class="note">고칠 음이 없습니다 — 이 곡에는 멜로디가 없습니다. '
+        +'<b>더보기 → 편집</b>에서 <code>♪ 1:1 5:0.5</code> 처럼 직접 넣을 수 있습니다.</p>';
     body.innerHTML=
       '<p class="note">읽어온 멜로디입니다. 원본 악보와 대조해 보세요. '
       +'<b>◀ ▶ 로 음을 옮겨 가며</b> ▲▼ 로 반음씩 고칩니다(오선보의 음표를 눌러도 됩니다).</p>'
@@ -6282,12 +6430,74 @@ function openPanel(name){
     const go=(d)=>{ const j=at+d; if(j<0||j>=mels.length)return;
       S.selNote=mels[j]; openPanel('staff');
       const n=blocks[mels[j].bi].notes[mels[j].ni];
-      const ctx=AC(); if(ctx&&n)voice(ctx,P.melInst,midiOf(n)+S.semis,ctx.currentTime+.01,.5,.42,0); };
+      const ctx=AC(); if(ctx&&n&&!n.rest)voice(ctx,P.melInst,midiOf(n)+S.semis,ctx.currentTime+.01,.5,.42,0); };
     const on=(id,fn)=>{const el=$(id); if(el)el.onclick=fn;};
+    /* 길이 바꾸기 — 악보에 실제로 쓰는 값(BEAT_GRID)만 오간다.
+       ★ 마디 박수가 안 맞아지면 그건 화면에 ⚠ 로 그대로 나온다. 숨기지 않는다. */
+    const setBeats=v=>{ if(!cur)return;
+      cur.beats=+Math.max(0.0625,Math.min(8,v)).toFixed(4);
+      writeBackMelody(); renderAll(); openPanel('staff'); };
+    const stepBeats=d=>{ if(!cur)return;
+      const g=BEAT_GRID, b=cur.beats||1;
+      let i=0; for(let k=0;k<g.length;k++)if(Math.abs(g[k]-b)<Math.abs(g[i]-b))i=k;
+      setBeats(g[Math.max(0,Math.min(g.length-1,i+d))]); };
+    /* 음표를 새로 넣는다. 고른 음과 같은 높이·길이로 넣는다 — 놓친 음은 대개 이웃과
+       가깝고, 어차피 바로 ▲▼ 로 고칠 참이기 때문이다. 넣은 음을 바로 고르게 해 둔다. */
+    const insert=(where,rest)=>{
+      if(!sel)return;
+      const b=blocks[sel.bi]; if(!b||b.k!=='mel')return;
+      const nn=rest?{rest:true,beats:cur?(cur.beats||1):1}
+                   :{midi:(cur&&!cur.rest)?midiOf(cur):(60+mod(origKey.pc)),beats:cur?(cur.beats||1):1};
+      const at2=sel.ni+(where>0?1:0);
+      b.notes.splice(at2,0,nn);
+      S.selNote={bi:sel.bi,ni:at2};
+      writeBackMelody(); renderAll(); openPanel('staff');
+      if(!rest){ const ctx=AC(); if(ctx)voice(ctx,P.melInst,nn.midi+S.semis,ctx.currentTime+.01,.6,.45,0); }
+      /* 아래는 넣은 음이 어디인지 바로 보이도록 — 화면이 그 줄로 스크롤된다(패널 안 오선보) */
+      toast(rest?'쉼표를 넣었습니다 — 길이를 맞춰 주세요':'음표를 넣었습니다 — ▲▼ 로 높이를 맞춰 주세요');
+    };
+    const del=()=>{
+      if(!sel)return;
+      const b=blocks[sel.bi]; if(!b||b.k!=='mel')return;
+      /* ★ **소리나는 음**만 센다. 쉼표·마디선까지 세면 "쉼표 하나 + 음표 하나" 인 줄에서
+         마지막 음표가 지워져 멜로디 줄이 통째로 사라진다 — 그러면 고치는 화면 자체가
+         비어서 되돌릴 방법이 없다(회귀 테스트가 이걸 잡았다). */
+      if(!cur.rest&&b.notes.filter(n=>!n.bar&&!n.rest).length<=1){
+        toast('이 줄의 마지막 음표는 지울 수 없습니다.'); return; }
+      b.notes.splice(sel.ni,1);
+      /* 지운 자리 앞 음을 고른다 — 비어 있으면 뒤 */
+      let j=sel.ni-1; while(j>=0&&(b.notes[j].bar))j--;
+      if(j<0){ j=sel.ni; while(j<b.notes.length&&b.notes[j].bar)j++; }
+      S.selNote=(j>=0&&j<b.notes.length)?{bi:sel.bi,ni:j}:null;
+      writeBackMelody(); renderAll(); openPanel('staff');
+      toast('음표를 지웠습니다.');
+    };
     on('n-up',()=>shift(1)); on('n-dn',()=>shift(-1));
     on('n-oct-up',()=>shift(12)); on('n-oct-dn',()=>shift(-12));
     on('n-prev',()=>go(-1)); on('n-next',()=>go(1));
-    on('n-play',()=>{const ctx=AC(); if(ctx&&cur)voice(ctx,P.melInst,midiOf(cur)+S.semis,ctx.currentTime+.01,.8,.5,0);});
+    on('n-short',()=>stepBeats(-1)); on('n-long',()=>stepBeats(1));
+    on('n-dot',()=>{ const d=noteDur(cur&&cur.beats); setBeats(d.dots?d.v:d.v*1.5); });
+    /* ★ 쪼개기 — 놓친 음표를 되찾는 **가장 빠른 길**이다 (v61).
+       인식이 두 음을 한 음으로 뭉쳐 읽는 것이 가장 흔한 누락 모양이다(온음표 하나로 읽으면
+       박수 합이 맞아 버려서 다른 검사에 걸리지 않는다). 사용자가 신고한 것도 이 모양이었다 —
+       *"예수 내 구주. 파, 미 인데 파만 나왔다!"*
+       쪼개면 박수 합이 그대로라 마디가 어긋나지 않고, 뒤 음의 높이만 ▲▼ 로 고치면 끝난다. */
+    const split=()=>{
+      if(!sel||!cur)return;
+      const b=blocks[sel.bi]; if(!b||b.k!=='mel')return;
+      const half=+((cur.beats||1)/2).toFixed(4);
+      if(half<0.0625){ toast('더 쪼갤 수 없습니다.'); return; }
+      cur.beats=half;
+      b.notes.splice(sel.ni+1,0,cur.rest?{rest:true,beats:half}:{midi:midiOf(cur),beats:half});
+      S.selNote={bi:sel.bi,ni:sel.ni+1};
+      writeBackMelody(); renderAll(); openPanel('staff');
+      toast('둘로 쪼갰습니다 — 뒤 음의 높이를 ▲▼ 로 맞춰 주세요');
+    };
+    on('n-split',split);
+    on('n-ins-before',()=>insert(-1,false)); on('n-ins-after',()=>insert(1,false));
+    on('n-ins-rest',()=>insert(1,true));
+    on('n-del',del);
+    on('n-play',()=>{const ctx=AC(); if(ctx&&cur&&!cur.rest)voice(ctx,P.melInst,midiOf(cur)+S.semis,ctx.currentTime+.01,.8,.5,0);});
   }
 
   if(name==='view'){

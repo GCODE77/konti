@@ -63,6 +63,8 @@ function shownAt(p){
 
 export default async function syncTest(){
   T.length=0; pass=0; fail=0;
+  /* 검사 중에는 자동 저장을 멈춘다 — 가짜 곡이 사용자의 저장본을 덮어쓰면 안 된다 */
+  const realSave=window.scheduleSave; window.scheduleSave=()=>{};
   const keep={raw:S.raw,orig:S.orig,mode:S.mode,verse:S.verse,semis:S.semis,beats:P.beats,bpm:P.bpm};
   try{
     S.raw=SYS.join('\n\n'); S.semis=0; S.verse=1; P.beats=4; P.bpm=90; reparse();
@@ -198,7 +200,9 @@ export default async function syncTest(){
        document.querySelectorAll('#chart .nowbox.on,#chart .mbox.on').length===0);
   }finally{
     S.raw=keep.raw; S.orig=keep.orig; S.mode=keep.mode; S.verse=keep.verse; S.semis=keep.semis;
-    P.beats=keep.beats; P.bpm=keep.bpm; reparse(); renderAll();
+    P.beats=keep.beats; P.bpm=keep.bpm;
+    window.scheduleSave=realSave;
+    reparse(); renderAll();
   }
   console.table(T.map(t=>({검사:t.name,결과:t.cond?'통과':'실패'})));
   console.log((fail?'✗ ':'✓ ')+'sync: '+pass+' 통과 / '+fail+' 실패');
