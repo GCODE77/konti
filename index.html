@@ -338,7 +338,7 @@ window.onerror=function(msg,src,ln){
    예) const SCAN_ENDPOINT = "https://konti-scan.내계정.workers.dev";
 */
 const SCAN_ENDPOINT = "";
-const APP_VER = "64";
+const APP_VER = "65";
 /* file:// 나 content:// 로 열면 브라우저가 외부 호출을 막는다(CORS). 미리 알려준다. */
 const LOCAL_FILE = !/^https?:$/.test(location.protocol);
 /* Claude 앱처럼 iframe 안에서 실행 중이면 키 없이도 인식이 통한다. */
@@ -1809,7 +1809,8 @@ function strike(ctx,chord,semis,insts,t,dur,beats,spb,pre){
   const list=(insts||[]).filter(k=>INSTRUMENTS[k]);
   if(!list.length)return;                      // 악기를 하나도 안 골랐으면 반주는 쉰다(v63)
   setReverb(list);
-  const mix=1/Math.sqrt(list.length);          // 겹칠수록 각각을 낮춰 뭉개지지 않게
+  /* 겹칠수록 각각을 낮춰 뭉개지지 않게 + 사용자가 조절하는 반주 소리 크기(P.accVol) */
+  const mix=(1/Math.sqrt(list.length))*(P.accVol!=null?P.accVol:1);
   const v=pre||chordVoicing(chord,semis);
   const P2=PATTERNS[P.pattern]||PATTERNS.block;
   list.forEach((inst,ii)=>{
@@ -1881,7 +1882,11 @@ function applyGenre(k){
 /* ---- 시퀀서 ---- */
 const P={playing:false,bpm:84,genre:'',insts:['piano'],melInst:'ep',pattern:'block',beats:4,loop:true,click:false,melody:true,accomp:true,readMel:true,bySystem:true,ocrBoost:true,geomPitch:true,realInst:true,melOct:0,melFit:true,playBass:false,
          evs:[],total:0,k:0,cursorT:0,lastAt:0,t0:0,timer:null,uiTimer:null,marks:[],vmarks:[],vnext:1,cur:-1,
-         sound:[],piano:true,nmarks:[],curNote:null};
+         sound:[],piano:true,nmarks:[],curNote:null,
+         /* ★ 멜로디·반주 소리 크기를 따로 조절한다(v65, 사용자 요청).
+            *"멜로디와 반주음악 경우 멜로디가 반주에 묻힌다"* — 악기를 여럿 겹치면
+            반주가 두꺼워져 멜로디 한 줄이 상대적으로 작게 들린다. 0.4~2.0 배로 조절한다. */
+         melVol:1,accVol:1};
 
 function buildTimeline(){
   /* tlBars: 재생 엔진이 실제로 만든 **마디 목록**이다(v53). 사진 위 하이라이트가
@@ -2025,7 +2030,7 @@ function schedule(){
     }else if(ev.type==='m'){
       const mm=ev.midi+S.semis+(P.melOct||0)*12;
       if(melodyOn()){
-        voice(ctx,P.melInst,mm,t,ev.beats*spb*.92,accompOn()?.46:.6,0);
+        voice(ctx,P.melInst,mm,t,ev.beats*spb*.92,(accompOn()?.46:.6)*(P.melVol!=null?P.melVol:1),0);
         P.sound.push({t,e:t+ev.beats*spb*.92,k:'m',ms:[mm]});
       }
       /* 채보한 오선보 위 '지금 치는 음' 표시 — 소리를 예약한 그 시각을 그대로 적어 둔다.
@@ -2034,7 +2039,7 @@ function schedule(){
     }else if(ev.type==='mb'){
       const mm=ev.midi+S.semis;
       if(P.playBass){
-        voice(ctx,'bass',mm,t,ev.beats*spb*.92,.4,0);
+        voice(ctx,'bass',mm,t,ev.beats*spb*.92,.4*(P.melVol!=null?P.melVol:1),0);
         P.sound.push({t,e:t+ev.beats*spb*.92,k:'b',ms:[mm]});
       }
       if(ev.bi!==undefined)P.nmarks.push({t,bi:ev.bi,ni:ev.ni});
@@ -2964,7 +2969,8 @@ function saveLast(){
       num:S.num, capo:S.capo, font:S.font, staffScale:S.staffScale, col:S.col, mode:S.mode,
       bpm:P.bpm, insts:P.insts, melInst:P.melInst, pattern:P.pattern,
       beats:P.beats, genre:P.genre, loop:P.loop, click:P.click, melody:P.melody, realInst:P.realInst,
-      playBass:P.playBass, piano:P.piano!==false, sheetZoom:S.sheetZoom||1, orig:S.orig,
+      playBass:P.playBass, piano:P.piano!==false, melVol:P.melVol, accVol:P.accVol,
+      sheetZoom:S.sheetZoom||1, orig:S.orig,
       at:Date.now()
     }));
   }catch(e){
@@ -2977,7 +2983,8 @@ function saveLast(){
         mode:S.mode,   /* 'sheet'(원본 사진 보기)도 그대로 저장한다 — 사진에서 가져온 곡의 기본 보기다 */
         bpm:P.bpm, insts:P.insts, melInst:P.melInst, pattern:P.pattern,
         beats:P.beats, genre:P.genre, loop:P.loop, click:P.click, melody:P.melody,
-        realInst:P.realInst, playBass:P.playBass, piano:P.piano!==false, at:Date.now()
+        realInst:P.realInst, playBass:P.playBass, piano:P.piano!==false,
+        melVol:P.melVol, accVol:P.accVol, at:Date.now()
       }));
     }catch(e2){}
   }
@@ -3003,6 +3010,8 @@ function restoreLast(){
   if(r.pattern)P.pattern=r.pattern; if(r.beats)P.beats=r.beats;
   P.genre=r.genre||''; P.loop=r.loop!==false; P.click=!!r.click; P.melody=r.melody!==false;
   P.realInst=r.realInst!==false; P.playBass=!!r.playBass; P.piano=r.piano!==false;
+  P.melVol=(typeof r.melVol==='number')?Math.max(0.4,Math.min(2,r.melVol)):1;
+  P.accVol=(typeof r.accVol==='number')?Math.max(0.4,Math.min(2,r.accVol)):1;
   S.sheetZoom=Math.max(1,Math.min(4,+r.sheetZoom||1));
   if(r.t)$('title').value=r.t;
   return true;
@@ -4620,6 +4629,14 @@ async function staffGeom(url,clef){
     const near=sp*0.4/sc;
     for(let i=res.length-1;i>=0;i--)
       if(bars.some(b=>Math.abs(b-res[i].x)<near))res.splice(i,1);
+    /* ★ 마지막 마디선 **뒤**에 남은 잉크도 지운다(v65). 단은 언제나 마디선으로 끝난다
+       (못 찾으면 위에서 끝자리에 하나 보충해 둔다) — 그 뒤에 남는 건 겹세로줄 장식이나
+       인쇄 얼룩이지 다음 마디를 여는 음표가 아니다. 0.4칸 문턱은 너무 좁아서 못 걸렀다:
+       실측(「무덤에 머물러」 5단) 마지막 마디선 14px(0.67칸) 뒤에 가짜 E5 하나가
+       남아 있었다 — 실제 마지막 음(A4, 온음표)은 정상히 잡혀 있는데 그 뒤에 덧붙어
+       "맨 끝 음이 다르다"는 신고로 이어졌다. */
+    const lastBar=bars[bars.length-1];
+    for(let i=res.length-1;i>=0;i--) if(res[i].x>lastBar+near) res.splice(i,1);
   }
   if(res.length<3)return null;
 
@@ -5187,6 +5204,26 @@ function geomMelodyLine(geo,perBar,sig,seg){
   while(out.length&&out[out.length-1]==='|')out.pop();
   return out.length?'♪ '+out.join(' '):'';
 }
+/* 그림을 키워서 다시 그린 사본을 만든다(v65, "1번 읽고 2번째 읽어서 비교" 용).
+   흐릿하게 뭉친 두 음이 커지면 갈릴 때가 있다 — 되레 조건 없이 늘 두 번 재면 무료
+   한도와 무관하게(픽셀 계산이라 API 호출이 없다) 느려지기만 하므로, 첫 번째 결과가
+   못 미더울 때만(아래 addGeomMelody 참고) 쓴다. */
+function upscaleUrl(url,factor){
+  return new Promise(res=>{
+    const img=new Image();
+    img.onload=()=>{
+      try{
+        const w=Math.round(img.width*factor), h=Math.round(img.height*factor);
+        const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+        const ctx=cv.getContext('2d'); ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality='high';
+        ctx.drawImage(img,0,0,w,h);
+        res(cv.toDataURL('image/png'));
+      }catch(e){res(null)}
+    };
+    img.onerror=()=>res(null);
+    img.src=url;
+  });
+}
 /* OCR 초안(코드·가사)에 픽셀로 잰 멜로디를 얹고, **코드가 빈 마디를 멜로디로 채운다**(v54).
    Tesseract 를 다시 돌리지 않고 ocrDraft 가 이미 잘라 둔 단 그림만 다시 재므로 싸다. */
 async function addGeomMelody(draft,say){
@@ -5196,7 +5233,20 @@ async function addGeomMelody(draft,say){
     const s=draft.sys[i];
     if(!s.url||s.whole||s.geo)continue;   // 단 분리에 실패한 쪽은 첫 단만 재게 되어 뜻이 없다
     say&&say((N>1?(i+1)+'/'+N+'단 ':'')+'음표 자리와 길이를 재는 중…');
-    try{ const geo=await staffGeom(s.url); if(geo&&geo.notes.length>=3)s.geo=geo; }
+    try{
+      let geo=await staffGeom(s.url);
+      /* ★ 한 번 재서 못 미더우면(길이 확신 없음 · 마디당 음표가 지나치게 적음) 그림을
+         1.35배 키워 **한 번 더** 잰다(v65, "1번 읽고 2번째 읽어서 비교"). 흐릿하게 뭉친
+         두 음이 커지면서 갈릴 때가 있다 — 둘을 겨루게 해서 **더 많이·더 확실히** 잰
+         쪽을 쓴다. API 호출이 없는 픽셀 계산이라 무료 한도와는 무관하고, 이미 못 미더운
+         단에서만 도니 비용도 적다. */
+      if(geo&&(!geo.durSure||geo.notes.length<(geo.bars||[]).length*1.3)){
+        const up=await upscaleUrl(s.url,1.35);
+        const geo2=up?await staffGeom(up):null;
+        if(geo2&&geo2.notes.length>=3&&(geo2.notes.length>geo.notes.length||(geo2.durSure&&!geo.durSure)))geo=geo2;
+      }
+      if(geo&&geo.notes.length>=3)s.geo=geo;
+    }
     catch(e){ /* 한 단을 못 재도 나머지는 그대로 간다 */ }
   }
   /* 조. 읽어 낸 코드가 있으면 그걸 쓰고(가장 믿을 만하다), 하나도 없으면 멜로디로 어림한다.
@@ -5923,33 +5973,45 @@ async function runOCR(){
     S.orig=buildOrig(rec.length?rec:S.photos.map((ph,pi)=>({page:pi,t0:0,t1:1,w:1,whole:true})));
     if(hasSheet())S.mode='sheet';
     reparse(); renderAll(); addHistory();
-    const box=$('scanstate');
-    if(box){
-      box.className='callout ok';
-      const keyNm=key2?nm(key2.pc,'sharp')+(key2.minor?'m':''):'';
-      box.innerHTML='<b>멜로디 '+(melN||0)+'음'+(melSys?'('+melSys+'단)':'')
-        +', 코드 '+((keepN||0)+(guessN||0))+'개'+(keyNm?' · '+keyNm+'조':'')+'</b>'
-        +(S.photos.length>1?' ('+S.photos.length+'쪽)':'')+'. AI 없이 읽었습니다.<br>'
-        +(melN?'<b>음표는 잰 것입니다</b> — 오선 위 자리와 마디선을 픽셀로 재서 정했습니다. '
-              +'다만 마디 안 임시표(#/b)와 쉼표는 반영되지 않습니다.'
-              /* ★ 아무것도 못 읽었을 때가 제일 중요하다 — 사용자가 다음에 뭐를 해야 하는지
-                 알게 해 줘야 한다. 예전에는 '오선을 찾지 못했습니다' 한 줄만 남기고 깨진 글자를
-                 그대로 보여 줘서, 사용자가 "인식이 하나도 안 된다"는 상태에 그대로 멈추었다. */
-              :'<b>오선을 찾지 못했습니다 — 이 사진으로는 음표를 재지 못합니다.</b><br>'
-               +'다시 찍으실 때: ① 악보를 <b>평평하게 펌 뒤 바로 위에서</b> 찍고(비스듬하면 오선이 흔들립니다), '
-               +'② <b>밝은 곳에서 그림자 없이</b>, ③ 악보가 <b>화면을 가득 채우게</b>, ④ 한 번에 <b>한 쪽씩</b>. '
-               +'오선이 흐릿하거나 손글씨 악보면 위의 <b>코드 차트로 바꾸기</b>(AI)가 더 나을 수 있습니다.')
-        +(guessN?'<br><b>코드 '+guessN+'개는 멜로디를 보고 짐작한 것입니다</b>'
-              +(keepN?'(글자로 읽어 낸 '+keepN+'개는 그대로 두었습니다)':'')
-              +'. 그 마디 음에 어울리는 코드를 고른 것이라 <b>원보와 다를 수 있습니다</b> — '
-              +'틀린 데는 <b>직접 입력</b>에서 고쳐 주세요.':'')
-        +'<br>가사는 글자 인식이라 빠지거나 틀린 게 많습니다.';
-    }
-    toast('OCR로 읽었습니다. 내용을 확인해 고쳐 주세요.');
+    const keyNm=key2?nm(key2.pc,'sharp')+(key2.minor?'m':''):'';
+    const bits=['<b>멜로디 '+(melN||0)+'음'+(melSys?'('+melSys+'단)':'')
+      +', 코드 '+((keepN||0)+(guessN||0))+'개'+(keyNm?' · '+keyNm+'조':'')+'</b>'
+      +(S.photos.length>1?' ('+S.photos.length+'쪽)':'')];
+    bits.push(melN?'<b>음표는 잰 것입니다</b> — 오선 위 자리와 마디선을 픽셀로 재서 정했습니다. '
+          +'다만 마디 안 임시표(#/b)와 쉼표는 반영되지 않습니다.'
+          /* ★ 아무것도 못 읽었을 때가 제일 중요하다 — 사용자가 다음에 뭐를 해야 하는지
+             알게 해 줘야 한다. 예전에는 '오선을 찾지 못했습니다' 한 줄만 남기고 깨진 글자를
+             그대로 보여 줘서, 사용자가 "인식이 하나도 안 된다"는 상태에 그대로 멈추었다. */
+          :'<b>오선을 찾지 못했습니다 — 이 사진으로는 음표를 재지 못합니다.</b><br>'
+           +'다시 찍으실 때: ① 악보를 <b>평평하게 펌 뒤 바로 위에서</b> 찍고(비스듬하면 오선이 흔들립니다), '
+           +'② <b>밝은 곳에서 그림자 없이</b>, ③ 악보가 <b>화면을 가득 채우게</b>, ④ 한 번에 <b>한 쪽씩</b>. '
+           +'오선이 흐릿하거나 손글씨 악보면 아래 <b>AI로 더 정확하게</b>가 더 나을 수 있습니다.');
+    if(guessN)bits.push('<b>코드 '+guessN+'개는 멜로디를 보고 짐작한 것입니다</b>'
+          +(keepN?'(글자로 읽어 낸 '+keepN+'개는 그대로 두었습니다)':'')
+          +'. 그 마디 음에 어울리는 코드를 고른 것이라 <b>원보와 다를 수 있습니다</b> — '
+          +'틀린 데는 <b>직접 입력</b>에서 고쳐 주세요.');
+    /* 음표를 빠뜨린 마디는 AI 경로(runScan)와 똑같이 완료 팝업에서 바로 알린다(v65 —
+       예전에는 이 안내가 #scanstate 에만 있어서 패널을 닫으면 안 보였다). */
+    if(LACK)bits.push('<b style="color:var(--ribbon)">음표를 빠뜨린 것 같은 마디 '+LACK+'개</b>를 '
+      +'⚠ 로 표시했습니다(가사 음절보다 음표가 적습니다) — 그 음표를 누르고 '
+      +'<b>설정 → 오선보</b>에서 <b>둘로 쪼개기</b>나 <b>＋ 넣기</b>로 채워 주세요');
+    bits.push('가사는 글자 인식이라 빠지거나 틀린 게 많습니다.');
+    /* ★★ 패널을 닫아도 결과가 보이게(v65, 사용자 요청): *"변환 완료시 팝업으로 변환 완료
+       라든지 결과값을 보여주면 좋겠다"* / *"변환하기 누르면 밑에 펼쳐진게 닫히고 다음
+       화면으로 자동으로 보여주자!"*. runScan(AI 경로)은 이미 이렇게 하고 있었는데,
+       AI 없이 읽기(이 함수)만 #scanstate 안 배너와 2.4초짜리 토스트에만 의존하고 있었다
+       — 패널을 닫아 두면 결과를 놓쳤다. showResult 는 사용자가 닫을 때까지 남는다. */
+    showResult('ok','변환 완료',bits.join(' '),
+      [{label:'옮겨 적은 악보 확인',pri:true,fn:()=>setMode(hasMelody()?'staff':'text')},
+       {label:'직접 고치기',fn:()=>openPanel('input')}]);
+    closePanel();
   }catch(err){
+    const msg=err.message||'알 수 없는 오류';
     const box=$('scanstate');
-    if(box){ box.className='callout err'; box.textContent='OCR 실패: '+(err.message||'알 수 없는 오류')+' — "직접 입력"에 옮겨 주세요.'; }
-    else toast('OCR 실패: '+(err.message||'알 수 없는 오류'));
+    if(box){ box.className='callout err'; box.textContent='변환 실패: '+msg+' — "직접 입력"에 옮겨 주세요.'; }
+    showResult('err','변환하지 못했습니다',msg+' — 다시 시도하거나 직접 입력에 옮겨 주세요.',
+      [{label:'다시 시도',pri:true,fn:()=>{openPanel('scan');runOCR();}},
+       {label:'직접 입력',fn:()=>openPanel('input')}]);
   }finally{ clearWork(); }
 }
 
@@ -6701,7 +6763,7 @@ async function ocrFallback(existing,say,fail,err){
    켜진 탭 하나로만 보인다(제목까지 같이 바뀌면 어디가 어디인지 헷갈린다). */
 const PGROUP={view:'set',play:'set',staff:'set',diag:'set',input:'more',library:'more',export:'more'};
 const GTABS={set:[['view','보기'],['play','재생'],['staff','오선보'],['diag','진단']],
-             more:[['input','편집'],['library','콘티'],['export','내보내기']]};
+             more:[['input','편집'],['library','저장'],['export','내보내기']]};
 const GTITLE={set:'설정',more:'더보기'};
 function openPanel(name){
   if(name==='more')name='input';
@@ -6730,6 +6792,12 @@ function openPanel(name){
 
   if(name==='scan'){
     const hosted=!!SCAN_ENDPOINT, showCfg=!!S.showCfg;
+    /* ★ 사용자 요청(v65): *"이제 AI를 전혀 사용하지 않으니, 변환하기 버튼에 AI키
+       없이가 바로가는걸로 하자! 기존 코드차트는 없어도 될듯"*. AI(코드 차트로 바꾸기)와
+       키 설정은 **다들 안 쓴다** — 실제로 "AI 없이 읽기"만 쓰고 있었다고 사용자가 직접
+       밝혔다. 그래서 순서를 뒤집는다: 큰 단추 하나(변환하기)가 곧바로 AI 없이 읽기로
+       가고, AI 경로(키가 있어야 코드 인식이 더 정확하다)는 접어 둔 선택지로 내린다.
+       지운 것은 없다 — runScan·API 키 설정은 그대로 남아 있고, 펼치면 쓸 수 있다. */
     body.innerHTML=
       (LOCAL_FILE&&!hosted
         ? '<div class="callout err">내려받은 파일로 열면 사진 인식이 막힙니다(CORS). https 주소로 여세요.</div>' : '')
@@ -6758,17 +6826,15 @@ function openPanel(name){
       +'<button class="btn '+(P.ocrBoost!==false?'on':'')+'" id="ocrboost">'+(P.ocrBoost!==false?'켬':'끔')+'</button></div>'
       +'<div id="scanstate"></div>'
       +(S.photos.length
-        ? '<div class="btns"><button class="btn lg on wide" id="go">코드 차트로 바꾸기'
+        ? '<div class="btns"><button class="btn lg on wide" id="conv">변환하기'
           +(S.photos.length>1?' ('+S.photos.length+'쪽)':'')+'</button></div>'
-          +'<div class="btns"><button class="btn wide" id="ocr">AI 없이 읽기 · 키 없이</button>'
-          +'<button class="btn" id="clr">전부 빼기</button></div>'
-          +'<p class="note"><b>AI 없이 읽기</b>는 음표(음높이·박자)와 마디선을 <b>사진에서 직접 재고</b>, '
-          +'코드·가사만 문자 인식으로 읽습니다. 음표는 AI와 상관없이 정확하지만, '
-          +'<b>코드 기호는 글자라서 문자 인식의 한계를 그대로 받습니다</b> — 실제 찬송가 사진에서 재 보니 '
-          +'46개 중 15개만 읽었고, <b>F♯m7·E/G♯ 처럼 ♯이 붙은 코드를 특히 놓칩니다.</b> '
-          +'코드가 틀리면 반주 소리가 틀리므로, 반주까지 쓰시려면 위의 <b>코드 차트로 바꾸기</b>를 권합니다.</p>'
+          +'<p class="note">오선을 <b>픽셀로 직접 재서</b> 음표(음높이·박자)와 마디선을 옮깁니다 — '
+          +'<b>API 키가 필요 없습니다.</b> 코드·가사는 문자 인식(무료)이라 <b>코드 기호는 자주 놓칩니다</b>'
+          +'(실제 찬송가 사진 기준 46개 중 15개, 특히 F♯m7·E/G♯ 처럼 ♯이 붙은 코드). '
+          +'코드가 자주 틀리면 아래 <b>AI로 더 정확하게</b>를 펼쳐 보세요.</p>'
+          +'<div class="btns"><button class="btn" id="clr">전부 빼기</button></div>'
         : '')
-      +'<button class="more" id="cfgtoggle">'+(showCfg?'▾':'▸')+' 인식 설정'+(getGKey()||getKey()?'':' · 키 필요')+'</button>'
+      +'<button class="more" id="cfgtoggle">'+(showCfg?'▾':'▸')+' AI로 더 정확하게(선택)'+(getGKey()||getKey()?'':' · 키 필요')+'</button>'
       +(showCfg
         ? '<div class="opts">'
           +'<button class="btn '+(getProv()==='gemini'?'on':'')+'" data-prov="gemini">Gemini · 무료</button>'
@@ -6779,6 +6845,7 @@ function openPanel(name){
               +'<input class="field" id="gkey" type="password" placeholder="AIza... (무료 Gemini 키)" value="'+esc(getGKey())+'">'
             : '<p class="note">platform.claude.com → API keys → Create Key</p>'
               +'<input class="field" id="apikey" type="password" placeholder="sk-ant-... (Claude 키)" value="'+esc(getKey())+'">')
+          +(S.photos.length?'<div class="btns"><button class="btn wide" id="go">AI로 코드 차트 바꾸기</button></div>':'')
         : '');
 
     $('cfgtoggle').onclick=()=>{S.showCfg=!showCfg;openPanel('scan')};
@@ -6794,8 +6861,8 @@ function openPanel(name){
     if($('shoot'))$('shoot').onclick=shoot;
     if($('camclose'))$('camclose').onclick=closeCam;
     if(S.photos.length){
-      $('go').onclick=runScan;
-      $('ocr').onclick=runOCR;
+      $('conv').onclick=runOCR;
+      if($('go'))$('go').onclick=runScan;
       $('clr').onclick=()=>{S.photos=[];openPanel('scan')};
       body.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{
         S.photos.splice(+b.dataset.del,1); openPanel('scan');
@@ -6842,9 +6909,17 @@ function openPanel(name){
 
   if(name==='library'){
     const list=load();
-    if(list.length)body.innerHTML='<p class="note">누르면 그 곡이 열립니다. 사진 인식은 자동으로 기록됩니다. 최근 40개까지 보관합니다.</p>';
-    if(!list.length){body.innerHTML='<p class="note">아직 기록이 없습니다. 사진을 인식하면 자동으로 여기 쌓이고, <b>저장</b>을 눌러 직접 넣을 수도 있습니다.</p>';}
-    else list.forEach(song=>{
+    /* ★ 저장하기·불러오기를 **한자리에** 둔다(v65, 사용자 요청). 예전에는 '이 곡 저장'
+       단추가 설정→보기 패널 맨 아래(글자 크기·카포 같은 화면 설정들 사이)에 숨어 있고,
+       불러오기(이 목록)는 설정→더보기 패널에 따로 있었다 — 사용자 말대로 "숨어있고
+       가독성이 좋지 않다". 저장을 이 목록 맨 위로 옮겨 **저장·불러오기가 같은 화면**이 되게 했다. */
+    body.innerHTML='<div class="btns" style="margin-top:0">'
+      +'<button class="btn lg on wide" id="lib-save">지금 곡 저장</button></div>'
+      +(list.length
+        ? '<p class="note">누르면 그 곡이 열립니다. 사진 인식은 자동으로 기록됩니다. 최근 40개까지 보관합니다.</p>'
+        : '<p class="note">아직 기록이 없습니다. 사진을 인식하면 자동으로 여기 쌓이고, 위 <b>지금 곡 저장</b>으로 직접 넣을 수도 있습니다.</p>');
+    $('lib-save').onclick=()=>{saveSong();openPanel('library')};
+    list.forEach(song=>{
       const d=document.createElement('div');d.className='rowlist';
       const b=document.createElement('button');b.className='load';
       let hasPic=false; try{ hasPic=localStorage.getItem(OK+song.id)!==null; }catch(e){}
@@ -7045,8 +7120,7 @@ function openPanel(name){
       +T('v-flat',S.flat==='flat','♭ 우선','올림표 대신 내림표로 표기')
       +T('v-col',S.col,'2단 보기','가로가 넓을 때 두 줄로')
       +T('v-focus',document.body.classList.contains('focus'),'집중 모드',
-          '머리글과 아래 단추줄을 감춰 악보만 크게 — 연주할 때 쓰세요(화면도 안 꺼집니다)')
-      +'<div class="btns"><button class="btn lg on wide" id="v-save">이 곡 저장</button></div>';
+          '머리글과 아래 단추줄을 감춰 악보만 크게 — 연주할 때 쓰세요(화면도 안 꺼집니다)');
     const up=()=>{renderAll();openPanel('view')};
     const on=(id,fn)=>{const el=$(id); if(el)el.onclick=fn;};
     on('v-minus',()=>{setFont(S.font-2);openPanel('view')});
@@ -7058,7 +7132,6 @@ function openPanel(name){
     on('v-capo',()=>{if(!capoInfo()){toast('이 키에는 쓸 만한 카포 자리가 없습니다.');return;}S.capo=!S.capo;up()});
     on('v-flat',()=>{S.flat=S.flat==='flat'?null:'flat';up()});
     on('v-col',()=>{S.col=!S.col;up()});
-    on('v-save',()=>{saveSong();closePanel()});
     on('v-focus',()=>{ const on2=!document.body.classList.contains('focus');
       setFocus(on2); if(on2)closePanel(); else openPanel('view'); });
   }
@@ -7119,6 +7192,12 @@ function openPanel(name){
   if(name==='play'){
     const opt=(id,cur,items)=>items.map(([v,l])=>
       '<button class="btn '+(v===cur?'on':'')+'" data-'+id+'="'+v+'">'+l+'</button>').join('');
+    /* 멜로디·반주 소리 크기 슬라이더 — BPM 슬라이더와 같은 모양(range + 숫자) */
+    const volRow=(id,label,v)=>'<span class="lbl">'+label+'</span>'
+      +'<div style="display:flex;align-items:center;gap:12px">'
+      +'<input class="field" id="'+id+'" type="range" min="0.4" max="2" step="0.05" value="'+v+'" style="flex:1">'
+      +'<span id="'+id+'num" style="font-family:var(--mono);font-size:15px;font-weight:800;color:var(--brass);min-width:44px;text-align:right">'+Math.round(v*100)+'%</span>'
+      +'</div>';
     body.innerHTML=
       '<span class="lbl">악기</span><div class="opts" id="insts">'
       +Object.keys(INSTRUMENTS).map(k=>
@@ -7156,6 +7235,12 @@ function openPanel(name){
       +(!accompOn()&&!melodyOn()
         ? '<p class="note" style="margin:-6px 0 14px"><b style="color:var(--ribbon)">지금은 아무 소리도 나지 않습니다.</b> 재생하면 화면 표시(마디·가사)만 따라갑니다.</p>'
         : '')
+      /* ★ 멜로디·반주 소리 크기를 따로 조절한다(v65, 사용자 요청).
+         *"멜로디와 반주음악 경우 멜로디가 반주에 묻힌다. 그래서 멜로디나 반주음악도
+         소리 크기를 조절할 수 있도록 하자!"* — 악기를 여럿 겹치면 반주가 두꺼워져
+         멜로디 한 줄이 상대적으로 묻힌다. */
+      +volRow('melvol','멜로디 크기',P.melVol)
+      +volRow('accvol','반주 크기',P.accVol)
       +'<span class="lbl">장르</span><div class="opts">'
       +opt('genre',P.genre,Object.keys(GENRES).map(k=>[k,GENRES[k].label]))+'</div>'
       +'<span class="lbl">반주 패턴</span><div class="opts">'
@@ -7219,6 +7304,8 @@ function openPanel(name){
       P.beats=parseInt(b.dataset.beats,10); resyncPlay(); openPanel('play');
     });
     $('bpmr').oninput=e=>{const v=parseInt(e.target.value,10);setBpm(v,true);if($('bpmnum'))$('bpmnum').textContent=v;};
+    $('melvol').oninput=e=>{P.melVol=parseFloat(e.target.value);if($('melvolnum'))$('melvolnum').textContent=Math.round(P.melVol*100)+'%';scheduleSave();};
+    $('accvol').oninput=e=>{P.accVol=parseFloat(e.target.value);if($('accvolnum'))$('accvolnum').textContent=Math.round(P.accVol*100)+'%';scheduleSave();};
     $('clk').onclick=()=>{P.click=!P.click;openPanel('play')};
     $('lp').onclick=()=>{P.loop=!P.loop;$('loopbtn').classList.toggle('on',P.loop);openPanel('play')};
   }

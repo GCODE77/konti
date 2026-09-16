@@ -104,6 +104,19 @@ export function drawScan(o){
     g.beginPath(); g.moveTo(bx,top); g.lineTo(bx,bot); g.stroke();
     barX.push(bx);
   });
+  /* ★ 마지막 마디선 **뒤**에 남는 잉크(겹세로줄 장식·인쇄 얼룩) — v65 에서 고친 버그.
+     실측(「무덤에 머물러」 5단): 마지막 마디선 14px(0.67칸) 뒤에 가짜 머리 하나가 남아
+     "맨 끝 음이 다르다"는 신고로 이어졌다. 0.4칸 문턱(마디선 자리 필터)은 이 거리를 못 잡았다. */
+  if(o.trailDebris){
+    /* ★ 속이 빈 모양으로 그린다 — 속이 찬 머리는 기둥이 없으면 애초에 음표 후보로도
+       안 남는다(v50 규칙). 실제로 걸렸던 것은 **겹세로줄 토막이 만든 빈 자리**였다
+       (기둥 없는 온음표처럼 통과한다). */
+    const tx=x1+sp*0.67, ty=bot-sp*3.5/2;
+    g.save(); g.translate(tx,ty); g.rotate(-0.3);
+    g.lineWidth=sp*0.28; g.strokeStyle='#000';
+    g.beginPath(); g.ellipse(0,0,sp*0.65,sp*0.46,0,0,Math.PI*2); g.stroke();
+    g.restore();
+  }
   /* ★ 오선 **바로 위**에 코드 글자(빨강) — 음표 칸을 가로채던 모양이다 */
   if(o.chords)o.chords.forEach((t,bi)=>{
     if(!t)return;
@@ -215,6 +228,29 @@ export default async function scoreTest(){
   ok('잴 값이 믿을 만하지 않으면(durSure=false) 조각이라도 맞춘다',
      Math.abs(fitBarBeats([1],4,null,false,true).reduce((a,b)=>a+b,0)-4)<1e-6,
      fitBarBeats([1],4,null,false,true));
+
+  /* ★★ 2-4) **마지막 마디선 뒤에 남은 잉크를 음표로 세지 않는다** (v65).
+     사용자 악보(무덤에 머물러)에서 찾은 버그다. 단은 언제나 마디선으로 끝나는데
+     그 뒤에 겹세로줄 장식이나 인쇄 얼룩이 남으면 "맨 끝에 음이 하나 더 있다"가 된다 —
+     사용자가 정확히 이걸 신고했다("맨 마지막에는 높은 음이 있는데 실제로는 라에서 끝났다"). */
+  {
+    const TB=[[{st:0,dur:1},{st:2,dur:1},{st:4,dur:4}]];
+    const nT=TB.reduce((a,b)=>a+b.length,0);
+    const urlT=drawScan({sp:14,W:1200,sharps:0,bars:TB,trailDebris:true});
+    /* ★ splitSystems 를 거치지 않고 staffGeom 을 바로 부른다(geom·rhythm 테스트와 같은
+       방식) — 이 테스트가 보려는 것은 staffGeom 자신의 "단 끝 뒤 잉크" 필터이지
+       splitSystems 의 단 나누기가 아니다. 실제로 겪은 것: 고립된 잔상 하나가 그 자체로
+       옅은 '단'처럼 보여 splitSystems 가 2단으로 나눠 버렸고, 그러면 나뉜 조각이 아니라
+       **원본 통짜 그림**으로 도로 떨어져(폴백) 마디선 자리가 달라졌다. */
+    let gT=null;
+    try{ gT=await staffGeom(urlT); }catch(e){}
+    ok('마지막 마디선 뒤 잉크는 음표로 세지 않는다 ('+(gT?gT.notes.length:0)+'/'+nT+')',
+       !!gT&&gT.notes.length===nT,gT&&gT.notes.map(n=>n.name+':'+n.beats));
+    if(gT&&gT.notes.length===nT){
+      ok('맨 끝 음은 그린 마지막 음 그대로다 ('+gT.notes[nT-1].step+')',
+         gT.notes[nT-1].step===TB[0][TB[0].length-1].st,gT.notes[nT-1]);
+    }
+  }
 
   /* 3) 코드 글자 오인 되돌리기 — 실제 Tesseract 출력에서 본 것들만 */
   const C=[['Fim','F#m'],['B71','B7'],['B87','B7'],['EsusdE','Esus4,E'],['EsusiE','Esus4,E'],
