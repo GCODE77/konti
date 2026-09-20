@@ -37,11 +37,27 @@ export function drawScan(o){
   for(let k=0;k<5;k++){ const y=top+k*sp; g.beginPath(); g.moveTo(sp*2,y); g.lineTo(xEnd,y); g.stroke(); }
   /* 자리표 — 실제처럼 **넓은** 모양으로. 얇은 세로 막대로 그리면 그건 자리표가 아니라
      마디선이고, 그러면 검출기가 아니라 그림이 틀린 게 된다. */
-  g.strokeStyle='#000'; g.lineWidth=sp*0.3;
-  g.beginPath(); g.moveTo(sp*4,top-sp*1.3); g.lineTo(sp*4,bot+sp*1.3); g.stroke();
-  g.lineWidth=sp*0.26;
-  g.beginPath(); g.arc(sp*4,top+sp*0.6,sp*0.9,0,Math.PI*2); g.stroke();
-  g.beginPath(); g.arc(sp*3.7,bot-sp*0.2,sp*0.7,0,Math.PI*2); g.stroke();
+  g.strokeStyle='#000';
+  if(o.bassClef){
+    /* ★ 낮은음자리표(𝄢) — v67 의 그랜드 스태프 판정을 재는 그림.
+       중요한 성질은 모양이 아니라 **자리**다: 맨 위 줄 언저리에서 시작해 셋째 줄 아래까지
+       내려오지만 **맨 아래 줄 밑으로는 넘지 않는다**. 높은음자리표는 위아래를 다 넘는다 —
+       바로 그 차이로 가린다. 점 두 개는 넷째 줄 위아래에 찍는다. */
+    g.lineWidth=sp*0.5;
+    g.beginPath(); g.arc(sp*4.1,top+sp*1.05,sp*0.72,-Math.PI*0.95,Math.PI*0.45); g.stroke();
+    g.lineWidth=sp*0.42;
+    g.beginPath(); g.moveTo(sp*4.5,top+sp*0.45);
+    g.quadraticCurveTo(sp*3.9,top+sp*2.1,sp*3.2,top+sp*2.9); g.stroke();
+    g.fillStyle='#000';
+    g.beginPath(); g.arc(sp*5.3,top+sp*0.6,sp*0.19,0,Math.PI*2); g.fill();
+    g.beginPath(); g.arc(sp*5.3,top+sp*1.5,sp*0.19,0,Math.PI*2); g.fill();
+  }else{
+    g.lineWidth=sp*0.3;
+    g.beginPath(); g.moveTo(sp*4,top-sp*1.3); g.lineTo(sp*4,bot+sp*1.3); g.stroke();
+    g.lineWidth=sp*0.26;
+    g.beginPath(); g.arc(sp*4,top+sp*0.6,sp*0.9,0,Math.PI*2); g.stroke();
+    g.beginPath(); g.arc(sp*3.7,bot-sp*0.2,sp*0.7,0,Math.PI*2); g.stroke();
+  }
   /* 조표 — # 을 sharps 개 */
   const sharps=o.sharps||0;
   const SHY=[0,1.5,-0.5,1,2.5,2,3.5];        // 높은음자리표 #의 자리(칸 단위, top 기준)
@@ -395,6 +411,80 @@ A        | D
     ok('맞게 적은 줄은 마디 수가 그대로다 ('+bars4+')',bars4===BARS.length,r4.text.split('\n')[0]);
     ok('맞게 적은 줄은 음표 수가 그대로다',
        (r4.text.match(/A4:|[A-G][#b]?\d:/g)||[]).length===nNote,r4.text.split('\n')[0]);
+  }
+
+  /* ── 6) v67: 자리표 가리기 · 놓친 마디선 되찾기 · 여러 대안 고르기 ───────────────
+     사용자 요청: *"악보 폴더에 예시 악보 5개를 넣어 뒀다. 데이터가 쌓여서 정확도·위치·
+     박자·악보 규칙대로 점점 발전할 수 있게, 여러 가지 대안으로 만들 수 있도록 개선해라."*
+     그 5장을 실제로 재서 나온 규칙 셋을 여기서 지킨다. 실측값은 CLAUDE.md 59~61번 항목. */
+  {
+    /* ① 낮은음자리표를 가려낸다 — 찬송가(그랜드 스태프)의 아래 보표를 멜로디로 읽지
+       않기 위한 전제다. 여기서 틀리면 반주 음이 노래에 줄줄이 붙는다. */
+    const BB=[[{st:0,dur:1},{st:2,dur:1},{st:4,dur:1},{st:2,dur:1}],
+              [{st:0,dur:2},{st:4,dur:2}]];
+    const urlB=drawScan({sp:10,W:960,sharps:1,bassClef:true,bars:BB});
+    let gB=null; try{ gB=await staffGeom(urlB); }catch(e){}
+    ok('낮은음자리표를 낮은음자리표로 읽는다',!!gB&&gB.clef==='bass',gB&&gB.clef);
+    ok('높은음자리표는 그대로 높은음자리표다',!!geo&&geo.clef==='treble',geo&&geo.clef);
+
+    /* ② 놓친 마디선을 쪽 전체의 조판으로 되찾는다.
+       마디 폭의 **중앙값**을 쪽에서 구하고, 그 2배 폭인데 박수도 2마디분인 마디를 나눈다.
+       ★ 둘 중 하나만 맞으면 나누지 않는다 — 없는 마디선을 넣는 쪽이 훨씬 해롭다. */
+    const NT=(x,beats)=>({x,beats,name:'A4',step:5,sure:true});
+    const mkG=(bars,notes)=>({w:1000,iw:1000,sp:10,bars,notes,durSure:true,
+                              total:notes.reduce((a,n)=>a+n.beats,0)});
+    const even=()=>mkG([250,500,750],
+      [30,90,150,210,280,340,400,460,530,590,650,710,780,840,900,960].map(x=>NT(x,1)));
+    const wide=b=>mkG([250,750],
+      [30,90,150,210].map(x=>NT(x,b)).concat([280,340,400,460,520,580,640,700].map(x=>NT(x,b))));
+    {
+      const sysA=[{geo:even()},{geo:even()},{geo:wide(1)}];
+      const added=refineSysBars(sysA,4);
+      ok('놓친 마디선을 되찾는다 ('+added+'개)',added===1,added);
+      const sg=(origGeomOf(sysA[2].geo)||{}).seg||[];
+      const sums=sg.map(x=>{ let t=0; for(let j=x.i0;j<x.i0+x.cnt;j++)t+=sysA[2].geo.notes[j].beats; return t; });
+      ok('되찾은 뒤 마디마다 4박이다 ('+sums.join(',')+')',
+         sums.length===3&&sums.every(v=>Math.abs(v-4)<0.02),sums);
+    }
+    {
+      /* ★ 거짓 확인 — 폭은 두 마디분인데 **박수는 한 마디분**이면 손대지 않는다.
+         (이 검사가 없으면 "넓으면 무조건 나눈다"는 규칙으로 퇴화한다) */
+      const sysB=[{geo:even()},{geo:even()},{geo:wide(0.5)}];
+      ok('박수가 안 맞으면 마디선을 넣지 않는다',refineSysBars(sysB,4)===0,
+         (origGeomOf(sysB[2].geo)||{}).seg);
+    }
+
+    /* ③ 여러 대안 중 고르기 — 악보 규칙 점수. 노래가 될 수 없는 읽기는 규칙 점수가
+       아무리 높아도 져야 한다(실측: 마디 박수는 딱 맞는데 음이 널뛰는 사본을 고르는 바람에
+       그 단의 멜로디가 통째로 사라졌다). */
+    {
+      const sane=mkG([250,500,750],
+        [30,90,150,210,280,340,400,460,530,590,650,710,780,840,900,960].map(x=>NT(x,1)));
+      const wild=JSON.parse(JSON.stringify(sane));
+      wild.notes.forEach((n,i)=>{ n.step=(i%2)?24:0; });     // 옥타브를 널뛰는 가짜 읽기
+      ok('마디 박수가 맞으면 점수가 높다',geoRuleScore(sane,4)>90,geoRuleScore(sane,4));
+      ok('노래가 될 수 없는 읽기는 고르지 않는다',geoRuleScore(wild,4)<geoRuleScore(sane,4)-100,
+         [geoRuleScore(wild,4),geoRuleScore(sane,4)]);
+    }
+
+    /* ④ 그랜드 스태프: **번갈아 서 있을 때만** 아래 보표를 건너뛴다.
+       번갈이가 깨진 쪽(단 나누기가 어긋난 흐린 스캔)에서 건너뛰면 멜로디를 통째로 잃는다 —
+       실측으로 한 곡이 4단에서 1단으로 줄었다. 그래서 그때는 아무것도 하지 않는다. */
+    {
+      const oneSys=clef=>{ const g=even(); g.clef=clef; return {url:'x',geo:g}; };
+      const d1={sys:[oneSys('treble'),oneSys('bass'),oneSys('treble'),oneSys('bass')],key:null};
+      const r1=await addGeomMelody(d1,null);
+      ok('그랜드 스태프의 아래 보표는 멜로디로 읽지 않는다',r1.gsDrop===2,r1.gsDrop);
+      ok('아래 보표를 뺀 위 보표는 그대로 남는다',
+         (r1.text||'').split(String.fromCharCode(10)).filter(l=>/^♪/.test(l)).length===2,
+         (r1.text||'').split(String.fromCharCode(10)).filter(l=>/^♪/.test(l)).length);
+      const d2={sys:[oneSys('treble'),oneSys('bass'),oneSys('bass'),oneSys('bass')],key:null};
+      const r2=await addGeomMelody(d2,null);
+      ok('번갈아 서 있지 않으면 한 단도 버리지 않는다',!r2.gsDrop,r2.gsDrop);
+      ok('그때는 네 단이 다 남는다',
+         (r2.text||'').split(String.fromCharCode(10)).filter(l=>/^♪/.test(l)).length===4,
+         (r2.text||'').split(String.fromCharCode(10)).filter(l=>/^♪/.test(l)).length);
+    }
   }
 
   console.table(T.map(t=>({검사:t.name,결과:t.cond?'통과':'실패'})));
