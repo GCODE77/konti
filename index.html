@@ -352,7 +352,7 @@ window.onerror=function(msg,src,ln){
    예) const SCAN_ENDPOINT = "https://konti-scan.내계정.workers.dev";
 */
 const SCAN_ENDPOINT = "";
-const APP_VER = "69";
+const APP_VER = "70";
 /* file:// 나 content:// 로 열면 브라우저가 외부 호출을 막는다(CORS). 미리 알려준다. */
 const LOCAL_FILE = !/^https?:$/.test(location.protocol);
 /* Claude 앱처럼 iframe 안에서 실행 중이면 키 없이도 인식이 통한다. */
@@ -7586,6 +7586,14 @@ function openPanel(name){
            갈라졌다) 여태 되돌릴 방법이 아예 없었다 — 음표만 고를 수 있었기 때문이다. */
         +'<div class="btns"><button class="btn wide" id="n-barless">앞 마디선 지우기</button>'
         +'<button class="btn wide" id="n-barmore">앞에 마디선 넣기</button></div>'
+        /* ★ 곡 중간에 박자가 바뀌는 마디(2/4·3/4)를 **손으로** 맞춘다(v70).
+           박자표를 그림에서 읽어 자동으로 하려고 세 가지 방법을 다 해 봤지만 믿을 만하지
+           않았다(CLAUDE.md 72번). 그래서 대신 **두 번 눌러 고치게** 한다 — 인식이 4박으로
+           늘려 놓은 마디를 원래 박수로 되돌리는 일이라, 늘어난 음들을 그 비율로 줄인다. */
+        +'<div class="rowline" style="border:none;padding:4px 0 2px">'
+        +'<span><b>이 마디 박자</b><small>지금 '+(()=>{const q=curBarBeats();return q?(q%1?q.toFixed(2):q)+'박':'—';})()+'</small></span>'
+        +'<span class="fontset"><button id="n-m2">2박</button><button id="n-m3">3박</button>'
+        +'<button id="n-m4">4박</button></span></div>'
         +'<div class="btns"><button class="btn wide" id="n-del">'+(isRest?'이 쉼표 지우기':'이 음 지우기')+'</button></div></div>'
       : '<p class="note">고칠 음이 없습니다 — 이 곡에는 멜로디가 없습니다. '
         +'<b>더보기 → 편집</b>에서 <code>♪ 1:1 5:0.5</code> 처럼 직접 넣을 수 있습니다.</p>';
@@ -7708,6 +7716,33 @@ function openPanel(name){
       writeBackMelody(); renderAll(); openPanel('staff');
       toast('마디선을 넣었습니다 — 이 음부터 새 마디입니다.');
     });
+    /* 이 마디의 음표 범위(마디선 사이) */
+    function curBarRange(){
+      if(!sel)return null;
+      const b=blocks[sel.bi]; if(!b||b.k!=='mel')return null;
+      let a2=sel.ni; while(a2>0&&!b.notes[a2-1].bar)a2--;
+      let b2=sel.ni; while(b2+1<b.notes.length&&!b.notes[b2+1].bar)b2++;
+      return {b,a:a2,z:b2};
+    }
+    function curBarBeats(){
+      const R=curBarRange(); if(!R)return 0;
+      let t=0; for(let j=R.a;j<=R.z;j++)if(!R.b.notes[j].bar)t+=(R.b.notes[j].beats||0);
+      return +t.toFixed(4);
+    }
+    const setBarBeats=target=>{
+      const R=curBarRange(); if(!R)return;
+      const idx=[]; for(let j=R.a;j<=R.z;j++)if(!R.b.notes[j].bar)idx.push(j);
+      if(!idx.length)return;
+      const cur0=idx.reduce((a2,j)=>a2+(R.b.notes[j].beats||0),0);
+      if(!(cur0>0))return;
+      const k=target/cur0;
+      const scaled=idx.map(j=>(R.b.notes[j].beats||0)*k);
+      const snapped=snapBeats(scaled,target,null,1)||scaled.map(v=>+v.toFixed(4));
+      idx.forEach((j,i)=>{ R.b.notes[j].beats=snapped[i]; });
+      writeBackMelody(); renderAll(); openPanel('staff');
+      toast('이 마디를 '+target+'박으로 맞췄습니다.');
+    };
+    on('n-m2',()=>setBarBeats(2)); on('n-m3',()=>setBarBeats(3)); on('n-m4',()=>setBarBeats(4));
     on('n-ins-before',()=>insert(-1,false)); on('n-ins-after',()=>insert(1,false));
     on('n-ins-rest',()=>insert(1,true));
     on('n-del',del);

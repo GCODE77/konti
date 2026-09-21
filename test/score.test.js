@@ -151,6 +151,17 @@ export function drawScan(o){
 
 export default async function scoreTest(){
   T.length=0; pass=0; fail=0;
+  /* ★ 이 테스트는 addGeomMelody 를 부른다 — 그 안에서 **배운 값이 저장된다**(konti:learn).
+     합성 그림에서 배운 값이 사용자 것에 섞이면 안 되고(CLAUDE.md 38번), 다음 테스트가
+     그 값 때문에 달라져도 안 된다(실측: 두 번째로 돌리면 간격 테스트가 깨졌다).
+     그래서 시작할 때 갈무리하고 끝나면 되돌린다. */
+  const _keepLearn=(()=>{ try{return localStorage.getItem('konti:learn');}catch(e){return null;} })();
+  const _keepC0=SPACE.c0, _keepSrc=SPACE.src, _keepMedW=SPACE.medW;
+  const _restore=()=>{
+    try{ if(_keepLearn===null)localStorage.removeItem('konti:learn');
+         else localStorage.setItem('konti:learn',_keepLearn); }catch(e){}
+    SPACE.c0=_keepC0; SPACE.src=_keepSrc; SPACE.medW=_keepMedW;
+  };
 
   /* 1) 스캔본 한 단: 2분음표가 **줄 위**에 놓이고, 낮은 음은 기둥이 위로 뻗는다 */
   const BARS=[
@@ -595,6 +606,48 @@ A        | D
     /* ② 곡 중간의 2/4 마디 — **폭+박수만으로 가리는 규칙은 넣지 않았다**(CLAUDE.md 70번).
        대신 딱 절반인 마디에는 경고를 띄우지 않는다(잰 것이 무너진 마디는 3.25박처럼
        어중간하게 나오지 딱 절반으로는 안 나온다). */
+    /* ②' 곡 중간에 박자가 바뀐 마디를 **손으로** 되돌린다(v70) — 오선보 고치기의 '이 마디 박자'.
+       인식은 2/4 마디를 4박으로 늘려 놓는다. 그걸 두 번 눌러 원래 박수로 줄이는 길이다. */
+    {
+      const keep={raw:S.raw,sel:S.selNote};
+      try{
+        S.raw='♪ E4:1 E4:1 E4:1 E4:1 | E4:2 E4:1 E4:1 | E4:1 E4:1 E4:1 E4:1'
+             +String.fromCharCode(10)+'A        D        A';
+        reparse();
+        const bi=blocks.findIndex(b=>b.k==='mel');
+        S.selNote={bi,ni:5};
+        openPanel('staff');
+        const btn=document.getElementById('n-m2');
+        ok('오선보 고치기에 마디 박자 단추가 있다',!!btn,btn);
+        if(btn){
+          btn.click();
+          const got=blocks[bi].notes.slice(5,8).map(n=>n.beats);
+          const sum=got.reduce((a2,b2)=>a2+b2,0);
+          ok('이 마디를 2박으로 줄인다 ('+got.join(' ')+')',Math.abs(sum-2)<0.02,got);
+          ok('줄일 때 음표 사이 비율을 지킨다',got[0]===got[1]*2&&got[1]===got[2],got);
+          ok('다른 마디는 건드리지 않는다',
+             blocks[bi].notes.slice(0,4).every(n=>n.beats===1),
+             blocks[bi].notes.slice(0,4).map(n=>n.beats));
+        }
+        /* ★ 줄인 결과는 **악보에 있는 길이**여야 한다 — 비율로만 줄이면 1.2박 같은
+           있을 수 없는 길이가 나온다(그래서 snapBeats 로 격자에 맞춘다). */
+        S.raw='♪ E4:2 E4:2 E4:1 | E4:1 E4:1 E4:1 E4:1'+String.fromCharCode(10)+'A        A';
+        reparse();
+        const bi2=blocks.findIndex(b=>b.k==='mel');
+        S.selNote={bi:bi2,ni:0};
+        openPanel('staff');
+        const b3=document.getElementById('n-m3');
+        if(b3){
+          b3.click();
+          const got2=blocks[bi2].notes.slice(0,3).map(n=>n.beats);
+          const sum2=got2.reduce((a2,b2)=>a2+b2,0);
+          ok('줄인 뒤에도 악보에 있는 길이만 쓴다 ('+got2.join(' ')+')',
+             Math.abs(sum2-3)<0.02&&got2.every(v=>BEAT_GRID.some(g=>Math.abs(g-v)<1e-6)),got2);
+        }
+        closePanel();
+      } finally { S.raw=keep.raw; S.selNote=keep.sel; reparse(); }
+    }
+
     /* ③ 못갖춘마디는 마디 번호를 갖지 않는다(인쇄 악보와 같게) */
     {
       const keep={raw:S.raw,semis:S.semis};
@@ -609,6 +662,7 @@ A        | D
     }
   }
 
+  _restore();
   console.table(T.map(t=>({검사:t.name,결과:t.cond?'통과':'실패'})));
   console.log((fail?'✗ ':'✓ ')+'score: '+pass+' 통과 / '+fail+' 실패');
   return {pass,fail};
