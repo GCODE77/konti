@@ -662,6 +662,40 @@ A        | D
     }
   }
 
+  /* ★★ 6) 여백 없이 붙은 두 보표는 여전히 서로 다른 단으로 갈라져야 한다 (v71).
+     사용자 사진(「슬픈 마음 있는 사람」, 저해상도 그랜드 스태프)에서 찾은 버그다.
+     `splitSystems` 의 단 묶기가 고정폭(쪽 높이의 4.5%)만 봐서, 그랜드 스태프처럼 두
+     보표가 인쇄 여백 없이 붙어 있으면(오선 줄 사이 간격의 8~9배밖에 안 되는 좁은 틈)
+     서로 다른 보표를 하나로 묶어 버렸다. 그러면 뒤섞인 단에서 `staffGeom` 이 제대로
+     재지 못하고, 59번 항목의 그랜드 스태프 제외 로직(clef 가 번갈아 서야 켜진다)도
+     번갈이를 못 찾아 꺼졌다.
+     ★ 반드시 **보표를 3개** 그린다 — 2개만 그리면 옛 코드에서도 (합쳐져) 시스템이
+       1개가 되어 "good.length<2" 구제책(구조 분석 재시도)이 저절로 걸려 버그가
+       가려진다. 실제 사고도 8개 보표 중 2쌍만 붙어 있어서(good.length=6, 구제책이
+       안 걸림) 조용히 넘어갔다 — 3개 중 뒤 2개만 붙이면 그 함정을 피하면서도
+       재현된다.
+     ★ 앞(보표1↔2) 간격은 400px(먼 시스템), 뒤(보표2↔3) 간격은 80px(붙은 보표) —
+       오선 줄 사이 간격(8px)의 10배라 지금 규칙(간격의 6배=48px)로는 확실히 갈라지고,
+       고정폭(H*0.045=90px, H=2000)으로는 확실히 합쳐진다(falsify 로 직접 확인함:
+       아래 lineMerge 를 `H*0.045` 로 되돌리면 2개로 나온다). */
+  {
+    const sp=10, W=960, H=2000;
+    const c=document.createElement('canvas'); c.width=W; c.height=H;
+    const g=c.getContext('2d');
+    g.fillStyle='#fff'; g.fillRect(0,0,W,H);
+    g.strokeStyle='#333'; g.lineWidth=sp*0.28;
+    const drawStaff=(top)=>{ for(let k=0;k<5;k++){ const y=top+k*sp;
+      g.beginPath(); g.moveTo(sp*2,y); g.lineTo(W-sp*2,y); g.stroke(); } return top+4*sp; };
+    const bot1=drawStaff(100);
+    const bot2=drawStaff(bot1+400);
+    drawStaff(bot2+80);
+    const url=c.toDataURL('image/png');
+    let parts=null;
+    try{ parts=await splitSystems(url,W); }catch(e){}
+    ok('여백 없이 붙은 두 보표를 두 단으로 가른다 (실제 '+(parts?parts.length:0)+'개)',
+       !!parts&&parts.length===3,parts&&parts.map(p=>p.t0.toFixed(3)+'~'+p.t1.toFixed(3)));
+  }
+
   _restore();
   console.table(T.map(t=>({검사:t.name,결과:t.cond?'통과':'실패'})));
   console.log((fail?'✗ ':'✓ ')+'score: '+pass+' 통과 / '+fail+' 실패');
