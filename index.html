@@ -352,7 +352,7 @@ window.onerror=function(msg,src,ln){
    예) const SCAN_ENDPOINT = "https://konti-scan.내계정.workers.dev";
 */
 const SCAN_ENDPOINT = "";
-const APP_VER = "68";
+const APP_VER = "69";
 /* file:// 나 content:// 로 열면 브라우저가 외부 호출을 막는다(CORS). 미리 알려준다. */
 const LOCAL_FILE = !/^https?:$/.test(location.protocol);
 /* Claude 앱처럼 iframe 안에서 실행 중이면 키 없이도 인식이 통한다. */
@@ -1049,6 +1049,7 @@ const LY_FS=15, CH_FS=17;
 /* 가사 음절보다 음표가 모자란 마디의 개수. **reparse 에서 한 번 센다** — 화면을 어느 모드로
    보고 있든(사진 보기여도) 인식 직후 결과 안내에 바로 적을 수 있어야 하기 때문이다. */
 let LACK=0;
+let ANAC=0;   // 못갖춘마디로 시작하면 1 (마디 번호 보정, v69)
 /* 글자의 대략적인 렌더 폭(px). 한글·한자는 폰트 크기와 거의 같고 라틴/숫자는 절반 남짓 */
 function txtW(s,fs){ let w=0; for(const c of (s||''))w+=(dispW(c)===2?1.02:0.56)*fs; return w; }
 /* 마디의 가사를 음절로 쪼갠다 — 한글은 한 글자가 한 음절이라 글자 단위가 곧 음절 단위 */
@@ -1187,7 +1188,10 @@ function renderStaffSection(melM,chM,lyM,verses,measureStart,fitM,bassM,W,breaks
       const syl=sylM[m], si=soundIx[m], sw=slotW[m];
       const beatSum=notes.length?notes.reduce((a,it)=>a+(it.n.beats||1),0):null;
       const pickup=(measureStart+m===1);      // 못갖춘마디는 박수가 모자라도 정상 — 경고하지 않는다
-      const bad=beatSum!==null&&!fitM[m]&&!pickup&&Math.abs(beatSum-P.beats)>0.75;
+      /* ★ 곡 중간에 박자가 바뀌는 마디(2/4)도 정상이다 — 딱 반 마디면 경고하지 않는다(v69).
+         잰 것이 무너진 마디는 3.25박·1.5박처럼 어중간하게 나오지 딱 절반으로는 안 나온다. */
+      const halfOk=beatSum!==null&&Math.abs(beatSum-P.beats/2)<0.02;
+      const bad=beatSum!==null&&!fitM[m]&&!pickup&&!halfOk&&Math.abs(beatSum-P.beats)>0.75;
       /* ★ 음표를 빠뜨렸는지 **가사로 검산한다** (v61, 사용자 신고로 넣었다).
          *"예수 내 구주. 파, 미 인데 파만 나왔다!"* — 한 마디에 가사 음절이 둘인데 소리나는
          음표가 하나면 음표를 하나 놓친 것이다. 찬송가·복음성가는 한 음절에 한 음이 원칙이고,
@@ -1202,8 +1206,10 @@ function renderStaffSection(melM,chM,lyM,verses,measureStart,fitM,bassM,W,breaks
         if(vs.length)lack=Math.max(0,Math.min.apply(null,vs.map(v=>syl[v].length))-si.length);
       }
       barOut.push({x:x0,bad:bad||!!lack});
+      /* 마디 번호는 **인쇄 악보와 같게** 매긴다 — 못갖춘마디는 번호를 갖지 않는다(v69) */
+      const num=measureStart+m-ANAC;
       numOut.push({x:x0+3,bad:bad||!!lack,
-        txt:(measureStart+m)
+        txt:(num<1?'못갖춘':num)
           +(bad?' ⚠'+(beatSum%1?beatSum.toFixed(1):beatSum)+'박':'')
           +(lack?' ⚠음표 '+lack+'개':'')});
 
@@ -2236,6 +2242,19 @@ function reparse(){
   }
   SUSPECT=markSuspectNotes();   // 조성·코드를 다 안 뒤에 판단해야 한다
   LACK=countLackNotes();
+  ANAC=anacrusisOff();          // 못갖춘마디로 시작하면 마디 번호를 하나 당긴다(v69)
+}
+/* 곡이 **못갖춘마디**로 시작하는가 (v69, 사용자 신고: *"못갖춘마디를 해결해라"*).
+   인쇄 악보는 못갖춘마디에 번호를 매기지 않는다 — 첫 **온전한** 마디가 1마디다. 앱은 여태
+   못갖춘마디를 1마디로 세어서, 사용자가 원본과 대조할 때 번호가 끝까지 하나씩 어긋났다.
+   판정은 첫 멜로디 줄의 첫 마디 박수가 한 마디의 3/4 보다 **확실히 적은가** 하나다. */
+function anacrusisOff(){
+  const mel=blocks.find(b=>b.k==='mel'&&b.notes&&b.notes.length);
+  if(!mel)return 0;
+  let t=0, any=false;
+  for(const n of mel.notes){ if(n.bar)break; t+=(n.beats>0?n.beats:0); any=true; }
+  if(!any||!(t>0))return 0;
+  return (t<P.beats*0.75-1e-9)?1:0;
 }
 /* 가사 음절보다 소리나는 음표가 적은 마디를 센다 — 인식이 음표를 빠뜨린 자리다 (v61).
    사용자 신고: *"예수 내 구주. 파, 미 인데 파만 나왔다!"*
@@ -3886,6 +3905,91 @@ function findAccidentals(ink,W,H,sp,y0,y1,xFrom){
     return (wN>=0.3&&wN<=0.95)?'n':'';
   }
 }
+/* ══ 쉼표 찾기 (v69) ═══════════════════════════════════════════════════════
+   사용자 신고: *"박자랑 음 위치, **쉼표 박자**, 마디 개수가 안 맞는다."*
+   여태 쉼표를 **한 번도 찾지 않았다** — 음표를 하나도 못 찾은 마디만 통째로 쉼표 한 마디로
+   적었을 뿐이다(v57). 그래서 8분쉼표 하나가 든 마디는 늘 0.5박이 모자랐고, fitBarBeats 가
+   그 모자람을 **옆 음표들을 늘려서** 메웠다 — 마디 하나가 아니라 그 마디 전체 리듬이 틀어진다.
+   실측(「하나님의 부르심」 1단 끝): 인쇄된 8분쉼표를 못 봐서 마지막 음이 1박으로 늘어났다.
+
+   찾는 법은 임시표(findAccidentals)와 같은 덩어리 훑기다. 다른 것은 **생김새 기준**뿐:
+     · 온·2분쉼표 — 줄에 붙은 **납작한 사각형**(폭 0.55~1.9칸, 높이 0.6칸 이하, 꽉 찼다)
+     · 4분쉼표   — 폭 1칸 남짓에 **키가 2~3.3칸**인 지그재그
+     · 8분쉼표   — 같은 폭에 **키가 1~1.9칸**
+   ★ 16분쉼표는 4분쉼표와 키가 겹쳐서 **일부러 찾지 않는다**(둘을 가르려면 갈고리 수를
+     세야 하는데, 그걸 잘못 세면 4분쉼표가 16분쉼표가 되어 마디가 더 크게 틀어진다).
+   ★ 음표·임시표와 겹치는 덩어리는 쉼표가 아니다 — 그 둘을 먼저 찾아 놓고 그 자리를 피한다. */
+function findRests(ink,W,H,sp,y0,y1,xFrom,top,bot,noteXs,accMarks,hr){
+  const out=[];
+  /* ★ **가로로 긴 잉크는 빼고** 덩어리를 짓는다(v69). 지우고 남은 오선 토막·빔·이음줄이
+     쉼표와 이어져 버려서, 그냥 이으면 한 덩어리가 폭 10칸짜리로 커진다(실측: 「하나님의
+     부르심」 1단 끝 8분쉼표가 x 2080~2290 짜리 덩어리에 먹혔다). 쉼표·머리는 한 칸 넘게
+     가로로 이어지지 않으므로, 가로 런이 1.25칸을 넘는 픽셀은 애초에 빼고 본다. */
+  const wide=sp*1.25;
+  const okPx=p=>ink[p]&&(!hr||hr[p]<=wide);
+  const seen=new Uint8Array(W*(y1-y0+1));
+  const CAP=Math.round(sp*sp*6);
+  const yTop=top-sp*0.9, yBot=bot+sp*0.9;
+  for(let y=y0;y<=y1;y++)for(let x=xFrom;x<W;x++){
+    const p=y*W+x, sp0=(y-y0)*W+x;
+    if(!okPx(p)||seen[sp0])continue;
+    let ax0=x,ax1=x,ay0=y,ay1=y,area=0,over=false;
+    const st=[p]; seen[sp0]=1;
+    while(st.length){
+      const q=st.pop(), qy=(q/W)|0, qx=q-qy*W;
+      if(++area>CAP)over=true;
+      if(qx<ax0)ax0=qx; if(qx>ax1)ax1=qx; if(qy<ay0)ay0=qy; if(qy>ay1)ay1=qy;
+      for(let dy=-1;dy<=1;dy++){
+        const ny=qy+dy; if(ny<y0||ny>y1)continue;
+        for(let dx=-1;dx<=1;dx++){
+          const nx=qx+dx; if(nx<0||nx>=W)continue;
+          const np=ny*W+nx, ns=(ny-y0)*W+nx;
+          if(okPx(np)&&!seen[ns]){ seen[ns]=1; st.push(np); }
+        }
+      }
+    }
+    if(over)continue;
+    const bw=ax1-ax0+1, bh=ay1-ay0+1, cx=(ax0+ax1)/2, cy=(ay0+ay1)/2;
+    if(cy<yTop||cy>yBot)continue;                       // 쉼표는 오선 안에 산다
+    const w=bw/sp, h=bh/sp, fill=area/(bw*bh);
+    /* 음표 머리 옆(1칸 안)이면 쉼표가 아니다 — 기둥·꼬리·점 조각이다 */
+    if(noteXs.some(nx2=>Math.abs(nx2-cx)<sp*0.95)){ if(window.__RESTALL&&h>0.5)window.__RESTALL.push({x:Math.round(cx),w:+w.toFixed(2),h:+h.toFixed(2),why:'음표옆'}); continue; }
+    if(accMarks&&accMarks.some(a=>cx>=a.x0-2&&cx<=a.x1+2&&cy>=a.y0-2&&cy<=a.y1+2))continue;
+    if(window.__RESTALL&&h>0.5&&w>0.15)window.__RESTALL.push({x:Math.round(cx),cy:Math.round(cy),w:+w.toFixed(2),h:+h.toFixed(2),f:+fill.toFixed(2)});
+    /* ★★ **8분쉼표만 찾는다**(v69). 실측으로 정한 것이다:
+         · 마디선·기둥 — 폭 0.28~0.5칸 (쉼표는 0.55칸 이상). 폭 하나로 깨끗이 갈린다.
+         · ♯·♭·♮ — 폭은 쉼표와 같지만 **키가 2.3~2.9칸**이다. 키로 갈린다.
+         · 4분쉼표·16분쉼표 — 그 임시표들과 키·폭이 겹친다. 잘못 넣으면 마디가 더 크게
+           틀어지므로 **일부러 찾지 않는다**(찾은 척하는 것보다 모르는 채로 두는 쪽이 낫다).
+         · 온·2분쉼표(납작한 사각형) — 빔 토막과 생김새가 같아 역시 찾지 않는다
+           (실측: 한 단에서 빔 둘이 4박 쉼표로 잡혔다).
+       8분쉼표만으로도 값어치가 있다 — 이 악보에서 마디를 0.5박씩 어긋나게 하던 것이 그것이다. */
+    let beats=0;
+    if(w>=0.55&&w<=1.6&&h>=0.9&&h<=2.0&&fill>=0.2&&fill<=0.8)beats=0.5;
+    if(!beats)continue;
+    /* ★★ **속이 꽉 찬 음표 머리가 들어 있으면 쉼표가 아니다.** 검출기가 놓친 음표 하나가
+       (머리+기둥) 8분쉼표와 폭·키가 거의 같아서 그대로 쉼표로 둔갑했다 — 소리가 나야 할
+       자리가 통째로 조용해지므로 놓친 음표보다 더 나쁘다(실측: 「하나님의 부르심」 1단 끝).
+       머리는 0.75×0.5칸짜리 상자가 9할 넘게 차는 자리가 있다는 뜻이고, 쉼표의 갈고리는
+       그만한 상자를 채우지 못한다. */
+    {
+      const hw=Math.max(2,Math.round(sp*0.75)), hh=Math.max(2,Math.round(sp*0.5));
+      let best=0;
+      for(let yy=ay0;yy+hh<=ay1+1;yy++)
+        for(let xx=ax0;xx+hw<=ax1+1;xx++){
+          let n2=0;
+          for(let j=0;j<hh;j++)for(let i2=0;i2<hw;i2++)if(ink[(yy+j)*W+xx+i2])n2++;
+          if(n2>best)best=n2;
+        }
+      const solidF=best/(hw*hh);
+      if(window.__RESTALL)window.__RESTALL.push({x:Math.round(cx),w:+w.toFixed(2),h:+h.toFixed(2),f:+fill.toFixed(2),solid:+solidF.toFixed(2)});
+      if(solidF>=0.9)continue;
+    }
+    out.push({x:cx,cy,beats,w:+w.toFixed(2),h:+h.toFixed(2),fill:+fill.toFixed(2)});
+  }
+  if(window.__RESTDBG)window.__RESTDBG.push(out.slice());
+  return out;
+}
 /* 찾아낸 임시표를 음표에 붙인다 — **오른쪽 가장 가까운**, 높이가 맞는 음표 하나에만.
    ★ 임시표는 반드시 그 음표 **바로 왼쪽**(2.4칸 안)에 붙는다. 더 멀면 다른 음의 것이거나
      조표이므로 붙이지 않는다 — 빈 것이 틀린 것보다 낫다. */
@@ -4703,9 +4807,22 @@ async function staffGeom(url,clef){
   }
   if(res.length<3)return null;
 
+  /* ★ 쉼표를 찾아 음표 사이에 끼워 넣는다(v69). 여기서 하는 이유: 음표·임시표·마디선이
+     모두 확정된 뒤라야 "그 자리는 음표가 아니다"를 근거로 쓸 수 있다. */
+  let restCands=[];
+  {
+    const noteXs=res.map(n=>n.x*sc);
+    /* 첫 음표보다 왼쪽은 보지 않는다 — 자리표·조표·박자표가 거기 있다
+       (실측: 박자표의 '4' 가 4분쉼표로 잡혔다. clefEnd 는 박자표까지 덮지 못한다). */
+    const rFrom=Math.max(0,Math.min(W-1,Math.round(noteXs[0]-sp*2)),clefEnd);
+    const rs=findRests(ink,W,H,sp,y0,y1,rFrom,top,bot,noteXs,accMarks,hr);
+    restCands=rs.filter(r=>!bars.some(b=>Math.abs(b*sc-r.x)<sp*0.5))
+                .map(r=>({x:r.x/sc,cy:r.cy,beats:r.beats}));
+  }
+
   /* w: notes[].x · bars[] 가 어떤 폭을 기준으로 한 값인지. 사진 위 비율로 바꿀 때 쓴다. */
   /* iw: top/bot/sp 가 사는 내부 캔버스 폭. 원본 그림 좌표로 되돌릴 때 쓴다(코드 띠 오려내기). */
-  return {sp,top,bot,med,notes:res,durSure,total,w:img.width,iw:W,bars,keySig:ksig,clef:clef||clefKind||'treble'};
+  return {sp,top,bot,med,notes:res,durSure,total,w:img.width,iw:W,bars,keySig:ksig,clef:clef||clefKind||'treble',restCands};
 }
 /* AI 결과의 ♪ 줄 음이름을 우리가 센 것으로 덮어쓴다. 개수가 정확히 같을 때만 한다.
    accs: 우리가 **그림에서 직접 읽은** 임시표(v60). ''=못 봤음 · '#'·'b'=붙어 있음 · 'n'=제자리표.
@@ -5061,7 +5178,8 @@ function guessKeyFromMelody(notes){
      '지금 몇째 마디' 표시가 여기에 달려 있다. 음높이가 못 미더워도 마디는 맞다. */
 function geomSane(notes){
   if(!notes||notes.length<3)return false;
-  const st=notes.map(n=>n.step);
+  const st=notes.filter(n=>!n.rest&&n.step!==null&&n.step!==undefined).map(n=>n.step);
+  if(st.length<3)return false;
   const gaps=[]; for(let i=1;i<st.length;i++)gaps.push(Math.abs(st[i]-st[i-1]));
   const big=gaps.filter(g=>g>7).length;                 // 옥타브 넘는 도약
   if(big>gaps.length*0.2)return false;
@@ -5215,7 +5333,7 @@ function fitBarBeats(bs,per,gaps,durSure,edge){
    최소제곱으로 c0 와 k 를 푼다** — 마디가 많을수록 정확해진다. 그리고 쪽마다 푼 값을
    localStorage 에 쌓아 두었다가(konti:learn) 근거가 모자란 쪽에서는 **여태 배운 평균**을
    쓴다. 악보를 넣으면 넣을수록 다음 악보가 더 잘 읽히는 부분이 바로 여기다. */
-const SPACE={c0:1.05,src:'기본값',n:0,useGap:true,r:null};
+const SPACE={c0:1.05,src:'기본값',n:0,useGap:true,r:null,medW:0};
 const LEARN_KEY='konti:learn';
 function learnLoad(){
   try{ const o=JSON.parse(localStorage.getItem(LEARN_KEY)||'null');
@@ -5298,6 +5416,34 @@ function useSpacing(sysList,per){
   if(L){ SPACE.c0=L.c0; SPACE.src='여태 배운 평균'; SPACE.n=L.mn; return null; }
   SPACE.c0=1.05; SPACE.src='기본값'; SPACE.n=0; return null;
 }
+/* 찾아 둔 쉼표 후보를 **마디 박수가 맞아떨어질 때만** 넣는다 (v69).
+   쉼표 검출은 아무리 다듬어도 음표 머리·임시표와 헷갈린다(실측: 검출기가 놓친 음표 하나가
+   8분쉼표와 폭·키가 같았다). 그래서 "생김새가 쉼표 같다"는 것만으로는 넣지 않고,
+   **넣었을 때 그 마디의 박수 합이 박자표에 더 가까워질 때**만 쓴다. 틀린 쉼표는 합을
+   되레 깨뜨리므로 저절로 걸러진다 — 이 앱이 여러 번 쓴 "근거 둘이 맞을 때만"
+   (v67 마디선, v68 조표) 과 같은 방식이다.
+   ★ 반드시 fitBeatsToBars **앞에서** 돌아야 한다. 뒤에 돌면 모자란 0.5박을 이미
+     옆 음표들을 늘려서 메운 뒤라, 쉼표를 넣을 자리가 사라진다. */
+function applyRestCands(geo,seg,per){
+  if(!geo||!geo.restCands||!geo.restCands.length||!seg||!seg.length)return 0;
+  const P4=per||4, add=[], w=geo.w||1;
+  seg.forEach(sg=>{
+    if(!sg.cnt)return;
+    let t=0; for(let j=sg.i0;j<sg.i0+sg.cnt;j++)t+=(geo.notes[j].beats>0?geo.notes[j].beats:1);
+    const lack=P4-t;
+    if(lack<0.3)return;                                  // 모자라지 않으면 넣을 이유가 없다
+    if(Math.abs(P4-(t+0.5))>=Math.abs(lack))return;      // 넣어서 더 가까워지지 않으면 넣지 않는다
+    const cand=geo.restCands.filter(r=>r.x/w>=sg.x0&&r.x/w<sg.x1);
+    if(cand.length!==1)return;                           // 후보가 여럿이면 어느 것인지 모른다
+    add.push(cand[0]);
+  });
+  if(!add.length)return 0;
+  add.forEach(r=>geo.notes.push({x:r.x,cy:r.cy,step:null,abs:null,name:'r',acc:'',rest:true,
+                                 beats:r.beats,dots:0,sure:true,hs:0}));
+  geo.notes.sort((a,b)=>a.x-b.x);
+  geo.total=+geo.notes.reduce((a,n)=>a+(n.beats||0),0).toFixed(4);
+  return add.length;
+}
 function fitBeatsToBars(geo,seg,per){
   if(!geo||!geo.notes||!seg||seg.length<2)return false;
   let changed=false;
@@ -5325,6 +5471,11 @@ function fitBeatsToBars(geo,seg,per){
       const t=gaps.reduce((a,b)=>a+b,0);
       if(t>0)gp=gaps.map(v=>v/t*per);
     }
+    /* ★ 곡 중간에 박자가 바뀌는 마디(2/4)를 **폭+박수만 보고** 그대로 두는 규칙을 만들었다가
+       뺐다(v69). 5장으로 재 보니 "박자가 바뀐 마디"와 "음표를 놓쳐 짧아진 마디"가 그 두
+       근거로는 갈리지 않아, 맞는 마디 4개를 잃고 얻은 것은 없었다(곤한 내 영혼 17→16,
+       슬픈 마음 22→19). 제대로 하려면 **중간에 찍힌 박자표(2/4)를 그림에서 읽어야** 한다 —
+       그게 다음에 할 일이다. 지금은 딱 절반인 마디에 경고만 띄우지 않는다(renderStaffSection). */
     const fx=fitBarBeats(bs,per,gp,!!geo.durSure,sg===seg[0]||sg===seg[seg.length-1]);
     for(let j=sg.i0,k=0;j<sg.i0+sg.cnt;j++,k++)
       if(geo.notes[j]&&geo.notes[j].beats!==fx[k]){ geo.notes[j].beats=fx[k]; changed=true; }
@@ -5415,6 +5566,7 @@ function refineSysBars(sysList,per){
   if(wid.length<3)return 0;
   const med=wid.slice().sort((a,b)=>a-b)[wid.length>>1];
   if(!(med>0.03))return 0;
+  SPACE.medW=med;                       // 박자 바뀐 마디(2/4)를 가려낼 때도 쓴다(v69)
   let added=0;
   sysList.forEach(s=>{
     const g=s.geo; if(!g||!g.notes)return;
@@ -5496,6 +5648,7 @@ function upscaleUrl(url,factor){
 async function addGeomMelody(draft,say){
   if(!draft||!draft.sys||!draft.sys.length)return draft;
   const N=draft.sys.length;
+  SPACE.medW=0;             // 쪽마다 새로 잰다 — 앞 악보의 값이 남으면 안 된다(v69)
   let bigLeft=2;            // 1.7배 다시 재기는 한 쪽에 두 단까지만 (v67, 시간 예산)
   for(let i=0;i<N;i++){
     const s=draft.sys[i];
@@ -5628,13 +5781,14 @@ async function addGeomMelody(draft,say){
       s.geo.notes.forEach((n,i)=>{ const mm=geomMidi(n.name,sig,ac[i]); if(mm!==null)all.push({midi:mm,beats:n.beats||1}); }); } });
     key=all.length>=6?guessKeyFromMelody(all):{pc:0,minor:false};
   }
-  let melN=0, melSys=0, melSure=0, guessN=0, keepN=0;
+  let melN=0, melSys=0, melSure=0, guessN=0, keepN=0, restN=0;
   const pages=draft.sys.map(s=>{
     const ok=s.geo&&geomSane(s.geo.notes);
     /* 마디선을 먼저 잡고(og0) → 그 마디에 맞춰 길이를 바로잡고 → 다시 잰다(og).
        두 번 재는 이유: 마디 안 '몇 박째 → 가로 어디' 표(pb/px)가 고친 길이로 만들어져야
        사진 위 하이라이트가 소리와 같은 자리를 가리킨다. */
     let og=ok?origGeomOf(s.geo):null;
+    if(og&&og.seg&&applyRestCands(s.geo,og.seg,P.beats)){ restN++; og=origGeomOf(s.geo); }
     if(og&&og.seg&&og.seg.length>1&&fitBeatsToBars(s.geo,og.seg,P.beats))og=origGeomOf(s.geo);
     const seg=(og&&og.seg&&og.seg.length>1)?og.seg:null;
     const mel=ok?geomMelodyLine(s.geo,P.beats,sig,seg):'';
@@ -5699,7 +5853,7 @@ async function addGeomMelody(draft,say){
        예전 OCR 텍스트가 아니라 **이걸** 세야 마디가 맞는다. */
     return (s.out=[mel,txt].filter(t=>t&&t.trim()).join('\n'));
   }).filter(t=>t.trim());
-  return Object.assign({},draft,{text:pages.join('\n\n'),melN,melSys,melSure,
+  return Object.assign({},draft,{text:pages.join('\n\n'),melN,melSys,melSure,restN,
     sigN:Object.keys(sig).length,guessN,keepN,key2:key});
 }
 /* 오선이 모인 줄(단)을 찾아 한 단씩 잘라낸다.

@@ -561,6 +561,54 @@ A        | D
     }
   }
 
+  /* ── 8) v69: 쉼표 · 박자 바뀐 마디 · 못갖춘마디 ───────────────────────────────
+     사용자 신고(「하나님의 부르심」): *"못갖춘마디와 2/4 박자도 중간에 있는데 해결해라.
+     음 위치 안 맞는 것도 있다. 스스로 테스트해서 비교해 완성도를 높여라(박자·음높이·쉼표·마디)."* */
+  {
+    const NT=(x,beats)=>({x,beats,name:'A4',step:5,sure:true});
+    const mkG=(bars,notes,extra)=>Object.assign({w:1000,iw:1000,sp:10,bars,notes,durSure:true,
+      total:notes.reduce((a,n)=>a+n.beats,0)},extra||{});
+
+    /* ① 쉼표는 **마디 합이 나아질 때만** 넣는다 */
+    {
+      /* 앞 마디 3.5박(0.5 모자람) + 뒤 마디 4박. 쉼표 후보는 두 마디에 하나씩 둔다. */
+      const notes=[NT(30,1),NT(90,1),NT(150,1),NT(210,0.5),
+                   NT(300,1),NT(360,1),NT(420,1),NT(480,1)];
+      const g=mkG([250],notes,{restCands:[{x:235,cy:0,beats:0.5},{x:495,cy:0,beats:0.5}]});
+      const og=origGeomOf(g), seg=(og&&og.seg)||[];
+      const n=applyRestCands(g,seg,4);
+      ok('모자란 마디에만 쉼표를 넣는다 ('+n+'개)',n===1,n);
+      const rest=g.notes.filter(x=>x.rest);
+      ok('넣은 쉼표가 모자란 마디 안에 있다',rest.length===1&&rest[0].x<250,rest);
+      const og2=origGeomOf(g), s0=(og2.seg||[])[0];
+      let t=0; for(let j=s0.i0;j<s0.i0+s0.cnt;j++)t+=g.notes[j].beats;
+      ok('넣고 나면 그 마디가 4박이 된다 ('+t+')',Math.abs(t-4)<0.02,t);
+    }
+    {
+      /* ★ 거짓 확인 — 이미 4박인 마디에는 쉼표 후보가 있어도 넣지 않는다 */
+      const notes=[NT(30,1),NT(90,1),NT(150,1),NT(210,1)];
+      const g=mkG([250],notes,{restCands:[{x:235,cy:0,beats:0.5}]});
+      const og=origGeomOf(g);
+      ok('꽉 찬 마디에는 쉼표를 넣지 않는다',applyRestCands(g,(og&&og.seg)||[],4)===0,g.notes.length);
+    }
+
+    /* ② 곡 중간의 2/4 마디 — **폭+박수만으로 가리는 규칙은 넣지 않았다**(CLAUDE.md 70번).
+       대신 딱 절반인 마디에는 경고를 띄우지 않는다(잰 것이 무너진 마디는 3.25박처럼
+       어중간하게 나오지 딱 절반으로는 안 나온다). */
+    /* ③ 못갖춘마디는 마디 번호를 갖지 않는다(인쇄 악보와 같게) */
+    {
+      const keep={raw:S.raw,semis:S.semis};
+      try{
+        S.raw='♪ E4:1 | E4:1 E4:1 E4:1 E4:1 | E4:1 E4:1 E4:1 E4:1'+String.fromCharCode(10)+'A        A        A';
+        reparse();
+        ok('못갖춘마디로 시작하면 번호를 하나 당긴다',ANAC===1,ANAC);
+        S.raw='♪ E4:1 E4:1 E4:1 E4:1 | E4:1 E4:1 E4:1 E4:1'+String.fromCharCode(10)+'A        A';
+        reparse();
+        ok('온전한 마디로 시작하면 그대로 센다',ANAC===0,ANAC);
+      } finally { S.raw=keep.raw; S.semis=keep.semis; reparse(); }
+    }
+  }
+
   console.table(T.map(t=>({검사:t.name,결과:t.cond?'통과':'실패'})));
   console.log((fail?'✗ ':'✓ ')+'score: '+pass+' 통과 / '+fail+' 실패');
   return {pass,fail};
