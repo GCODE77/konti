@@ -487,6 +487,80 @@ A        | D
     }
   }
 
+  /* ── 7) v68: 코드로 조표 바로잡기 · 간격 모델 배우기 ───────────────────────────
+     사용자 신고(「하나님의 부르심」 사진): *"추출하는 박자랑 음 위치, 쉼표 박자, 마디 수 등
+     안 맞는 게 생각보다 많다."* 실제로 재 보니 **조표를 #4개로 잘못 세어** 악보의 모든 레가
+     레♯으로 나오고 있었다(여섯 단에서 [없음,없음,#1,#4,#2,#4] 가 나왔고 다수결이 #4). */
+  {
+    const CH=t=>parseChord(fixChordToken(t));
+    /* ① 코드로 조를 되짚는다 — A·E·F#m·D·Bm 은 A장조다 */
+    {
+      const k=keyFromChords(['A','E','F#m','D','Bm','E7','A'].map(CH));
+      ok('코드로 조를 되짚는다 ('+(k&&k.pc)+')',!!k&&k.pc===9&&!k.minor,k);
+      ok('되짚은 조가 뚜렷하다 (margin '+(k&&k.margin)+')',!!k&&k.margin>=1.2,k);
+    }
+    /* ② 나란한단조는 조표가 같다 — 첫·끝 코드가 vi 이면 단조로 본다(조표는 그대로) */
+    {
+      const k=keyFromChords(['F#m','D','A','E','Bm','F#m'].map(CH));
+      ok('첫·끝이 vi 이면 단조로 본다',!!k&&k.pc===6&&k.minor,k);
+    }
+    /* ③ 조표 세기가 흔들릴 때 **코드가 이긴다**. 단 넷 중 둘만 #4 이면 그건 다수가 아니다. */
+    {
+      const NT=(x,beats,step,name)=>({x,beats,name,step,sure:true});
+      const mk=ks=>{
+        const xs=[30,90,150,210,280,340,400,460,530,590,650,710];
+        const g={w:1000,iw:1000,sp:10,bars:[250,500,750],durSure:true,clef:'treble',
+                 notes:xs.map(x=>NT(x,1,5,'A4')),keySig:ks};
+        return g;
+      };
+      const chord=t=>({text:t,kind:'c',bbox:{x0:0,x1:10,y0:0,y1:10}});
+      const sysOf=ks=>({url:'x',geo:mk(ks),cw:1000,
+        words:{c:['A','E','F#m','D','Bm','E7'].map(chord),l:[],v:[]}});
+      const d={sys:[sysOf(null),sysOf({n:1,flat:false}),sysOf({n:4,flat:false}),sysOf({n:4,flat:false})],key:null};
+      const r=await addGeomMelody(d,null);
+      ok('조표 세기가 갈리면 코드를 믿는다 ('+(r.keyWhy&&r.keyWhy.used)+')',
+         !!r.keyWhy&&r.keyWhy.used==='#3',r.keyWhy);
+      ok('그 결과 조가 A장조가 된다',!!r.key2&&r.key2.pc===9&&!r.key2.minor,r.key2);
+      /* ★ 코드가 없을 때도 **과반이 아니면 믿지 않는다**(넷 중 둘은 다수가 아니다).
+         이게 없으면 흔들리는 조표 하나가 곡 전체 음이름을 바꾼다. */
+      const d2={sys:[sysOf({n:1,flat:false}),sysOf({n:4,flat:false}),
+                     sysOf({n:2,flat:false}),sysOf({n:4,flat:false})],key:null};
+      d2.sys.forEach(x=>x.words={c:[],l:[],v:[]});
+      const r2=await addGeomMelody(d2,null);
+      ok('조표가 과반이 아니면 쓰지 않는다 ('+(r2.keyWhy&&r2.keyWhy.used)+')',
+         !!r2.keyWhy&&r2.keyWhy.used==='없음',r2.keyWhy);
+    }
+
+    /* ④ 음표 간격 모델을 이 악보에서 **배운다**. gap = c0·칸 + k·박수 로 그려 놓고
+       그대로 되찾는지 본다(자료가 쌓일수록 정확해지는 부분이다). */
+    {
+      const build=(c0,k,beats)=>{
+        const spn=0.01, notes=[]; let x=0.05;
+        beats.forEach(b=>{ notes.push({x:x*1000,beats:b,name:'A4',step:5,sure:true});
+                           x+=c0*spn+k*b; });
+        return {w:1000,iw:1000,sp:10,bars:[],durSure:true,notes,clef:'treble'};
+      };
+      const bts=[1,0.5,2,0.5,1,1,0.5,0.5,2,1,1,0.5,0.5,1,2,1];
+      const g=build(1.2,0.02,bts);
+      g.bars=[Math.round(g.notes[8].x-5)];
+      const fit=fitSpacing([{geo:g}],4);
+      ok('간격 모델의 c0 를 되찾는다 ('+(fit&&fit.c0)+')',!!fit&&Math.abs(fit.c0-1.2)<0.15,fit);
+      ok('간격 모델의 k 를 되찾는다 ('+(fit&&fit.k)+')',!!fit&&Math.abs(fit.k-0.02)<0.004,fit);
+      ok('간격이 길이를 알려 주면 쓴다 (r='+(fit&&fit.r)+')',!!fit&&fit.useGap===true,fit);
+    }
+    /* ⑤ **음절마다 같은 폭**으로 짜는 악보(한국 CCM 리드시트)에서는 간격이 길이를 거의
+       알려 주지 않는다 — 그걸 r 로 **알아채는지** 본다(진단 화면에 그대로 나온다).
+       ★ 알아챘다고 간격을 끄지는 않는다: 껐더니 격자에 없는 길이(0.375박)가 나왔다.
+         66번 항목에 적어 두었다. */
+    {
+      const notes=[]; let x=0.05;
+      [1,0.5,2,0.5,1,1,0.5,0.5,2,1,1,0.5].forEach(b=>{ notes.push({x:x*1000,beats:b,name:'A4',step:5,sure:true}); x+=0.04; });
+      const g={w:1000,iw:1000,sp:10,bars:[Math.round(notes[6].x-5)],durSure:true,notes,clef:'treble'};
+      const fit=fitSpacing([{geo:g}],4);
+      ok('간격이 고르면 r 이 낮게 나온다 (r='+(fit&&fit.r)+')',!!fit&&fit.r<0.35&&fit.useGap===false,fit);
+    }
+  }
+
   console.table(T.map(t=>({검사:t.name,결과:t.cond?'통과':'실패'})));
   console.log((fail?'✗ ':'✓ ')+'score: '+pass+' 통과 / '+fail+' 실패');
   return {pass,fail};
