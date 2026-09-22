@@ -696,6 +696,38 @@ A        | D
        !!parts&&parts.length===3,parts&&parts.map(p=>p.t0.toFixed(3)+'~'+p.t1.toFixed(3)));
   }
 
+  /* ★★ 7) 오선 5줄 중 2줄만 잡혀 통째로 버려진 단은, 옆 단이 그 자리를 삼키지 않고
+     되살려야 한다 (v72). 사용자 사진(디지털 조판 「하나님의 부르심」, 740×1101, 7단)에서
+     찾은 버그다 — 3번째 단이 인쇄 상태 탓에 오선 5줄 중 2줄만 문턱을 넘어 높이 8px 로
+     잡혔고, `good` 필터(H*0.008)에 살짝 못 미쳐 통째로 버려졌다. 그러자 4번째 단의 크롭
+     경계가 버려진 3번째 단 대신 그 앞 2번째 단을 이웃으로 써서 중간점을 계산하는 바람에,
+     4번째 단의 크롭이 3번째 단까지 통째로 삼켜 **서로 다른 두 단의 음표가 뒤섞였다**
+     (splitSystems 가 7단짜리 악보에서 6단만 돌려줬다).
+     ★ 단을 **5개** 그린다(3개면 안 된다) — 되살리기는 "이웃한 두 살아남은 단 사이 간격이
+       쪽 전체 간격 중앙값의 1.5배를 넘는가"를 보는데, 살아남은 단이 3개(간격 2개)뿐이면
+       가운데 값이 하필 비정상 간격 쪽으로 잡혀(짝수 개 배열의 중앙값 인덱스가 큰 쪽을
+       가리킨다) 검사 자체가 무력화된다. 5개(간격 3개, 정상 2·비정상 1)여야 중앙값이
+       정상 간격을 가리켜 제대로 걸린다. */
+  {
+    const sp=10, W=960, H=2000;
+    const c=document.createElement('canvas'); c.width=W; c.height=H;
+    const g=c.getContext('2d');
+    g.fillStyle='#fff'; g.fillRect(0,0,W,H);
+    g.strokeStyle='#333'; g.lineWidth=sp*0.28;
+    const drawStaff=(top)=>{ for(let k=0;k<5;k++){ const y=top+k*sp;
+      g.beginPath(); g.moveTo(sp*2,y); g.lineTo(W-sp*2,y); g.stroke(); } };
+    drawStaff(100); drawStaff(300);
+    /* 3번째 단은 일부러 5줄 중 2줄만 그린다(스캔·인쇄 상태로 잡음이 못 미친 상황을 흉내낸다) */
+    for(let k=0;k<2;k++){ const y=500+k*sp;
+      g.beginPath(); g.moveTo(sp*2,y); g.lineTo(W-sp*2,y); g.stroke(); }
+    drawStaff(700); drawStaff(900);
+    const url=c.toDataURL('image/png');
+    let parts=null;
+    try{ parts=await splitSystems(url,W); }catch(e){}
+    ok('버려질 뻔한 짧은 단을 되살려 다섯 단이 나온다 (실제 '+(parts?parts.length:0)+'개)',
+       !!parts&&parts.length===5,parts&&parts.map(p=>p.t0.toFixed(3)+'~'+p.t1.toFixed(3)));
+  }
+
   _restore();
   console.table(T.map(t=>({검사:t.name,결과:t.cond?'통과':'실패'})));
   console.log((fail?'✗ ':'✓ ')+'score: '+pass+' 통과 / '+fail+' 실패');
