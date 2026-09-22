@@ -4786,6 +4786,30 @@ async function staffGeom(url,clef){
               beats:d.beats, sure:d.sure, stem:d.stem, bands:d.bands, dot:d.dot, hollow:d.hollow});
   });
   if(res.length<3)return null;
+  /* ★★ 32분음표(0.125박)로 읽혔지만 sure:false 인 음이, 바로 옆 음표가 0.25박으로
+     확신되면 그 값을 물려받는다(v76, 「하나님의 부르심」 사진의 x=1227·1392 두 음 —
+     둘 다 이웃과 똑같이 생긴 16분음표인데 이웃 빔 잉크가 번져 32분음표로 잘못 세였다
+     — 을 실측으로 확인하고 넣었다). 32분음표는 이 장르에 거의 없다(바로 아래 headDur 의
+     판정도 이미 그렇게 다룬다) — 그런데 sure:false 로만 남겨 두면 이 음 하나 때문에
+     durSure(바로 아래)가 꺼져 **같은 시스템의 다른 마디까지** 리듬 보정이 헐거워진다
+     (fitBeatsToBars 가 시스템 전체의 durSure 를 그대로 물려 쓴다).
+     ★ 거리 문턱은 오선 간격(sp)이 아니라 **이 음표들 자신의 간격**으로 잰다 — 음표
+       사이 간격은 오선 간격의 몇 배씩이라(조판마다 다르다, CLAUDE.md 66번 항목) sp 를
+       그대로 쓰면 못 미친다(실측으로 걸렸다). 중앙값 간격의 1.8배 안쪽만 "바로 옆"으로
+       본다 — 마디를 건너뛴 먼 음표까지 끌어오지 않기 위함이다.
+     ★ 잉크 크기·비율이 아니라 **이웃 음표라는 문맥**으로 고치므로, 이미 sure:true 인
+       음(예: 진짜 16분음표 x=511·1966)에는 전혀 손대지 않는다 — v75가 되돌린 "구제
+       규칙을 크기로 손보기"와 달리 그 두 음의 판정 경로 자체를 건드리지 않는다. */
+  if(res.length>=2){
+    const gaps=res.slice(1).map((n,i)=>n.x-res[i].x).filter(g=>g>0).sort((a,b)=>a-b);
+    const gapMed=gaps.length?gaps[gaps.length>>1]:0;
+    const near=(n,o)=>o&&o.sure&&o.beats===0.25&&gapMed>0&&Math.abs(o.x-n.x)<gapMed*1.8;
+    for(let i=0;i<res.length;i++){
+      const n=res[i];
+      if(n.sure||n.beats!==0.125)continue;
+      if(near(n,res[i-1])||near(n,res[i+1])){ n.beats=0.25; n.sure=true; }
+    }
+  }
   devs.sort((a,b)=>a-b);
   const med=devs[devs.length>>1];
   if(med>0.26)return null;                     // 격자에 안 맞으면 오선을 잘못 잡은 것이다
