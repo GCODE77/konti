@@ -792,7 +792,9 @@ function beamGroups(notes,perBar){
   }
   return out.filter(x=>x.ix.length>=2).map(x=>x.ix);
 }
-const BEAM_W=4, BEAM_GAP=5.5, STEM_MIN=13, STEM_LEN=26, STEM_DX=6;
+/* ★ STEM_DX 는 **음표 머리의 가로 반지름**과 같아야 한다(기둥은 머리 옆구리에 붙는다).
+   v76에서 머리를 조판 규칙대로 키우면서(아래 renderStaffSection 의 ellipse 주석) 6 → 7.2 가 됐다. */
+const BEAM_W=4, BEAM_GAP=5.5, STEM_MIN=13, STEM_LEN=26, STEM_DX=7.2;
 /* 기둥·깃발·빔을 그린다.
    ND: [{X,y,step,D,col}|null] (쉼표 자리는 null) · groups: 빔으로 묶을 인덱스 묶음
    midStep: 기둥 방향이 바뀌는 자리(높은음자리표 36 = 가운데 줄 B4, 낮은음자리표 24)
@@ -939,13 +941,17 @@ function renderStaff(sel){
       const on=(sel&&sel.bi===it.bi&&sel.ni===it.ni);
       const col=on?A:C;
       const ledgeTop=isBass?20:32, ledgeLo=isBass?16:28, ledgeHi=isBass?28:40;
-      for(let L=ledgeTop;L>=sp.step;L-=2) if(L<=ledgeLo) svg+='<line x1="'+(cx-12)+'" y1="'+yOf(L)+'" x2="'+(cx+12)+'" y2="'+yOf(L)+'" stroke="'+C+'" stroke-width="1.1" opacity=".5"/>';
-      for(let L=ledgeTop;L<=sp.step;L+=2) if(L>=ledgeHi) svg+='<line x1="'+(cx-12)+'" y1="'+yOf(L)+'" x2="'+(cx+12)+'" y2="'+yOf(L)+'" stroke="'+C+'" stroke-width="1.1" opacity=".5"/>';
+      for(let L=ledgeTop;L>=sp.step;L-=2) if(L<=ledgeLo) svg+='<line x1="'+(cx-15)+'" y1="'+yOf(L)+'" x2="'+(cx+15)+'" y2="'+yOf(L)+'" stroke="'+C+'" stroke-width="1.2" opacity=".65"/>';
+      for(let L=ledgeTop;L<=sp.step;L+=2) if(L>=ledgeHi) svg+='<line x1="'+(cx-15)+'" y1="'+yOf(L)+'" x2="'+(cx+15)+'" y2="'+yOf(L)+'" stroke="'+C+'" stroke-width="1.2" opacity=".65"/>';
       const D=noteDur(n.beats);
-      svg+='<ellipse cx="'+cx+'" cy="'+y+'" rx="7.4" ry="5.6" transform="rotate(-18 '+cx+' '+y+')" '
-        +(D.hollow?'fill="none" stroke="'+col+'" stroke-width="2"':'fill="'+col+'"')+'/>';
+      /* ★ 머리 높이 = 정확히 한 칸(2·GAP=18px). 돌림(-18°)을 감안한 세로 반지름이 GAP 이
+         되도록 rx 10.4 · ry 8.8 로 잡았다(√(10.4²sin²18+8.8²cos²18)=8.97≈9).
+         까닭은 renderStaffSection 의 같은 자리 주석 참고 — 칸에 놓인 음이 위아래 줄에
+         닿지 않으면 덧줄 하나에 매달린 음(낮은 시)을 라와 분간할 수 없다. */
+      svg+='<ellipse cx="'+cx+'" cy="'+y+'" rx="10.4" ry="8.8" transform="rotate(-18 '+cx+' '+y+')" '
+        +(D.hollow?'fill="none" stroke="'+col+'" stroke-width="2.2"':'fill="'+col+'"')+'/>';
       if(D.stem){
-        const up=sp.step<(isBass?24:36), sx2=up?cx+7:cx-7, sy2=up?y-32:y+32;
+        const up=sp.step<(isBass?24:36), sx2=up?cx+9.4:cx-9.4, sy2=up?y-32:y+32;
         svg+='<line x1="'+sx2+'" y1="'+y+'" x2="'+sx2+'" y2="'+sy2+'" stroke="'+col+'" stroke-width="1.7"/>';
         for(let f=0;f<D.flags;f++)
           svg+='<path d="M'+sx2+' '+(up?sy2+f*8:sy2-f*8)+' q9 5 7 16" stroke="'+col+'" stroke-width="1.7" fill="none"/>';
@@ -954,7 +960,7 @@ function renderStaff(sel){
       if(D.dots){
         const dy=(sp.step%2===0)?y-GAP:y;
         for(let d=0;d<D.dots;d++)
-          svg+='<circle cx="'+(cx+12+d*6)+'" cy="'+dy+'" r="2.4" fill="'+col+'"/>';
+          svg+='<circle cx="'+(cx+15+d*6)+'" cy="'+dy+'" r="2.4" fill="'+col+'"/>';
       }
       if(sp.show)svg+='<text x="'+(cx-20)+'" y="'+(y+5)+'" font-size="17" fill="'+col+'">'+(sp.show==='#'?'♯':sp.show==='b'?'♭':'♮')+'</text>';
       svg+='<rect x="'+(it.x-2)+'" y="'+(top-14)+'" width="'+(it.w+4)+'" height="'+(8*GAP+28)+'" fill="transparent" '
@@ -1169,7 +1175,11 @@ function renderStaffSection(melM,chM,lyM,verses,measureStart,fitM,bassM,W,breaks
     const TOP=40, bottom=TOP+8*GAP, yOf=st=>bottom-(st-30)*GAP;
     const staffRow=ms.some(m=>(melM[m]||[]).some(it=>it&&!it.n.bar));
     const bassRow=ms.some(m=>(bassM[m]||[]).some(it=>it&&!it.n.bar));   // 이 행에 베이스 음표가 있을 때만 낮은음자리표를 그린다
-    const ledger=(X,y)=>'<line x1="'+(X-10).toFixed(1)+'" y1="'+y+'" x2="'+(X+10).toFixed(1)+'" y2="'+y+'" stroke="'+C+'" stroke-width="1.1" opacity=".5"/>';
+    /* ★ 덧줄은 머리보다 양쪽으로 **뚜렷하게 더 뻗어야 한다**(조판 규칙: 0.3~0.4칸).
+       머리 가로 반지름이 8 이므로 13 이면 양옆으로 5px(0.36칸)씩 나온다. 이게 모자라면
+       덧줄 **위에 놓인** 음(라)은 머리가 덧줄을 덮어 버려 덧줄 **아래에 매달린** 음(시)과
+       구별되지 않는다 — 사용자가 신고한 바로 그 혼동이다. */
+    const ledger=(X,y)=>'<line x1="'+(X-13).toFixed(1)+'" y1="'+y+'" x2="'+(X+13).toFixed(1)+'" y2="'+y+'" stroke="'+C+'" stroke-width="1.2" opacity=".7"/>';
 
     const box=[]; { let x=left; ms.forEach(m=>{ const w=Math.min(intr[m],avail)*k; box.push({m,x0:x,x1:x+w}); x+=w; }); }
     const endX=box.length?box[box.length-1].x1:left;
@@ -1241,19 +1251,31 @@ function renderStaffSection(melM,chM,lyM,verses,measureStart,fitM,bassM,W,breaks
         const on=(S.selNote&&S.selNote.bi===it.bi&&S.selNote.ni===it.ni);
         const col=on?A:C;
         /* 인식이 틀렸을 가능성이 높은 음은 동그라미로 표시한다 — 눌러서 바로 고칠 수 있다 */
-        if(n.warn&&!on)notesSvg+='<circle cx="'+X.toFixed(1)+'" cy="'+y+'" r="10" fill="none" stroke="'+R+'" stroke-width="1.4" opacity=".8"/>';
+        if(n.warn&&!on)notesSvg+='<circle cx="'+X.toFixed(1)+'" cy="'+y+'" r="12" fill="none" stroke="'+R+'" stroke-width="1.4" opacity=".8"/>';
         for(let L=32;L>=sp.step;L-=2)if(L<=28){const yy=yOf(L);notesSvg+=ledger(X,yy);lo=Math.max(lo,yy+4);}
         for(let L=32;L<=sp.step;L+=2)if(L>=40){const yy=yOf(L);notesSvg+=ledger(X,yy);hi=Math.min(hi,yy-4);}
         const D=noteDur(n.beats);
-        notesSvg+='<ellipse cx="'+X.toFixed(1)+'" cy="'+y+'" rx="6" ry="4.5" transform="rotate(-18 '+X.toFixed(1)+' '+y+')" '
-          +(D.hollow?'fill="none" stroke="'+col+'" stroke-width="1.6"':'fill="'+col+'"')+'/>';
-        const pad=n.warn?11:6;
+        /* ★★ 머리 크기는 조판 규칙으로 정해져 있다 — **높이가 정확히 한 칸**이다(v76,
+           사용자 신고로 고쳤다: *"음표, 음위치를 보면 여백이 있으니 시인지 라인지 헷갈린다.
+           명확히 시의 동그라미와 줄이 여백없이 끝자락에 붙어있다"*). 여기서 한 칸은 2·GAP
+           이므로 머리의 **세로 반지름이 GAP(=7)** 이어야 칸에 놓인 음의 머리가 위아래 줄에
+           딱 닿는다. 예전 값(rx 6 · ry 4.5)은 -18° 로 돌린 뒤 세로 반지름이 4.66px 뿐이라
+           한 칸(14px)의 2/3 밖에 안 됐고, 그래서 **칸에 놓인 음마다 위아래로 2.3px 씩 흰
+           틈**이 생겼다. 오선 안에서는 줄이 둘러싸 줘서 티가 덜 나지만, 덧줄 하나에 매달린
+           낮은 시(B3)처럼 **기준이 덧줄 하나뿐인 음은 라(A3)인지 시(B3)인지 분간이 안 된다.**
+           ★ 돌림(-18°) 때문에 rx·ry 를 그대로 반지름으로 쓰면 안 된다. 실제 세로 반지름은
+             √(rx²sin²18 + ry²cos²18) 이다. rx 8.1 · ry 6.9 → 세로 7.02(=GAP) · 가로 7.99.
+             즉 머리는 16.0 × 14.0px = **1.14칸 × 1.00칸**(조판 관례 1.3칸 × 1칸에 가깝다).
+           ★ 최소 음표 칸이 22px 라(위 swm) 16px 머리는 가장 빽빽한 마디에서도 안 겹친다. */
+        notesSvg+='<ellipse cx="'+X.toFixed(1)+'" cy="'+y+'" rx="8.1" ry="6.9" transform="rotate(-18 '+X.toFixed(1)+' '+y+')" '
+          +(D.hollow?'fill="none" stroke="'+col+'" stroke-width="1.7"':'fill="'+col+'"')+'/>';
+        const pad=n.warn?13:8;
         hi=Math.min(hi,y-pad); lo=Math.max(lo,y+pad);
         ND.push({X,y,step:sp.step,D,col});
         if(D.dots){
           const dy=(sp.step%2===0)?y-GAP:y;
           for(let d=0;d<D.dots;d++)
-            notesSvg+='<circle cx="'+(X+10+d*5).toFixed(1)+'" cy="'+dy+'" r="2" fill="'+col+'"/>';
+            notesSvg+='<circle cx="'+(X+12.5+d*5).toFixed(1)+'" cy="'+dy+'" r="2" fill="'+col+'"/>';
           hi=Math.min(hi,dy-4);
         }
         if(sp.show)notesSvg+='<text x="'+(X-15).toFixed(1)+'" y="'+(y+4)+'" font-size="13" fill="'+col+'" font-weight="700">'+(sp.show==='#'?'♯':sp.show==='b'?'♭':'♮')+'</text>';
@@ -3667,6 +3689,40 @@ function headDur(ink,vr,hr,W,c,sp,y0,y1,bot,nextX0,others,lineRow){
     }
     if(stem)break;
   }
+  /* ★ 못 찾았으면 **머리 상자 안쪽 0.3칸**까지 더 본다(v77). 이음줄이 머리 옆구리에 붙으면
+     덩어리 상자가 그쪽으로 몇 px 넓어져, 머리 가장자리에 붙은 기둥이 상자 **안쪽**에 놓인다.
+     바깥으로만 찾으면 못 찾고, 그러면 "속이 찬데 기둥이 없다"로 **음이 통째로 버려진다**
+     (실측: 6단 x=2003, 이음줄로 이어진 아래 기둥 4분음표 — 상자 x0=1982, 기둥 x≈1988).
+     바깥 먼저 다 본 뒤에만 들어오므로 예전에 찾던 기둥은 그대로다.
+     ★ **머리처럼 생긴 것(hs)** 에만 쓴다 — 조표 ♯ 의 가로획 조각(높이 0.66칸)은 제 세로획이
+       상자 안에 있어서, 이걸 열어 두면 ♯ 이 음표로 되살아난다(실측: 1단 조표 자리 G5).
+     ★ 그리고 **상자가 보통 머리보다 넓을 때(1.38칸 넘게)** 만 쓴다 — 이게 "이음줄이 붙어
+       넓어졌다"는 증거다(실측: 이음줄 머리 1.45칸 / 보통 머리 1.3칸 / 4분쉼표 1.09칸 —
+       쉼표의 지그재그 획을 기둥으로 봐 5단 첫머리에 없는 음이 생겼었다). */
+  if(!stem&&c.hs&&(c.x1-c.x0+1)>=sp*1.38){
+    const inw=Math.max(1,Math.round(sp*0.3));
+    for(const ps of PASS){
+      for(let d=1;d<=inw&&!stem;d++){
+        const xr=Math.round(c.x1)-d;
+        if(colFill(xr,c.cy-sp*0.9,c.cy-sp*2.4,ps.dil)>=ps.fill&&oppFill(xr,c.cy+sp*1.1,c.cy+sp*2.4,ps.dil)<0.5){
+          stem={x:xr,tip:tipOf(xr,-1),up:true}; break; }
+        const xl=Math.round(c.x0)+d;
+        if(colFill(xl,c.cy+sp*0.9,c.cy+sp*2.4,ps.dil)>=ps.fill&&oppFill(xl,c.cy-sp*1.1,c.cy-sp*2.4,ps.dil)<0.5){
+          stem={x:xl,tip:tipOf(xl,1),up:false}; break; }
+      }
+      if(stem)break;
+    }
+  }
+  /* 디버그 고리: window.__STEMDBG=[] 를 두면 기둥을 못 찾은 머리의 좌우 기둥 후보 값이 담긴다 */
+  if(!stem&&window.__STEMDBG){
+    const r=[];
+    for(let d=0;d<=reach;d++){
+      const xr=Math.round(c.x1)+d, xl=Math.round(c.x0)-d;
+      r.push({d,up:+colFill(xr,c.cy-sp*0.9,c.cy-sp*2.4,1).toFixed(2),upOpp:+oppFill(xr,c.cy+sp*1.1,c.cy+sp*2.4,1).toFixed(2),
+              dn:+colFill(xl,c.cy+sp*0.9,c.cy+sp*2.4,1).toFixed(2),dnOpp:+oppFill(xl,c.cy-sp*1.1,c.cy-sp*2.4,1).toFixed(2)});
+    }
+    window.__STEMDBG.push({cx:+c.cx.toFixed(0),cy:+c.cy.toFixed(0),x0:c.x0,x1:c.x1,r});
+  }
   /* 기둥 끝에서 머리 쪽으로 훑으며 꼬리·빔이 몇 겹인지 센다.
      ★ 처음엔 기둥 칸의 가로 런 길이(hr)로 판정했는데, 꼬리가 오선 줄과 겹치는 자리에
        오면 줄 지우기 단계에서 그 부분이 함께 지워져 놓쳤다(높은 음의 아래 기둥에서 발생).
@@ -3700,6 +3756,25 @@ function headDur(ink,vr,hr,W,c,sp,y0,y1,bot,nextX0,others,lineRow){
     if(others&&others.length)for(const oy of others){
       if(dOut<0&&oy<c.cy-sp*0.9&&oy>lim)lim=Math.round(oy+sp*0.7);
       if(dOut>0&&oy>c.cy+sp*0.9&&oy<lim)lim=Math.round(oy-sp*0.7);
+    }
+    /* ★ 기둥이 4.3칸보다 길면 **기둥이 이어지는 동안만** 더 따라간다(v77).
+       한 빔에 높은 음과 낮은 음이 같이 묶이면 낮은 음의 기둥이 빔까지 길어진다. 실측
+       (「하나님의 부르심」4단 x=1724, 오선 맨 아랫줄 E4): 빔이 머리에서 4.45칸 위에 있어
+       4.3칸 창이 133행을 훑고도 빔을 못 만났고, 8분음표가 4분음표가 됐다.
+       ★ 창을 그냥 넓히면 안 된다 — 4분음표 위의 코드 글자까지 빔으로 줍는다. 그래서
+         창 끝에서도 **기둥 잉크가 살아 있을 때만** 늘리고, 기둥이 끝나는 곳에서 멈춘다
+         (빔은 기둥 끝에 붙으므로 그 안에 들어온다). */
+    if(lim===yb){
+      const stemAt=y=>{ for(let dx=-1;dx<=1;dx++){ const xx=stem.x+dx; if(xx>=0&&xx<W&&ink[y*W+xx])return true; } return false; };
+      if(yb>=y0&&yb<=y1&&stemAt(yb)){
+        const yMax=Math.round(c.cy+dOut*sp*5.6), gapS=Math.max(2,Math.round(sp*0.2));
+        let miss=0, last=yb;
+        for(let y=yb+dOut; dOut<0?y>=yMax:y<=yMax; y+=dOut){
+          if(y<y0||y>y1)break;
+          if(stemAt(y)){ last=y; miss=0; } else if(++miss>gapS)break;
+        }
+        lim=last;
+      }
     }
     const steps=Math.abs(lim-ya)+1;
     const wide=[], dbg=[], isL=[], isLedge=[];
@@ -3793,11 +3868,35 @@ function headDur(ink,vr,hr,W,c,sp,y0,y1,bot,nextX0,others,lineRow){
        ★★ 이 구제 규칙(폭이 넓으면 줄 위여도 인정)은 **덧줄이 낀 구간에는 적용하지 않는다**
        (v73). 덧줄 자체가 이미 넓은 가로줄이라(실측 34px) 이 구제 규칙이 덧줄에도 걸려
        "덧줄 = 진짜 꼬리"로 잘못 되살아난다 — oemer(독립 CNN)와 대조해 찾은 버그다. */
-    const bigW=need+sp*0.35, capW=sp*5;
+    /* ★★ `bigW` 를 0.35칸 → 0.8칸으로 올렸다(v76). 이 구제 규칙은 **지우고 남은 줄 토막**과
+       **줄과 겹친 진짜 꼬리**를 폭으로 가르는 것인데, 0.35칸(여기서 문턱 15px)은 줄 토막이
+       가볍게 넘었다. 실측(「하나님의 부르심」1단 2마디, sp=21.3):
+         줄 토막 10·14·15·17·21 ↔ 진짜 빔 31·33·36·102·185
+       사이가 훤히 비어 있다. 0.8칸(문턱 27px)은 그 빈 곳을 지난다. 이 한 줄로 그 마디의
+       두 음이 바로잡혔다 — F4 가 16분→**8분**, 줄 위 4분음표가 8분→**4분**.
+       ★ 더 올리면 안 된다 — 1.15칸으로 해 보니 2단에서 진짜 꼬리가 떨어져 나가 마디 합이
+         4 → 4.25 로 어긋났다(실측). 0.8 이 두 요구의 경계다. */
+    const bigW=need+sp*0.8, capW=sp*5;
+    const got=[];
     for(let i=0;i<=wide.length;i++){
       if(i<wide.length&&wide[i]){ run++; if(!isL[i]&&!isLedge[i])runFree=true; if(isLedge[i])runLedge=true; if(dbg[i]>runMax)runMax=dbg[i]; }
-      else { if(run>=minBand&&!runLedge&&(runFree||(runMax>=bigW&&runMax<=capW)))bands++; run=0; runFree=false; runMax=0; runLedge=false; }
+      else { if(run>=minBand&&!runLedge&&(runFree||(runMax>=bigW&&runMax<=capW)))got.push({s:i-run,e:i-1,m:runMax}); run=0; runFree=false; runMax=0; runLedge=false; }
     }
+    /* ★★ 빔·꼬리는 **기둥 끝에 촘촘히 겹쳐** 붙는다(v77). 겹 사이는 0.25칸 남짓이다.
+       그래서 센 층 가운데 **가장 넓은 층(=빔 줄기)이 속한 무리**와 이어진 것만 센다 —
+       무리에서 1칸 넘게 떨어진 층은 빔이 아니다.
+       실측(「하나님의 부르심」, 8·16·16 묶음의 **첫 8분음표**가 16분으로 읽힌 두 곳):
+         1단 x=511 — 가짜 층(폭 40)이 머리 옆 0~2행, 진짜 빔(200)은 45행부터 → 43행 떨어짐
+         2단 x=1567 — 가짜 층(폭 25)이 14~16행, 진짜 빔(209)은 54행부터 → 38행 떨어짐
+       진짜 16분음표의 두 층은 4~5행 떨어져 있다(x=1706·1885). 머리 바로 위의 오선 줄이
+       머리 때문에 안 지워지고 남은 토막이다 — 폭으로는 진짜 2차 빔(31~36)과 못 가른다. */
+    if(got.length>1){
+      let at=0; got.forEach((g2,k)=>{ if(g2.m>got[at].m)at=k; });
+      const link=sp*1.0; let lo=at, hi=at;
+      while(lo>0&&got[lo].s-got[lo-1].e-1<=link)lo--;
+      while(hi<got.length-1&&got[hi+1].s-got[hi].e-1<=link)hi++;
+      bands=hi-lo+1;
+    }else bands=got.length;
     /* 디버그 고리: window.__DURDBG=[] 을 먼저 두면 기둥 옆 잉크 양이 줄줄이 담긴다.
        이 판정도 눈에 보이는 출력이 없어서, 이게 없으면 왜 꼬리를 놓쳤는지 알 수 없다. */
     if(window.__DURDBG)window.__DURDBG.push({cx:+c.cx.toFixed(0),stemX:stem.x,up:stem.up,need,minBand,gapTol,bands,sp:+sp.toFixed(1),side:dbg.slice(),isL:isL.slice(),step0,ledgerYs:ledgerYs.slice(),ya:Math.round(c.cy+(stem.up?-1:1)*sp*0.85),cy:+c.cy.toFixed(1)});
@@ -3975,7 +4074,7 @@ function findAccidentals(ink,W,H,sp,y0,y1,xFrom){
    ★ 16분쉼표는 4분쉼표와 키가 겹쳐서 **일부러 찾지 않는다**(둘을 가르려면 갈고리 수를
      세야 하는데, 그걸 잘못 세면 4분쉼표가 16분쉼표가 되어 마디가 더 크게 틀어진다).
    ★ 음표·임시표와 겹치는 덩어리는 쉼표가 아니다 — 그 둘을 먼저 찾아 놓고 그 자리를 피한다. */
-function findRests(ink,W,H,sp,y0,y1,xFrom,top,bot,noteXs,accMarks,hr){
+function findRests(ink,W,H,sp,y0,y1,xFrom,top,bot,noteXs,accMarks,hr,lineRow){
   const out=[];
   /* ★ **가로로 긴 잉크는 빼고** 덩어리를 짓는다(v69). 지우고 남은 오선 토막·빔·이음줄이
      쉼표와 이어져 버려서, 그냥 이으면 한 덩어리가 폭 10칸짜리로 커진다(실측: 「하나님의
@@ -4029,15 +4128,23 @@ function findRests(ink,W,H,sp,y0,y1,xFrom,top,bot,noteXs,accMarks,hr){
        머리는 0.75×0.5칸짜리 상자가 9할 넘게 차는 자리가 있다는 뜻이고, 쉼표의 갈고리는
        그만한 상자를 채우지 못한다. */
     {
+      /* ★ 이 검사에서 **오선 줄 행은 빼야 한다**(v77). 쉼표는 오선 안에 사는데, 줄 지우기는
+         쉼표처럼 세로 잉크가 긴 칸에서 줄을 일부러 남긴다(45b 참고). 그 남은 줄 토막이
+         갈고리 양옆을 메워서 **진짜 8분쉼표의 상자가 100% 로 꽉 찬 것처럼** 보였다
+         (실측: 「하나님의 부르심」 1단 끝 8분쉼표 solidF=1.00 → 통째로 버려졌다).
+         머리인지 보는 검사이므로 줄 잉크는 애초에 셈에서 빠지는 게 맞다. */
       const hw=Math.max(2,Math.round(sp*0.75)), hh=Math.max(2,Math.round(sp*0.5));
-      let best=0;
+      let best=0, bestN=0;
       for(let yy=ay0;yy+hh<=ay1+1;yy++)
         for(let xx=ax0;xx+hw<=ax1+1;xx++){
-          let n2=0;
-          for(let j=0;j<hh;j++)for(let i2=0;i2<hw;i2++)if(ink[(yy+j)*W+xx+i2])n2++;
-          if(n2>best)best=n2;
+          let n2=0, cells=0;
+          for(let j=0;j<hh;j++){
+            if(lineRow&&lineRow[yy+j])continue;
+            for(let i2=0;i2<hw;i2++){ cells++; if(ink[(yy+j)*W+xx+i2])n2++; }
+          }
+          if(cells>0&&n2*bestN>best*cells){ best=n2; bestN=cells; }
         }
-      const solidF=best/(hw*hh);
+      const solidF=bestN>0?best/bestN:0;
       if(window.__RESTALL)window.__RESTALL.push({x:Math.round(cx),w:+w.toFixed(2),h:+h.toFixed(2),f:+fill.toFixed(2),solid:+solidF.toFixed(2)});
       if(solidF>=0.9)continue;
     }
@@ -4505,13 +4612,14 @@ async function staffGeom(url,clef){
       if(ink[p]&&vr[p]>=vLo&&hr[p]>=hLo&&hr[p]<=hHi)head[p]=1; } }
   const cands=[], seen=new Uint8Array(N), stk=new Int32Array(N);
   const minArea=Math.max(6,Math.round(sp*sp*0.22));
+  const raw=[], rowC=new Int32Array(H);
   for(let y=y0;y<=y1;y++)for(let x=clefEnd;x<W;x++){
     const p0=y*W+x; if(!head[p0]||seen[p0])continue;
     let sptr=0; stk[sptr++]=p0; seen[p0]=1;
     let ax0=x,ax1=x,ay0=y,ay1=y,area=0,symY=0;
     while(sptr>0){
       const q=stk[--sptr], qy=(q/W)|0, qx=q-qy*W;
-      area++; symY+=qy;
+      area++; symY+=qy; rowC[qy]++;
       if(qx<ax0)ax0=qx; if(qx>ax1)ax1=qx; if(qy<ay0)ay0=qy; if(qy>ay1)ay1=qy;
       for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
         if(!dx&&!dy)continue;
@@ -4523,15 +4631,74 @@ async function staffGeom(url,clef){
     const bw=ax1-ax0+1, bh=ay1-ay0+1;
     /* 디버그 고리: 콘솔에서 window.__GEOMDBG=[] 을 먼저 두면 후보 덩어리 치수가 담긴다.
        이 알고리즘은 눈에 보이는 출력이 없어서, 이게 없으면 왜 음을 놓쳤는지 알 방법이 없다. */
-    if(window.__GEOMDBG)window.__GEOMDBG.push({sp:+sp.toFixed(1),bw,bh,area,cy:+(symY/area).toFixed(1),cx:+((ax0+ax1)/2).toFixed(1),hRatio:+(bh/sp).toFixed(2),wRatio:+(bw/sp).toFixed(2),fill:+(area/(bw*bh)).toFixed(2)});
-    if(area<minArea)continue;
-    if(bh<sp*0.62||bh>sp*1.7||bw<sp*0.55||bw>sp*2.2)continue;   // 반 칸 높이는 쉼표다
-    if(bw<bh*0.8)continue;                     // 음표 머리는 세로보다 가로가 길다
-    if(area/(bw*bh)<0.5)continue;
-    /* hs = '음표 머리처럼 생겼는가'. 들여보내는 문(위 조건)은 일부러 넉넉하게 두되,
-       같은 칸에서 누구를 대표로 삼을지 고를 때는 이걸로 가린다 — 아래 5) 참고. */
-    const hs=(bh>=sp*0.75&&bh<=sp*1.5&&bw>=sp*0.8&&bw<=sp*1.8)?1:0;
-    cands.push({x0:ax0,x1:ax1,cx:(ax0+ax1)/2,cy:symY/area,hollow:false,hs});
+    /* 끝 폭 비율: 맨 윗줄·맨 아랫줄 가운데 **좁은 쪽**이 가장 넓은 줄의 몇 할인가.
+       타원(머리)은 끝이 좁아지고, 직사각형(빔 토막)은 끝까지 같은 폭이다. */
+    let wMid=0; for(let yy=ay0;yy<=ay1;yy++)if(rowC[yy]>wMid)wMid=rowC[yy];
+    const taper=wMid?Math.min(rowC[ay0],rowC[ay1])/wMid:0;
+    for(let yy=ay0;yy<=ay1;yy++)rowC[yy]=0;
+    if(window.__GEOMDBG)window.__GEOMDBG.push({sp:+sp.toFixed(1),bw,bh,area,cy:+(symY/area).toFixed(1),cx:+((ax0+ax1)/2).toFixed(1),hRatio:+(bh/sp).toFixed(2),wRatio:+(bw/sp).toFixed(2),fill:+(area/(bw*bh)).toFixed(2),taper:+taper.toFixed(2)});
+    raw.push({x0:ax0,x1:ax1,y0:ay0,y1:ay1,bw,bh,area,cy:symY/area,taper});
+  }
+  /* 들여보내는 관문(예전 그대로). 넉넉히 두되, 대표를 고를 때 hs 로 가린다 — 아래 5) 참고. */
+  const headOK=b=>b.area>=minArea&&b.bh>=sp*0.62&&b.bh<=sp*1.7   // 반 칸 높이는 쉼표다
+                 &&b.bw>=sp*0.55&&b.bw<=sp*2.2
+                 &&b.bw>=b.bh*0.8                                // 머리는 세로보다 가로가 길다
+                 &&b.area/(b.bw*b.bh)>=0.5
+                 /* ★ 머리는 **타원**이라 제 상자를 π/4(≈0.79) 남짓만 채운다(번져도 0.9 안쪽).
+                    상자를 거의 꽉 채우고 납작한 덩어리는 **빔 토막**이다(v77). 실측(4단 2마디):
+                    빔 토막 채움 0.98·0.99 / 높이 0.68칸 ↔ 진짜 머리 0.81~0.89 / 1.01~1.06칸.
+                    그 토막이 오선 맨 윗줄 자리에 앉아 **없는 F5 한 음**을 만들고 있었다.
+                    ★ 문턱을 딱 붙여 두면 안 된다 — 6단에서 토막이 채움 0.95·높이 0.78칸으로
+                      경계를 스치듯 빠져나가, 바로 아래 **진짜 머리를 밀어내고** 대표가 됐다
+                      (그다음 기둥이 없어 버려지며 음이 통째로 사라졌다).
+                    ★★ 채움 하나로는 모자라다 — 줄 간격 10px 짜리 그림에서는 **진짜 머리도**
+                      픽셀이 뭉쳐 채움 0.92·높이 0.8칸이 나왔다(score 테스트가 잡았다).
+                      그래서 **모양**을 같이 본다: 타원은 맨 윗줄·맨 아랫줄이 좁아지고
+                      (끝 폭 비율 — 실측 진짜 머리 95개: 중앙값 0.44, 최대 0.75), 직사각형은
+                      끝까지 같은 폭이다(빔 토막 0.79~1.0). 그리고 모양을 판단할 만큼 픽셀이
+                      있을 때(높이 12px 이상)만 쓴다 — 저해상도에서는 예전 그대로다.
+                      (붙인 조각은 taper 가 없어 이 검사를 받지 않는다.) */
+                 &&!(b.taper!==undefined&&b.bh>=12&&b.bh<sp*0.85
+                     &&b.area/(b.bw*b.bh)>=0.92&&b.taper>=0.76);
+  const pushHead=b=>cands.push({x0:b.x0,x1:b.x1,cx:(b.x0+b.x1)/2,cy:b.cy,hollow:false,
+    hs:(b.bh>=sp*0.75&&b.bh<=sp*1.5&&b.bw>=sp*0.8&&b.bw<=sp*1.8)?1:0});
+  for(const b of raw)if(headOK(b))pushHead(b);
+  /* ★★ 줄 위에 놓인 **속이 찬** 머리가 줄을 지울 때 위·아래로 쪼개진다 (v76).
+     4)의 속 빈 머리와 정확히 같은 사고의 다른 얼굴이다(42번 항목) — 거기서는 칸에 놓인
+     머리의 테두리가 뚫렸고, 여기서는 **줄 위에 놓인 머리의 한가운데가 지워져** 덩어리가
+     둘로 갈린다. 각 조각은 높이가 반 칸뿐이라 위 `bh>=sp*0.62`("반 칸 높이는 쉼표다")에
+     둘 다 걸려 버려지고, **그 음이 통째로 사라진다.**
+     실측(「하나님의 부르심」1단 2마디, x≈2145 · 줄 위 4분음표 · sp=21.3):
+       한 머리가 bh=10(cy 337) 과 bh=13(cy 348) 두 조각으로 갈렸고, 문턱 13.2 에 둘 다
+       못 미쳤다. 그래서 그 마디가 6음(1.75박)으로 읽혀 원본(4박)과 어긋났다.
+     ★ 고치는 법: **혼자서는 떨어진 조각 둘을 붙여 본다.** 붙인 것이 머리 관문을 통과하고,
+       갈라진 틈 한가운데가 실제 **줄 자리(짝수 반칸)** 일 때만 받는다. 두 조건을 같이
+       요구하는 것이 핵심이다 — 하나만 보면 빔 토막·가사 획이 줄줄이 붙어 들어온다.
+     ★ 이미 통과한 후보와 겹치면 받지 않는다(같은 머리를 두 번 세지 않는다). */
+  const glueGap=Math.max(2,Math.round(sp*0.22));
+  for(let i=0;i<raw.length;i++){
+    const a=raw[i]; if(headOK(a))continue;
+    for(let j=0;j<raw.length;j++){
+      if(j===i)continue;
+      const b=raw[j]; if(headOK(b))continue;
+      if(b.y0<=a.y1||b.y0-a.y1-1>glueGap)continue;              // b 가 바로 아래 조각이어야 한다
+      if(Math.min(a.x1,b.x1)-Math.max(a.x0,b.x0)+1<Math.min(a.bw,b.bw)*0.6)continue;  // 가로로 겹쳐야 한 머리다
+      const area=a.area+b.area;
+      const g={x0:Math.min(a.x0,b.x0),x1:Math.max(a.x1,b.x1),y0:a.y0,y1:b.y1,area,
+               cy:(a.cy*a.area+b.cy*b.area)/area};
+      g.bw=g.x1-g.x0+1; g.bh=g.y1-g.y0+1;
+      if(!headOK(g))continue;
+      /* ★ 붙인 것은 **머리 폭(1칸 넘게)** 이어야 한다 — 조표 ♯ 의 위·아래 가로획도 줄에 갈린
+         두 조각이라 이 규칙에 걸린다(실측: 1단 조표 자리, 폭 0.94칸 → 없는 G5 한 음).
+         진짜 쪼개진 머리는 1.3칸이다(2마디 4분음표, 28px/21.3). */
+      if(g.bw<sp*1.05)continue;
+      const q=(bot-(a.y1+b.y0)/2)/(sp/2), st=Math.round(q);      // 틈이 정말 줄 자리인가
+      if(Math.abs(q-st)>0.35||(st%2))continue;
+      const gx=(g.x0+g.x1)/2;
+      if(cands.some(c=>Math.abs(c.cx-gx)<sp*0.7&&Math.abs(c.cy-g.cy)<sp*0.7))continue;
+      pushHead(g); cands[cands.length-1].glued=true;
+      break;
+    }
   }
 
   /* 4) 속이 빈 머리: 잉크로 완전히 둘러싸인 흰 구멍 */
@@ -4645,7 +4812,11 @@ async function staffGeom(url,clef){
      기둥까지 못 찾으면(온음표) 통째로 사라졌다 — 실측한 찬송가 2단에서 2분·온음표 4개가
      전부 이 길로 빠졌다. 겹치면 버리지 말고 **속이 빈 것으로 고쳐 준다.** */
   for(const h of useHoles){
-    const hit=cands.find(c=>Math.abs(c.cx-h.cx)<sp*0.7&&Math.abs(c.cy-h.cy)<sp*0.7);
+    const hit=cands.find(c=>Math.abs(c.cx-h.cx)<sp*0.7&&Math.abs(c.cy-h.cy)<sp*(c.glued?1.1:0.7));
+    /* ★ 붙인 조각(glued)과 구멍이 겹치면 **구멍이 진짜다**(v77). 속 빈 머리의 테두리 위·아래
+       조각이 줄에 갈려 있으면 3)의 '조각 붙이기'가 그걸 속이 찬 머리로 만들고, 그 중심이
+       테두리 쪽으로 쏠려 **한 칸 위 음**이 된다(실측: 4단 끝 2분음표 A4 → B4). */
+    if(hit&&hit.glued){ Object.assign(hit,{x0:h.x0,x1:h.x1,cx:h.cx,cy:h.cy,hollow:true,hs:h.hs,glued:false}); continue; }
     if(hit){ if(!hit.hollow&&Math.abs(hit.cx-h.cx)<sp*0.5&&Math.abs(hit.cy-h.cy)<sp*0.4)hit.hollow=true; continue; }
     cands.push(h);
   }
@@ -4841,9 +5012,31 @@ async function staffGeom(url,clef){
     /* 자리표·조표 구간에는 마디선이 없다 — 거기서 찾으면 자리표의 세로획이 마디선이 된다 */
     if(ya>=0&&ya<H)for(let x=Math.max(0,clefEnd);x<W;x++){
       if(!ink[ya*W+x])continue;
-      let t2=ya; while(t2-1>=0&&ink[(t2-1)*W+x])t2--;
-      let b2=ya; while(b2+1<H&&ink[(b2+1)*W+x])b2++;
-      if(!(t2<=yA&&b2>=yB)){ if(window.__BARDBG)window.__BARDBG.push({x,why:'짧다',t2,b2,yA:+yA.toFixed(0),yB:+yB.toFixed(0)}); continue; }
+      /* ★ 세로로 따라갈 때 **짧은 끊김(0.12칸 이하)은 이어 본다**(v77). 확대된 단(실측
+         「하나님의 부르심」4단 sp=38.5)에서는 얇은 마디선이 이진화 때 한두 행씩 끊겨,
+         오선 위에서 시작한 잉크가 둘째 줄(404→436)이나 넷째 줄(→515)에서 멈췄다.
+         그래서 눈에 뻔히 보이는 마디선이 "짧다"로 떨어지고 그 단의 마디가 둘씩 붙었다.
+         좌우 1px 도 같이 본다 — 1~2px 짜리 선이 한 칸씩 흔들린다.
+         기둥은 이걸로 되살아나지 않는다 — 기둥은 끊김이 아니라 **머리** 때문에 걸러지고
+         (아래 '굵다' 검사), 그 검사는 그대로다. */
+      /* ★ 그리고 **지운 오선 자리(erased)를 되살려서** 본다(v77). 흐린 스캔용 줄 지우기
+         (26①, softLine)가 마디선과 줄이 만나는 점까지 지워 버려서, 마디선이 **줄마다 4~5px씩**
+         끊겼다(실측 6단 x=2282: 259–262 · 286–289 · 314–318 이 비어 있었다 — 정확히 둘째·
+         셋째·넷째 줄 자리). 줄 사이 구간은 여전히 진짜 잉크여야 하므로 기둥이 새로 붙지는 않는다. */
+      const gapB=Math.max(1,Math.round(sp*0.12));
+      const px=p=>ink[p]||erased[p];
+      const inkAt=y=>px(y*W+x)||(x>0&&px(y*W+x-1))||(x+1<W&&px(y*W+x+1));
+      let t2=ya, miss=0;
+      for(let y=ya-1;y>=0;y--){ if(inkAt(y)){t2=y;miss=0;} else if(++miss>gapB)break; }
+      let b2=ya; miss=0;
+      for(let y=ya+1;y<H;y++){ if(inkAt(y)){b2=y;miss=0;} else if(++miss>gapB)break; }
+      if(!(t2<=yA&&b2>=yB)){
+        if(window.__BARDBG){
+          let seg='', on=false;
+          if(window.__BARPROF)for(let y=Math.round(top-sp*0.3);y<=Math.round(bot+sp*0.3);y++){ const v=inkAt(y); if(v&&!on){seg+=y+'-';on=true;} else if(!v&&on){seg+=(y-1)+' ';on=false;} }
+          window.__BARDBG.push({x,why:'짧다',t2,b2,yA:+yA.toFixed(0),yB:+yB.toFixed(0),seg});
+        }
+        continue; }
       let wide=false, wy=0, wv=0;
       /* ★ **오선 줄이 지나는 행은 빼고** 본다(v64). 마디선 자리에서는 줄이 지워지지 않고
          살아남는다(그 칸의 세로 잉크가 길어서 — 그게 마디선이니까). 그 살아남은 줄 토막이
@@ -4895,7 +5088,7 @@ async function staffGeom(url,clef){
     /* 첫 음표보다 왼쪽은 보지 않는다 — 자리표·조표·박자표가 거기 있다
        (실측: 박자표의 '4' 가 4분쉼표로 잡혔다. clefEnd 는 박자표까지 덮지 못한다). */
     const rFrom=Math.max(0,Math.min(W-1,Math.round(noteXs[0]-sp*2)),clefEnd);
-    const rs=findRests(ink,W,H,sp,y0,y1,rFrom,top,bot,noteXs,accMarks,hr);
+    const rs=findRests(ink,W,H,sp,y0,y1,rFrom,top,bot,noteXs,accMarks,hr,lineRow);
     restCands=rs.filter(r=>!bars.some(b=>Math.abs(b*sc-r.x)<sp*0.5))
                 .map(r=>({x:r.x/sc,cy:r.cy,beats:r.beats}));
   }
@@ -5387,7 +5580,17 @@ function fitBarBeats(bs,per,gaps,durSure,edge){
     /* ★ 문턱은 **한 마디의 3/4 이하**로 둔다. 조각 마디는 보통 1·2·3박이고,
        3.5박처럼 한 박도 안 모자라는 것은 조각이 아니라 **한 음을 짧게 읽은 온전한
        마디**다(회귀 테스트가 바로 잡았다 — 2·1·0.5 로 읽힌 2·1·1 마디). */
-    if(s2<=per*0.75+1e-9&&s2>0&&snap.every(v=>v>=0.5))return snap;
+    /* ★ 16분음표가 든 조각 마디는 위 `v>=0.5` 만으로는 못 지나간다(v76). 실측
+       (「하나님의 부르심」1단 끝 마디 = 줄바꿈으로 갈린 마디): 사진의 `8·16·16 | 16·8·16 |
+       4분음표`(3박) + 8분쉼표(0.5박)이고, **모자란 0.5박은 다음 단 첫머리에 있다**(2단이
+       16분음표 둘로 시작한다 — 실측으로 확인). 그런데 0.25 가 섞였다는 이유로 조각으로
+       안 보고 4박에 맞춰 늘려서, 16분음표가 전부 8분음표가 됐다(사용자 신고: *"2마디에
+       박자가 원본 악보랑 다르다"*).
+       ★ 그래서 **박 단위로 딱 떨어지는 합**이면 조각으로 본다. 줄바꿈은 박 가운데를
+         가르지 않는다(조판 규칙). 위 주석이 든 반례들은 이걸로 갈린다 — 2·1·0.5 로
+         읽힌 온전한 마디는 3.5박, 0.25·0.25·0.5·0.5 로 무너진 마디는 1.5박이라 둘 다
+         박에 안 떨어져 예전처럼 마디에 맞춰진다. */
+    if(s2<=per*0.75+1e-9&&s2>0&&(snap.every(v=>v>=0.5)||Math.abs(s2-Math.round(s2))<1e-6))return snap;
   }
   const k=per/sum;
   if(k<0.2||k>6)return bs;                      // 못갖춘마디로 보이면 손대지 않는다
@@ -5529,6 +5732,21 @@ function fitBeatsToBars(geo,seg,per){
   let changed=false;
   for(const sg of seg){
     if(!sg.cnt)continue;
+    /* ★ 쉼표가 든 **단 끝·단 첫 조각**은 쉼표를 뺀 음표 합으로 조각인지 가린다(v77).
+       실측(「하나님의 부르심」1단 끝): 음표 `8·16·16|16·8·16|4분`(3박) + 8분쉼표 = 3.5박이고
+       모자란 0.5박은 다음 단 첫머리에 있다. 쉼표를 찾아 넣자 합이 3.5박이 되어 fitBarBeats 의
+       "박 단위로 떨어지는 조각"에서 빠졌고, 4박에 맞춰 늘려 16분음표가 다시 망가졌다.
+       쉼표는 잰 것이 아니라 **맞춰 넣은 것**이라(applyRestCands) 조각 판정에 섞으면 안 된다. */
+    if(geo.durSure&&(sg===seg[0]||sg===seg[seg.length-1])){
+      let sNote=0, sAll=0, hasRest=false, okGrid=true;
+      for(let j=sg.i0;j<sg.i0+sg.cnt;j++){
+        const n=geo.notes[j]; if(!n)continue;
+        const b=n.beats>0?n.beats:0; sAll+=b;
+        if(n.rest){hasRest=true;continue;}
+        sNote+=b; if(!BEAT_GRID.some(g=>Math.abs(g-b)<1e-6))okGrid=false;
+      }
+      if(hasRest&&okGrid&&sNote>0&&sNote<=per*0.75+1e-9&&Math.abs(sNote-Math.round(sNote))<1e-6&&sAll<per-1e-6)continue;
+    }
     const bs=[], xs=[];
     for(let j=sg.i0;j<sg.i0+sg.cnt;j++){
       bs.push(geo.notes[j]?(geo.notes[j].beats>0?geo.notes[j].beats:1):1);
