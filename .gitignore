@@ -1,3 +1,7 @@
 .claude/
 *.bak-*
 _tmp*
+vendor/
+desktop/build/
+desktop/dist/
+desktop/*.spec

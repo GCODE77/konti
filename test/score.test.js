@@ -123,6 +123,25 @@ export function drawScan(o){
   /* ★ 마지막 마디선 **뒤**에 남는 잉크(겹세로줄 장식·인쇄 얼룩) — v65 에서 고친 버그.
      실측(「무덤에 머물러」 5단): 마지막 마디선 14px(0.67칸) 뒤에 가짜 머리 하나가 남아
      "맨 끝 음이 다르다"는 신고로 이어졌다. 0.4칸 문턱(마디선 자리 필터)은 이 거리를 못 잡았다. */
+  /* ★ 셋잇단음표(v78) — o.tup=[k,'3'] 이면 전체 k 번째 음표(셋 중 가운데)의 빔 위에 글자를 찍는다.
+     '3' 대신 'E' 를 주면 같은 자리에 코드 글자가 선 경우(셋잇단이 아니어야 한다)를 그린다. */
+  if(o.tup){
+    const all=[].concat.apply([],bars), nt=all[o.tup[0]];
+    if(nt&&nt._sx!==undefined){
+      g.fillStyle='#000'; g.font='bold italic '+Math.round(sp*1.45)+'px "Times New Roman",serif';
+      g.textAlign='center'; g.textBaseline='alphabetic';
+      g.fillText(o.tup[1],nt._sx,Math.min(nt._tip,top)-sp*0.4); g.textAlign='start';
+    }
+  }
+  /* ★ 곡 중간 박자표(v78) — o.timeSig=[bi,'4','4'] 이면 bi 번째 마디선 바로 뒤에 숫자 둘을
+     위아래로 쌓는다. 위 숫자는 맨 윗줄~가운데 줄, 아래 숫자는 가운데 줄~맨 아랫줄(실제 조판).
+     실측(「하나님의 부르심」5단): 이 "4/4" 가 E5 4분음표로 잡혔다. */
+  if(o.timeSig){
+    const [bi,t1,t2]=o.timeSig, tx=barX[bi]+sp*0.55;
+    g.fillStyle='#000'; g.font='900 '+Math.round(sp*2.75)+'px "Times New Roman",serif';
+    g.textBaseline='alphabetic';
+    g.fillText(t1,tx,top+sp*2); g.fillText(t2,tx,bot);
+  }
   if(o.trailDebris){
     /* ★ 속이 빈 모양으로 그린다 — 속이 찬 머리는 기둥이 없으면 애초에 음표 후보로도
        안 남는다(v50 규칙). 실제로 걸렸던 것은 **겹세로줄 토막이 만든 빈 자리**였다
@@ -146,9 +165,13 @@ export function drawScan(o){
      기둥을 부정해서 그 음을 통째로 버렸다(실측: 참 반가운 성도여 1단에서 3음). */
   if(o.lyric){ g.fillStyle='#000'; g.font=Math.round(sp*1.3)+'px sans-serif';
     for(let k=0;k<n;k++)g.fillText('가',x0+dx*(k+0.3),bot+sp*(o.lyricY||2.2)); }
+  /* ★ border = 복사본·스캔의 **쪽 테두리 선**(맨 왼쪽 2px 세로줄, 위에서 아래까지). v80 전에는 이걸
+     자리표로 받아 진짜 자리표가 음표 후보로 들어왔다(「나 주님의 기쁨되기」). */
+  if(o.border){ g.fillStyle='#000'; g.fillRect(0,0,2,H); }
   return c.toDataURL('image/jpeg',0.65);   // JPEG 손실까지 넣는다
 }
 
+const diaNameAbs=nm=>{ const m=/^([A-G])(-?\d+)$/.exec(nm); return 'CDEFGAB'.indexOf(m[1])+7*(+m[2]); };
 export default async function scoreTest(){
   T.length=0; pass=0; fail=0;
   /* ★ 이 테스트는 addGeomMelody 를 부른다 — 그 안에서 **배운 값이 저장된다**(konti:learn).
@@ -157,7 +180,14 @@ export default async function scoreTest(){
      그래서 시작할 때 갈무리하고 끝나면 되돌린다. */
   const _keepLearn=(()=>{ try{return localStorage.getItem('konti:learn');}catch(e){return null;} })();
   const _keepC0=SPACE.c0, _keepSrc=SPACE.src, _keepMedW=SPACE.medW;
+  /* ★ 교정 학습(konti:fix, v81)도 같다 — 사용자가 쌓은 교정이 테스트 결과를 바꾸면 안 되고,
+     테스트 그림의 음이 사용자 저장소의 '본 횟수'로 섞여도 안 된다. 비운 채로 돌리고 되돌린다. */
+  const _keepFix=(()=>{ try{return localStorage.getItem('konti:fix');}catch(e){return null;} })();
+  try{ localStorage.removeItem('konti:fix'); }catch(e){}
+  const _keepFeat=S.feat;
   const _restore=()=>{
+    try{ if(_keepFix===null)localStorage.removeItem('konti:fix'); else localStorage.setItem('konti:fix',_keepFix); }catch(e){}
+    S.feat=_keepFeat;
     try{ if(_keepLearn===null)localStorage.removeItem('konti:learn');
          else localStorage.setItem('konti:learn',_keepLearn); }catch(e){}
     SPACE.c0=_keepC0; SPACE.src=_keepSrc; SPACE.medW=_keepMedW;
@@ -256,6 +286,65 @@ export default async function scoreTest(){
      Math.abs(fitBarBeats([1],4,null,false,true).reduce((a,b)=>a+b,0)-4)<1e-6,
      fitBarBeats([1],4,null,false,true));
 
+  /* ★★ 2-5) **곡 중간 박자표를 음표로 세지 않는다** (v78). 박자표가 없는 같은 그림과
+     나란히 재서, 박자표가 있을 때만 박자표를 찾고 음표 수·자리는 똑같아야 한다. */
+  {
+    const TS=[[{st:2,dur:1},{st:4,dur:1}],[{st:4,dur:1},{st:3,dur:1},{st:2,dur:1},{st:1,dur:1}],[{st:0,dur:4}]];
+    const nTS=TS.reduce((a,b)=>a+b.length,0);
+    let gA=null,gB=null;
+    try{ gA=await staffGeom(drawScan({sp:14,W:1400,bars:TS,timeSig:[0,'4','4']}));
+         gB=await staffGeom(drawScan({sp:14,W:1400,bars:TS})); }catch(e){ console.error(e); }
+    ok('마디선 뒤 박자표 4/4 를 찾는다 ('+(gA?gA.timeSigs.length:'-')+')',!!gA&&gA.timeSigs.length===1,gA&&gA.timeSigs);
+    ok('박자표를 음표로 세지 않는다 ('+(gA?gA.notes.length:0)+'/'+nTS+')',
+       !!gA&&gA.notes.length===nTS&&gA.notes.map(n=>n.step).join()===[].concat.apply([],TS).map(n=>n.st).join(),
+       gA&&gA.notes.map(n=>n.name+':'+n.beats));
+    ok('박자표가 없으면 아무것도 찾지 않는다',!!gB&&gB.timeSigs.length===0&&gB.notes.length===nTS,gB&&gB.timeSigs);
+  }
+
+  /* ★★ 2-6) **셋잇단음표** (v78). 빔으로 묶은 8분음표 셋 위의 "3" 을 보면 셋을 1/3박으로
+     줄인다. 같은 자리에 코드 글자 "E" 가 서 있으면 건드리지 않는다. */
+  {
+    const TU=[[{st:1,dur:1,beam:true},{st:2,dur:1,beam:true},{st:3,dur:1,beam:true},{st:2,dur:2},{st:0,dur:1}],
+              [{st:2,dur:2},{st:4,dur:2}]];
+    let gY=null,gN=null;
+    try{ gY=await staffGeom(drawScan({sp:14,W:900,bars:TU,tup:[1,'3']}));
+         gN=await staffGeom(drawScan({sp:14,W:900,bars:TU,tup:[1,'E']})); }catch(e){ console.error(e); }
+    const bt=g=>g?g.notes.slice(0,3).map(n=>n.beats).join(','):'-';
+    ok('"3" 이 선 8분음표 셋은 셋잇단음표다 ('+bt(gY)+')',!!gY&&gY.notes.slice(0,3).every(n=>n.tup===3&&Math.abs(n.beats-1/3)<2e-3),
+       gY&&gY.notes.map(n=>n.name+':'+n.beats));
+    /* 빔에 바짝 붙여 그린 "E" 는 그 자체가 음표로 잡히기도 한다(그림 탓 — 실제 코드 글자는 더 위 줄에 선다).
+       여기서 보려는 것은 **셋잇단으로 바꾸지 않는가** 하나다. */
+    ok('같은 자리에 코드 글자 "E" 면 셋잇단이 아니다',!!gN&&!gN.notes.some(n=>n.tup)
+       &&gN.notes.filter(n=>n.step>=1&&n.step<=3).slice(0,3).every(n=>n.beats===0.5),
+       gN&&gN.notes.map(n=>n.name+':'+n.beats));
+    if(gY){
+      const og=origGeomOf(gY); fitBeatsToBars(gY,og.seg,4);
+      const s0=gY.notes.slice(0,og.seg[0].cnt).reduce((a,n)=>a+n.beats,0);
+      ok('셋잇단이 든 마디는 4박이고 셋잇단은 그대로 남는다 ('+s0.toFixed(3)+')',Math.abs(s0-4)<0.01&&gY.notes[0].tup===3&&Math.abs(gY.notes[0].beats-1/3)<2e-3,
+         gY.notes.map(n=>n.beats));
+    }
+    const line=parseMelody('♪ F4:0.3333 G4:0.3333 A4:0.3333 B4:1');
+    ok('셋잇단 셋은 한 빔으로 묶인다',JSON.stringify(beamGroups(line,4))==='[[0,1,2]]',beamGroups(line,4));
+    ok('셋잇단 8분음표는 8분음표 모양 + 3',noteDur(0.3333).v===0.5&&noteDur(0.3333).tup===3,noteDur(0.3333));
+  }
+
+  /* ★★ 2-7) **쪽 테두리 선을 자리표로 받지 않는다** (v80). 테두리가 없는 같은 그림과 음표·자리표 구간이
+     같아야 한다. 테두리를 자리표로 받으면 clefEnd 가 2px 에서 멈추고 진짜 자리표 속 구멍이 음표가 된다. */
+  {
+    const BB2=[[{st:2,dur:1},{st:4,dur:1},{st:6,dur:2}],[{st:3,dur:2},{st:5,dur:2}]];
+    let gA=null,gB=null,cA=-1,cB=-1; const keepG=window.__GEOM2;
+    try{ window.__GEOM2=[]; gA=await staffGeom(drawScan({sp:14,W:1200,sharps:2,bars:BB2,border:true}));
+         cA=window.__GEOM2.length?window.__GEOM2[0].clefEnd:-1;
+         window.__GEOM2=[]; gB=await staffGeom(drawScan({sp:14,W:1200,sharps:2,bars:BB2}));
+         cB=window.__GEOM2.length?window.__GEOM2[0].clefEnd:-1; }catch(e){ console.error(e); }
+    window.__GEOM2=keepG;
+    const sig=g=>g?g.notes.map(n=>n.step+':'+n.beats).join(' '):'null';
+    /* 합성 자리표는 속 구멍이 커서 음표로 안 잡힌다 — 그래서 음표 비교만으로는 옛 버그가 안 보인다.
+       **자리표 구간 끝(clefEnd)** 이 테두리 유무와 상관없이 같은지를 본다(옛 코드: 테두리 있으면 9 / 없으면 100 남짓). */
+    ok('쪽 테두리가 있어도 자리표 구간이 같다 ('+cA+' / '+cB+')',cA>0&&Math.abs(cA-cB)<=14,[cA,cB]);
+    ok('쪽 테두리가 있어도 음표가 같다 ('+sig(gA)+' / '+sig(gB)+')',!!gA&&!!gB&&sig(gA)===sig(gB),[sig(gA),sig(gB)]);
+    ok('쪽 테두리가 있어도 조표를 센다',!!gA&&!!gA.keySig&&gA.keySig.n===2,gA&&gA.keySig);
+  }
   /* ★★ 2-4) **마지막 마디선 뒤에 남은 잉크를 음표로 세지 않는다** (v65).
      사용자 악보(무덤에 머물러)에서 찾은 버그다. 단은 언제나 마디선으로 끝나는데
      그 뒤에 겹세로줄 장식이나 인쇄 얼룩이 남으면 "맨 끝에 음이 하나 더 있다"가 된다 —
@@ -602,6 +691,23 @@ A        | D
       const og=origGeomOf(g);
       ok('꽉 찬 마디에는 쉼표를 넣지 않는다',applyRestCands(g,(og&&og.seg)||[],4)===0,g.notes.length);
     }
+    /* ①' 4분쉼표(v79, CLAUDE.md 85번) — 넣은 뒤 합이 **딱 한 마디**일 때만.
+       ♯·♭·♮ 과 생김새가 겹치므로 "더 가까워진다"로는 안 받는다. */
+    {
+      const q=(bars,notes,extra)=>{ const g=mkG(bars,notes,extra); const og=origGeomOf(g);
+        return {n:applyRestCands(g,(og&&og.seg)||[],4),g}; };
+      const four=[NT(300,1),NT(360,1),NT(420,1),NT(480,1)];
+      let r=q([250],[NT(90,1),NT(150,1),NT(210,1)].concat(four),{restCands:[{x:40,cy:0,beats:1}]});
+      ok('3박 마디 + 4분쉼표 후보 → 넣는다(4박)',r.n===1&&r.g.notes[0].rest&&r.g.notes[0].beats===1,r.g.notes);
+      r=q([250],[NT(90,1),NT(150,1),NT(210,0.5),NT(230,1)].concat(four),{restCands:[{x:40,cy:0,beats:1}]});
+      ok('3.5박 마디에는 4분쉼표를 넣지 않는다(4.5박이 된다)',r.n===0,r.n);
+      /* 가운데 마디(단 첫·끝 조각이 아님) 1박 + 후보: 박자표가 없으면 안 받고, 있으면 반 마디(2박)로 받는다 */
+      const mid=()=>[NT(30,1),NT(90,1),NT(150,1),NT(210,1), NT(330,1), NT(560,1),NT(620,1),NT(680,1),NT(740,1)];
+      r=q([250,500],mid(),{restCands:[{x:280,cy:0,beats:1}]});
+      ok('가운데 1박 마디 + 후보, 박자표 없음 → 안 넣는다',r.n===0,r.n);
+      r=q([250,500],mid(),{restCands:[{x:280,cy:0,beats:1}],timeSigs:[{x:258,x1:270}]});
+      ok('가운데 1박 마디 + 후보 + 곡 중간 박자표 → 넣는다(2박)',r.n===1,r.n);
+    }
 
     /* ② 곡 중간의 2/4 마디 — **폭+박수만으로 가리는 규칙은 넣지 않았다**(CLAUDE.md 70번).
        대신 딱 절반인 마디에는 경고를 띄우지 않는다(잰 것이 무너진 마디는 3.25박처럼
@@ -726,6 +832,102 @@ A        | D
     try{ parts=await splitSystems(url,W); }catch(e){}
     ok('버려질 뻔한 짧은 단을 되살려 다섯 단이 나온다 (실제 '+(parts?parts.length:0)+'개)',
        !!parts&&parts.length===5,parts&&parts.map(p=>p.t0.toFixed(3)+'~'+p.t1.toFixed(3)));
+  }
+
+  /* ★★ 9) **줄바꿈으로 갈린 마디·못갖춘마디를 재생에서 끊지 않는다** (v80, CLAUDE.md 86번).
+     예전에는 마디 칸이 늘 4박이라, 0.5박 못갖춘마디 뒤에 3.5박 침묵, 줄 끝 3.5박 마디에 가짜 쉼표,
+     다음 줄 0.5박 조각 뒤에 또 3.5박 침묵이 생겼다(「하나님의 부르심」 실측). */
+  {
+    const keep={raw:S.raw,save:window.scheduleSave};
+    window.scheduleSave=()=>{};
+    try{
+      const NL=String.fromCharCode(10);
+      S.raw='♪ E4:0.5 | E4:1 E4:1 E4:1 E4:1 | E4:1 E4:1 E4:1 r:0.5'+NL+'A | D | E'+NL
+           +'♪ F4:0.5 | E4:2 E4:2'+NL+'A | D';
+      reparse();
+      const tl=buildTimeline();
+      const lens=tl.bars.map(b=>+b.beats.toFixed(3));
+      ok('조각 마디는 제 길이 칸을 갖는다 ('+lens.join(',')+')',lens.join(',')==='0.5,4,3.5,0.5,4',lens);
+      const ms=tl.evs.filter(e=>e.type==='m');
+      let gap=0; for(let i=1;i<ms.length;i++){ const d=ms[i].at-(ms[i-1].at+ms[i-1].beats); if(d>0.51)gap=Math.max(gap,d); }
+      ok('멜로디 사이에 반 박 넘는 침묵이 없다 (최대 '+gap.toFixed(2)+'박)',gap===0,gap);
+      const pad=blocks.filter(b=>b.k==='mel').some(b=>b.notes.some(n=>n.pad));
+      ok('이어지는 조각에는 가짜 쉼표를 채우지 않는다',!pad);
+      /* 거짓 확인 — 다음 줄이 이어 주지 않으면(온전한 마디로 시작) 예전처럼 채우고 4박 칸이다 */
+      S.raw='♪ E4:0.5 | E4:1 E4:1 E4:1 E4:1 | E4:1 E4:1 E4:1 r:0.5'+NL+'A | D | E'+NL
+           +'♪ E4:2 E4:2 | E4:4'+NL+'A | D';
+      reparse();
+      const l2=buildTimeline().bars.map(b=>+b.beats.toFixed(3));
+      ok('이어 주는 조각이 없으면 줄 끝 마디는 4박 그대로 ('+l2.join(',')+')',l2.join(',')==='0.5,4,4,4,4',l2);
+    }finally{ S.raw=keep.raw; reparse(); window.scheduleSave=keep.save; }
+  }
+
+  /* ★★ 10) **교정 학습** (v81, CLAUDE.md 87번). 고친 음을 쌓아 다음 인식에 쓴다 —
+     가장 중요한 성질은 **근거가 모자라면 아무것도 바꾸지 않는 것**이다. */
+  {
+    const keep={raw:S.raw,save:window.scheduleSave};
+    window.scheduleSave=()=>{};
+    try{
+      localStorage.removeItem('konti:fix');
+      const NL=String.fromCharCode(10);
+      /* 인식한 척: ♪ 줄 + 음마다 특징. 셋째 음(자리 -2, 기둥 위 · 빔 1겹 · 잰 0.5박)을 사용자가 고친다 */
+      const F=(st,b)=>fixKeys({step:st,hollow:0,stem:1,bands:1,dot:0,b0:b},'treble');
+      const song=(id)=>{
+        S.raw='♪ E4:1 G4:1 A3:0.5 B3:0.5 C4:1'+NL+'A';
+        reparse();
+        fixSnapshot([[F(0,1),F(2,1),F(-3,0.5),F(-2,0.5),F(-1,1)]]);
+        S.feat.id=id;
+        const b=blocks.find(x=>x.k==='mel');
+        b.notes[2].midi+=2;                 // A3 → B3 (자리 -3 을 한 칸 위로)
+        b.notes[2].beats=0.75;              // 잰 0.5박 → 0.75박
+        writeBackMelody();
+      };
+      song('t1');
+      const o1=fixLoad();
+      ok('고친 음이 쌓인다 (곡 1개, '+(o1.songs.t1?o1.songs.t1.lines[0].length:0)+'건)',!!o1.songs.t1&&o1.songs.t1.lines[0].length===3,o1.songs.t1);   // 음높이 1 + 길이 2(d·c 열쇠 둘)
+      ok('곡 하나로는 규칙이 되지 않는다',Object.keys(fixRules()).length===0,fixRules());
+      song('t2'); song('t3');
+      const R=fixRules(), kp=F(-3,0.5).p;
+      ok('곡 셋에서 같은 교정 → 음높이 규칙이 생긴다 (+'+(R[kp]&&R[kp].t)+'반음)',!!R[kp]&&R[kp].t===2,R);
+      /* 규칙을 입혀 본다 — 자리 -3(A3) 이 한 칸 위(B3)로, 잰 0.5박이 0.75박으로 */
+      const g={clef:'treble',notes:[{step:-3,abs:diaNameAbs('A3'),name:'A3',beats:0.5,hollow:0,stem:1,bands:1,dot:0,sure:true},
+                                    {step:4,abs:diaNameAbs('B4'),name:'B4',beats:1,hollow:0,stem:1,bands:0,dot:0,sure:true}]};
+      const n=fixApplyGeo(g,R,null);
+      ok('배운 교정을 입힌다 ('+g.notes[0].name+':'+g.notes[0].beats+')',n>=1&&g.notes[0].name==='B3'&&g.notes[0].beats===0.75,g.notes[0]);
+      ok('특징이 다른 음은 건드리지 않는다',g.notes[1].name==='B4'&&g.notes[1].beats===1,g.notes[1]);
+      /* ★ 거짓 확인 — 같은 특징을 아주 많이 봤는데 고친 건 드물면 규칙이 아니다(우연한 교정) */
+      const o=fixLoad(); o.seen[kp]=1000; fixSave(o);
+      ok('본 횟수에 비해 교정이 드물면 규칙이 되지 않는다',!fixRules()[kp],fixRules()[kp]);
+      /* 되돌리면 교정도 사라진다 */
+      o.seen={}; fixSave(o);
+      S.raw='♪ E4:1 G4:1 A3:0.5 B3:0.5 C4:1'+NL+'A'; reparse();
+      fixSnapshot([[F(0,1),F(2,1),F(-3,0.5),F(-2,0.5),F(-1,1)]]); S.feat.id='t3'; writeBackMelody();
+      ok('고친 것을 되돌리면 그 곡의 교정이 지워진다',fixLoad().songs.t3.lines[0].length===0,fixLoad().songs.t3);
+      /* ★ 문맥 열쇠(v82) — 점8분+16분 짝: 두 음의 d 열쇠가 같아도(둘 다 8분 0.5박으로 읽힘) 이웃이 달라 c 열쇠는 갈린다 */
+      localStorage.removeItem('konti:fix');
+      const mk=L=>L.map((x,i)=>Object.assign({step:i,hollow:0,stem:1,dot:0,b0:x.b0,beats:x.b0},x));
+      const keysOf=L=>{ const N=mk(L); return N.map((n,i)=>fixKeys(n,'treble',N[i-1],N[i+1])); };
+      const PAIR=[{bands:0,b0:1},{bands:1,b0:0.5},{bands:1,b0:0.5},{bands:0,b0:1}];
+      const pairSong=(id)=>{
+        S.raw='♪ E4:1 G4:0.5 A4:0.5 C5:1'+NL+'A'; reparse();
+        fixSnapshot([keysOf(PAIR)]); S.feat.id=id;
+        const b=blocks.find(x=>x.k==='mel');
+        b.notes[1].beats=0.75; b.notes[2].beats=0.25;      // 점8분 + 16분
+        writeBackMelody();
+      };
+      pairSong('q1'); pairSong('q2'); pairSong('q3');
+      const R2=fixRules(), K2=keysOf(PAIR);
+      ok('점8분+16분 짝: 두 음의 d 열쇠는 같아서 d 규칙은 못 생긴다',K2[1].d===K2[2].d&&!R2[K2[1].d],R2[K2[1].d]);
+      ok('점8분+16분 짝: 문맥(c) 규칙 둘이 생긴다 (0.75 · 0.25)',!!R2[K2[1].c]&&R2[K2[1].c].t===0.75&&!!R2[K2[2].c]&&R2[K2[2].c].t===0.25,R2);
+      const gq={clef:'treble',notes:mk(PAIR).map(n=>Object.assign({},n,{sure:true}))};
+      fixApplyGeo(gq,R2,null);
+      ok('문맥이 맞으면 점8분·16분으로 고친다 ('+gq.notes[1].beats+' '+gq.notes[2].beats+')',gq.notes[1].beats===0.75&&gq.notes[2].beats===0.25,gq.notes.map(x=>x.beats));
+      /* 8분음표 넷 — 이웃이 달라 같은 d 열쇠라도 배운 길이를 입히지 않는다 */
+      const gp={clef:'treble',notes:mk([{bands:1,b0:0.5},{bands:1,b0:0.5},{bands:1,b0:0.5},{bands:1,b0:0.5}]).map(n=>Object.assign({},n,{sure:true}))};
+      fixApplyGeo(gp,R2,null);
+      ok('문맥이 다르면(8분음표 넷) 배운 길이를 입히지 않는다',gp.notes.every(x=>x.beats===0.5),gp.notes.map(x=>x.beats));
+    }catch(e){ ok('교정 학습 테스트가 오류 없이 돈다',false,String(e)); }
+    finally{ localStorage.removeItem('konti:fix'); S.raw=keep.raw; reparse(); window.scheduleSave=keep.save; }
   }
 
   _restore();
