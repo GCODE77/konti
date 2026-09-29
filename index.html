@@ -6349,6 +6349,31 @@ function refineSysBars(sysList,per){
   });
   return added;
 }
+/* ── 단 맨 앞의 가짜 음 둘을 걷어 낸다 (v84, 「나 주님의 기쁨되기」 잔여 오류) ─────────────────────────────
+   자리표 구간(clefEnd)을 잘 잡아도 조표 # 나 보통박자 C 가 남아 첫 음으로 읽히는 악보가 있다. 글자 모양으로 가르려던 시도는
+   여섯 번 실패했다(CLAUDE.md 90번). 여기서는 **결과가 말이 되는지**로 가른다 — 근거가 서로 다른 둘:
+   ① 빔이 **4겹 이상**인 첫 음 — 64분음표는 찬송가에 없다. 조표 # 위에 코드 글자가 붙어 빔 네 겹처럼 세어진 것이다
+      (실측: 「나 주님」 2·5단 `E5:0.25 b4` · `E5:0.125? b4`, 둘 다 자리표 구간 끝에서 1.4칸 안).
+   ② 기둥 없는 속 빈 **온음표 이상**인 첫 음이 있는데, 첫 마디에 다른 음이 더 남아 있고 합이 한 마디를 넘는다
+      (실측: 1단 첫머리 C 가 `A4:4`, 첫 마디 원시 합 9.25박). 진짜 온음표는 마디에 혼자 서므로(남는 음 0) 걸리지 않는다.
+      ★ 길이를 맞추기 **전**의 원시 합이라 "정확히 한 마디"를 요구하면 안 된다(처음에 그렇게 했다가 못 잡았다).
+   맨 앞 **첫 음 하나**만 본다(근거는 모양이 아니라 결과다). 지운 수를 돌려준다. `window.__NOOPEN=1` 이면 끈다. */
+function dropOpeningGlyphs(geo,seg,per){
+  if(!geo||!geo.notes||geo.notes.length<4||!seg||!seg.length)return 0;
+  const n0=geo.notes[0];
+  if(!n0||n0.rest)return 0;
+  const sg0=seg.find(sg=>sg.cnt>0); if(!sg0||sg0.i0!==0)return 0;
+  let drop=false;
+  if((n0.bands||0)>=4)drop=true;
+  else if(n0.hollow&&!n0.stem&&n0.beats>=4){
+    let t=0; for(let j=sg0.i0+1;j<sg0.i0+sg0.cnt;j++)t+=(geo.notes[j].beats>0?geo.notes[j].beats:0);
+    if(t>0.25&&t+n0.beats>per+0.5)drop=true;      // 온음표는 마디에 혼자 선다 — 다른 음이 남아 있고 합이 한 마디를 넘으면 C 다
+  }
+  if(!drop)return 0;
+  geo.notes.shift();
+  geo.total=+geo.notes.reduce((a,n)=>a+(n.beats||0),0).toFixed(4);
+  return 1;
+}
 /* ── 곡 중간에 박자가 바뀐 마디를 **마디 박수로 추론한다** (v82, 72번 항목의 남은 일) ───────────────
    박자표의 숫자를 읽으려는 시도는 세 번 다 실패했다(구멍 세기·모양 맞대기·글자 인식기). 그런데 실제로
    필요한 것은 숫자가 아니라 **그 마디가 몇 박이냐**이고, 그건 잰 길이가 이미 알려 준다. 근거 둘이 맞을 때만:
@@ -6566,7 +6591,7 @@ async function addGeomMelody(draft,say){
       s.geo.notes.forEach((n,i)=>{ const mm=geomMidi(n.name,sig,ac[i]); if(mm!==null)all.push({midi:mm,beats:n.beats||1}); }); } });
     key=all.length>=6?guessKeyFromMelody(all):{pc:0,minor:false};
   }
-  let melN=0, melSys=0, melSure=0, guessN=0, keepN=0, restN=0, meterN=0;
+  let melN=0, melSys=0, melSure=0, guessN=0, keepN=0, restN=0, meterN=0, openN=0;
   const FR=window.__NOFIX?{}:fixRules(), FO=fixLoad(); let fixN=0;
   const pages=draft.sys.map(s=>{
     const ok=s.geo&&geomSane(s.geo.notes);
@@ -6575,6 +6600,7 @@ async function addGeomMelody(draft,say){
        두 번 재는 이유: 마디 안 '몇 박째 → 가로 어디' 표(pb/px)가 고친 길이로 만들어져야
        사진 위 하이라이트가 소리와 같은 자리를 가리킨다. */
     let og=ok?origGeomOf(s.geo):null;
+    if(og&&og.seg&&!window.__NOOPEN&&dropOpeningGlyphs(s.geo,og.seg,P.beats)){ openN++; og=origGeomOf(s.geo); }   // 첫머리 가짜 음(v84)
     if(og&&og.seg&&applyRestCands(s.geo,og.seg,P.beats)){ restN++; og=origGeomOf(s.geo); }
     const pers=(og&&og.seg&&!window.__NOMETER)?inferBarMeters(s.geo,og.seg,P.beats):null;   // 박자가 바뀐 마디(v82)
     if(pers){ meterN+=pers.filter(Boolean).length; s.meters=pers; }
@@ -6643,7 +6669,7 @@ async function addGeomMelody(draft,say){
     return (s.out=[mel,txt].filter(t=>t&&t.trim()).join('\n'));
   }).filter(t=>t.trim());
   if(!window.__NOFIX)fixSave(FO);
-  return Object.assign({},draft,{text:pages.join('\n\n'),melN,melSys,melSure,restN,meterN,fixN,
+  return Object.assign({},draft,{text:pages.join('\n\n'),melN,melSys,melSure,restN,meterN,openN,fixN,
     sigN:Object.keys(sig).length,guessN,keepN,key2:key});
 }
 /* 오선이 모인 줄(단)을 찾아 한 단씩 잘라낸다.

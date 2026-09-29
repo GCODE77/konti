@@ -968,6 +968,27 @@ A        | D
     finally{ S.raw=keep.raw; reparse(); window.scheduleSave=keep.save; }
   }
 
+  /* ★★ 12) **단 맨 앞의 가짜 음** (v84, CLAUDE.md 91번). 조표 # (빔 4겹으로 읽힘)·보통박자 C (온음표로 읽힘).
+     가장 중요한 성질은 **진짜 첫 음을 지우지 않는 것**이다. */
+  {
+    try{
+      const mkg=(first,rest)=>{ const notes=[first,...rest.map(b=>({beats:b,bands:0,hollow:false,stem:true}))];
+        return {notes,seg:[{i0:0,cnt:notes.length}]}; };
+      let g=mkg({beats:0.25,bands:4,hollow:false,stem:true},[1,1,1]);
+      ok('빔 4겹인 첫 음(조표 # 오독)을 지운다',dropOpeningGlyphs(g,g.seg,4)===1&&g.notes.length===3,g.notes.length);
+      g=mkg({beats:4,bands:0,hollow:true,stem:false},[1,1,1,1,1]);
+      ok('온음표 뒤에 다른 음이 남아 합이 한 마디를 넘으면(보통박자 C) 지운다',dropOpeningGlyphs(g,g.seg,4)===1&&g.notes.length===5,g.notes.length);
+      g=mkg({beats:4,bands:0,hollow:true,stem:false},[]);
+      g.notes.push({beats:1,bands:0,hollow:false,stem:true},{beats:1,bands:0,hollow:false,stem:true},{beats:1,bands:0,hollow:false,stem:true});
+      g.seg=[{i0:0,cnt:1},{i0:1,cnt:3}];
+      ok('진짜 온음표 한 마디(혼자 선다)는 지우지 않는다',dropOpeningGlyphs(g,g.seg,4)===0&&g.notes.length===4,g.notes.length);
+      g=mkg({beats:0.5,bands:1,hollow:false,stem:true},[0.5,1,2]);
+      ok('보통 첫 음은 지우지 않는다',dropOpeningGlyphs(g,g.seg,4)===0&&g.notes.length===4,g.notes.length);
+      g=mkg({beats:2,bands:0,hollow:true,stem:true},[1,1]);
+      ok('기둥 있는 2분음표는 지우지 않는다',dropOpeningGlyphs(g,g.seg,4)===0,g.notes.length);
+    }catch(e){ ok('첫머리 가짜 음 테스트가 오류 없이 돈다',false,String(e)); }
+  }
+
   _restore();
   console.table(T.map(t=>({검사:t.name,결과:t.cond?'통과':'실패'})));
   console.log((fail?'✗ ':'✓ ')+'score: '+pass+' 통과 / '+fail+' 실패');
