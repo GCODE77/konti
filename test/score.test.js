@@ -930,6 +930,44 @@ A        | D
     finally{ localStorage.removeItem('konti:fix'); S.raw=keep.raw; reparse(); window.scheduleSave=keep.save; }
   }
 
+  /* ★★ 11) **곡 중간에 박자가 바뀐 마디** (v82, CLAUDE.md 89번). `@2` 표지 · 재생 마디 칸 · 추론.
+     박자표가 없는 단에서는 아무것도 추론하지 않는 것이 가장 중요한 성질이다(v69 실패의 교훈). */
+  {
+    const keep={raw:S.raw,save:window.scheduleSave};
+    window.scheduleSave=()=>{};
+    try{
+      const NL=String.fromCharCode(10);
+      const pm=parseMelody('♪ @2 r:1 E4:0.5 B4:0.5 | E4:1 E4:1 E4:1 E4:1');
+      ok('@2 표지가 다음 음(쉼표)에 붙는다',pm.length===8&&pm[0].bl===2&&pm[0].rest===true&&!pm.some(n=>n._bl),pm);
+      ok('melLine 이 @2 를 다시 적는다(왕복)',/^♪ @2 r:1 /.test(melLine(pm,0,'sharp','treble')),melLine(pm,0,'sharp','treble'));
+      const nt=(bl)=>[{midi:60,beats:1},{bar:true},Object.assign({midi:62,beats:1},bl?{bl}:{}),{midi:64,beats:1}];
+      ok('padMelodyRests: 2박 마디(bl=2)는 쉼표를 채우지 않는다',padMelodyRests(nt(2)).filter(n=>n.rest).length===0,padMelodyRests(nt(2)));
+      ok('padMelodyRests: 표지 없는 2박 마디는 쉼표 2박을 채운다(예전 동작)',padMelodyRests(nt(0)).filter(n=>n.rest).reduce((a,n)=>a+n.beats,0)===2,padMelodyRests(nt(0)));
+      S.raw='♪ E4:1 E4:1 E4:1 E4:1 | @2 E4:1 E4:1 | E4:1 E4:1 E4:1 E4:1'+NL+'A | D | G';
+      reparse();
+      const tl=buildTimeline();
+      ok('재생: 박자 바뀐 마디 칸이 2박이다 ('+tl.bars.map(b=>b.beats).join(',')+')',tl.bars.length===3&&tl.bars[0].beats===4&&tl.bars[1].beats===2&&tl.bars[2].beats===4,tl.bars);
+      ok('재생: 두 번째 마디 뒤 마디가 2박 뒤에 시작한다 ('+tl.bars[2].at+')',tl.bars[2].at===6,tl.bars);
+      ok('재생: 어긋난 마디가 없다(drift 0)',tl.drift===0,tl.drift);
+      writeBackMelody();
+      ok('고친 뒤 다시 적어도 @2 가 남는다',/\| @2 E4:1/.test(S.raw),S.raw);
+      /* 추론 */
+      const G=(sums,sigs,sure)=>{ const notes=[]; const seg=[]; let i0=0;
+        sums.forEach(sm=>{ const b=[]; let t=sm; while(t>0){ const v=Math.min(1,t); b.push({beats:v}); t-=v; } seg.push({i0,cnt:b.length}); notes.push(...b); i0+=b.length; });
+        return {geo:{durSure:sure!==false,timeSigs:sigs?[{x:1}]:[],notes},seg}; };
+      let g=G([2,4,4,4],true); let r=inferBarMeters(g.geo,g.seg,4);
+      ok('박자표가 있는 단의 2박 마디를 찾는다',!!r&&r[0]===2&&!r[1]&&!r[2],r);
+      g=G([4,3,4,4],true); r=inferBarMeters(g.geo,g.seg,4);
+      ok('3박 마디도 찾는다',!!r&&r[1]===3,r);
+      g=G([2,4,4,4],false); ok('박자표가 없는 단에서는 추론하지 않는다',inferBarMeters(g.geo,g.seg,4)===null,inferBarMeters(g.geo,g.seg,4));
+      g=G([2,4,4,4],true,false); ok('길이를 못 믿는 단에서는 추론하지 않는다',inferBarMeters(g.geo,g.seg,4)===null,inferBarMeters(g.geo,g.seg,4));
+      g=G([3.5,4,4,4],true); ok('정수가 아닌 합(3.5박 조각)은 박자 변화가 아니다',inferBarMeters(g.geo,g.seg,4)===null,inferBarMeters(g.geo,g.seg,4));
+      g=G([4,4,4,2],true); ok('단 끝 마디는 제외한다(다음 단의 조각일 수 있다)',inferBarMeters(g.geo,g.seg,4)===null,inferBarMeters(g.geo,g.seg,4));
+      g=G([4,4,4,4],true); ok('모든 마디가 4박이면 아무것도 안 한다',inferBarMeters(g.geo,g.seg,4)===null,inferBarMeters(g.geo,g.seg,4));
+    }catch(e){ ok('박자 바뀐 마디 테스트가 오류 없이 돈다',false,String(e)); }
+    finally{ S.raw=keep.raw; reparse(); window.scheduleSave=keep.save; }
+  }
+
   _restore();
   console.table(T.map(t=>({검사:t.name,결과:t.cond?'통과':'실패'})));
   console.log((fail?'✗ ':'✓ ')+'score: '+pass+' 통과 / '+fail+' 실패');

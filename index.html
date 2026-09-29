@@ -413,6 +413,9 @@ function parseMelody(line){
   const out=[];
   for(const t of line.trim().replace(/^[♪♫]\s*/,'').split(/\s+/)){
     if(/^\|+$/.test(t)){ out.push({bar:true}); continue; }
+    /* `@2` — 이 마디는 2박짜리다(곡 중간에 박자가 바뀐 마디, v82). 다음 음(쉼표 포함)에 bl 로 붙는다. */
+    const bm=t.match(/^@(\d+(?:\.\d+)?)$/);
+    if(bm){ const v=parseFloat(bm[1]); if(v>0&&v<=16)out.push({_bl:v}); continue; }
     const sm=t.match(SOL_RE);
     if(sm){
       const beats=sm[5]?parseFloat(sm[5]):1;
@@ -434,6 +437,12 @@ function parseMelody(line){
     if(m[1]){out.push({rest:true,beats});continue;}
     const midi=(parseInt(m[4],10)+1)*12+PCM[m[2].toUpperCase()]+(ACC[m[3]]||0);
     if(midi>=12&&midi<=108)out.push({midi,beats});
+  }
+  if(out.some(n=>n._bl)){                      // 표지를 다음 음에 붙이고 지운다
+    const fold=[]; let pend=0;
+    for(const n of out){ if(n._bl){ pend=n._bl; continue; }
+      if(pend&&!n.bar){ n.bl=pend; pend=0; } fold.push(n); }
+    return fold;
   }
   return out;
 }
@@ -515,7 +524,8 @@ function padMelodyRests(nts){
     outNts.push(...g);
     if(gi===0)return;
     const sum=g.reduce((a,n)=>a+(n.beats||1),0);
-    if(sum>0.01&&sum<per-0.01)outNts.push(...fillRests(per-sum));
+    const bl=(g.find(n=>n.bl)||{}).bl||per;          // 박자가 바뀐 마디는 제 길이로 채운다(v82)
+    if(sum>0.01&&sum<bl-0.01)outNts.push(...fillRests(bl-sum));
   });
   return outNts;
 }
@@ -523,8 +533,8 @@ function padMelodyRests(nts){
    순서가 중요하다 — 쉼표를 먼저 채우면 보정이 볼 선율 윤곽이 흐려진다. */
 function finishMel(rawNotes,clef){ return padMelodyRests(repairOctaves(rawNotes,clef)); }
 function melLine(notes,semis,p,clef){
-  return (clef==='bass'?'♫ ':'♪ ')+notes.map(n=>n.bar?'|':n.rest?('r:'+n.beats)
-    :(nm(n.midi+semis,p)+(Math.floor((n.midi+semis)/12)-1)+':'+n.beats)).join(' ');
+  return (clef==='bass'?'♫ ':'♪ ')+notes.map(n=>(n.bl?'@'+n.bl+' ':'')+(n.bar?'|':n.rest?('r:'+n.beats)
+    :(nm(n.midi+semis,p)+(Math.floor((n.midi+semis)/12)-1)+':'+n.beats))).join(' ');
 }
 
 function parseChart(raw){
@@ -1284,7 +1294,8 @@ function renderStaffSection(melM,chM,lyM,verses,measureStart,fitM,bassM,W,breaks
         return ns.length?ns.reduce((a,it)=>a+(it.n.beats||1),0):null; };
       const splitOk=beatSum!==null&&!!breaks&&[[m-1,measureStart+m-1],[m+1,measureStart+m]].some(([k,bk])=>{
         const o=k>=0&&k<N?sumOf(k):null; return o!==null&&breaks.has(bk)&&Math.abs(o+beatSum-P.beats)<0.02; });
-      const bad=beatSum!==null&&!fitM[m]&&!pickup&&!halfOk&&!splitOk&&Math.abs(beatSum-P.beats)>0.75;
+      const barLen=((melM[m]||[]).find(it=>it&&it.n&&it.n.bl)||{n:{}}).n.bl||P.beats;   // @N 으로 적힌 마디는 제 길이와 견준다(v82)
+      const bad=beatSum!==null&&!fitM[m]&&!pickup&&!halfOk&&!splitOk&&Math.abs(beatSum-barLen)>0.75;
       /* ★ 음표를 빠뜨렸는지 **가사로 검산한다** (v61, 사용자 신고로 넣었다).
          *"예수 내 구주. 파, 미 인데 파만 나왔다!"* — 한 마디에 가사 음절이 둘인데 소리나는
          음표가 하나면 음표를 하나 놓친 것이다. 찬송가·복음성가는 한 음절에 한 음이 원칙이고,
@@ -2096,7 +2107,7 @@ function buildTimeline(){
       const g=gs[i+Math.max(0,off)];
       if(!g)break;
       const gBeats=dur(g);
-      if(Math.abs(gBeats-P.beats)>0.75)drift++;
+      if(Math.abs(gBeats-((lens&&lens[i]!==undefined)?lens[i]:P.beats))>0.75)drift++;
       /* ★ off===0 인데도 이 줄의 **첫 마디**가 실제로는 짧은 못갖춘마디인 곡이 있다
          (「하나님의 부르심」처럼 매 단이 짧은 픽업으로 시작하는 곡 — 이 픽업은
          못갖춘마디가 아니라 코드 쪽에도 자기 마디 칸이 이미 있어서(gs.length===nb)
@@ -2126,7 +2137,7 @@ function buildTimeline(){
        markLineSplits 가 조각이라 적어 둔 첫·끝 마디만 **잰 길이 그대로**의 칸을 준다 — 그래야
        못갖춘마디 다음에 곧장 1마디가 오고, 줄바꿈으로 갈린 마디가 끊기지 않고 한 마디로 들린다. */
     const lens=[];
-    if(pendingMel&&(pendingMel._splitStart||pendingMel._splitEnd)){
+    if(pendingMel&&(pendingMel._splitStart||pendingMel._splitEnd||pendingMel.notes.some(n=>n.bl))){
       let nb=0, cur=0;
       for(const pr of b.pairs){ if(pr.bar){ if(hasBar&&cur){nb++;cur=0;} continue; } if(pr.chord){ cur++; if(!hasBar){nb++;cur=0;} } }
       if(cur)nb++;
@@ -2134,6 +2145,8 @@ function buildTimeline(){
       if(hasBar&&ng.filter(g=>g.length).length===nb&&ng[0].length){
         if(pendingMel._splitStart)lens[0]=pendingMel._splitStart;
         if(pendingMel._splitEnd&&nb>1)lens[nb-1]=pendingMel._splitEnd;
+        /* 박자가 바뀐 마디(@N, v82)는 마디 칸 자체가 제 길이다 — 코드도 멜로디도 그 길이로 친다 */
+        ng.filter(g=>g.length).forEach((g,gi)=>{ const b=g.find(n=>n.bl); if(b&&lens[gi]===undefined)lens[gi]=b.bl; });
       }
     }
     const flush=()=>{ if(!bar.length)return;
@@ -4576,7 +4589,10 @@ async function staffGeom(url,clef){
       if(q){ if(r0<0)r0=x; r1=x; if(n<(lo-hi+1)*0.9)solid=false; }
       else if(r0>=0)break;
     }
-    if(r0>=0&&solid&&r1-r0+1<=Math.max(3,sp*0.2))skipTo=r1+1;
+    /* v83: 복사가 흐려 **끊어진 점선 같은 테두리**(실측: 「나 주님의 기쁨되기」5단 x=3, 조각 높이 11~31px)는 solid 가 아니다.
+       clefEnd 가 그 테두리(x=15)에서 멈추면 x=80 의 진짜 자리표가 "1칸 넘게 끊겼다"로 버려져 자리표·조표가 음표로 읽힌다.
+       자리표는 맨 왼쪽 0.8칸 안에서 시작하지 않으므로, 그 안의 **가는 세로줄**은 solid 가 아니어도 건너뛴다. */
+    if(r0>=0&&(solid||(r1<sp*0.8&&!window.__OLDSKIP))&&r1-r0+1<=Math.max(3,sp*0.2))skipTo=r1+1;
   }
   for(let x=skipTo;x<xLim;x++){
     /* 이 칸의 잉크가 **오선 위로도 아래로도 넘치는가**. 끊김은 세지 않고 맨 위·맨 아래
@@ -6124,10 +6140,11 @@ function useSpacing(sysList,per){
    (v67 마디선, v68 조표) 과 같은 방식이다.
    ★ 반드시 fitBeatsToBars **앞에서** 돌아야 한다. 뒤에 돌면 모자란 0.5박을 이미
      옆 음표들을 늘려서 메운 뒤라, 쉼표를 넣을 자리가 사라진다. */
-function applyRestCands(geo,seg,per){
+function applyRestCands(geo,seg,per,pers){
   if(!geo||!geo.restCands||!geo.restCands.length||!seg||!seg.length)return 0;
-  const P4=per||4, add=[], w=geo.w||1;
+  const add=[], w=geo.w||1;
   seg.forEach((sg,si)=>{
+    const P4=(pers&&pers[si])||per||4;
     if(!sg.cnt)return;
     let t=0; for(let j=sg.i0;j<sg.i0+sg.cnt;j++)t+=(geo.notes[j].beats>0?geo.notes[j].beats:1);
     const lack=P4-t;
@@ -6154,10 +6171,11 @@ function applyRestCands(geo,seg,per){
   geo.total=+geo.notes.reduce((a,n)=>a+(n.beats||0),0).toFixed(4);
   return add.length;
 }
-function fitBeatsToBars(geo,seg,per){
+function fitBeatsToBars(geo,seg,perDef,pers){
   if(!geo||!geo.notes||!seg||seg.length<2)return false;
   let changed=false;
-  for(const sg of seg){
+  for(let si=0;si<seg.length;si++){
+    const sg=seg[si], per=(pers&&pers[si])||perDef;   // 박자가 바뀐 마디(@N)는 제 길이에 맞춘다(v82)
     if(!sg.cnt)continue;
     /* ★ 쉼표가 든 **단 끝·단 첫 조각**은 쉼표를 뺀 음표 합으로 조각인지 가린다(v77).
        실측(「하나님의 부르심」1단 끝): 음표 `8·16·16|16·8·16|4분`(3박) + 8분쉼표 = 3.5박이고
@@ -6331,7 +6349,30 @@ function refineSysBars(sysList,per){
   });
   return added;
 }
-function geomMelodyLine(geo,perBar,sig,seg){
+/* ── 곡 중간에 박자가 바뀐 마디를 **마디 박수로 추론한다** (v82, 72번 항목의 남은 일) ───────────────
+   박자표의 숫자를 읽으려는 시도는 세 번 다 실패했다(구멍 세기·모양 맞대기·글자 인식기). 그런데 실제로
+   필요한 것은 숫자가 아니라 **그 마디가 몇 박이냐**이고, 그건 잰 길이가 이미 알려 준다. 근거 둘이 맞을 때만:
+     ① 이 단에 곡 중간 박자표가 찍혀 있다(findTimeSigs) — 박자가 바뀔 수 있는 단이다.
+     ② 그 단의 마디 중 **길이가 스스로 앞뒤가 맞고(durSure)** 합이 정확히 2박·3박(정수, 1/8 격자, 셋잇단 없음)인 마디.
+   ★ 박자표가 없는 단에서는 아무것도 하지 않는다 — 음표를 놓쳐 짧아진 마디를 박자 변화로 착각하면 안 된다(v69 실패).
+   ★ 단 끝 마디(예고 박자표 자리)는 제외한다. 이어지는 단의 조각일 수 있다.
+   반드시 applyRestCands **뒤**, fitBeatsToBars **앞**에서 돈다(쉼표를 넣은 합으로 잰다). 돌려주는 값은 마디마다
+   박수(기본이면 0) 배열이거나 null. */
+function inferBarMeters(geo,seg,per){
+  if(!geo||!geo.durSure||!geo.notes||!seg||seg.length<2)return null;
+  if(!(geo.timeSigs&&geo.timeSigs.length))return null;
+  const pers=seg.map(()=>0); let any=false;
+  seg.forEach((sg,si)=>{
+    if(!sg.cnt||si===seg.length-1)return;
+    let t=0, ok=true;
+    for(let j=sg.i0;j<sg.i0+sg.cnt;j++){ const n=geo.notes[j]; if(!n){ok=false;break;}
+      if(n.tup||!(n.beats>0)||Math.abs(n.beats*8-Math.round(n.beats*8))>1e-3)ok=false; t+=n.beats; }
+    t=+t.toFixed(4);
+    if(ok&&(t===2||t===3)&&t<per-1e-6){ pers[si]=t; any=true; }
+  });
+  return any?pers:null;
+}
+function geomMelodyLine(geo,perBar,sig,seg,pers){
   if(!geo||!geo.notes||geo.notes.length<3)return '';
   const per=perBar||4;
   const accs=geomAccs(geo);
@@ -6345,7 +6386,9 @@ function geomMelodyLine(geo,perBar,sig,seg){
   geo._feat=feat;                                    // 교정 학습(v81) — ♪ 줄의 음표와 하나씩 짝
   if(seg&&seg.length>1){
     seg.forEach((sg,si)=>{
-      if(!sg.cnt){ out.push('r:'+per); feat.push(null); }   // 음표를 못 찾은 마디는 쉼표 한 마디로
+      const pl=(pers&&pers[si])||0;                          // 박자가 바뀐 마디는 @N 을 앞에 적는다(v82)
+      if(pl)out.push('@'+pl);
+      if(!sg.cnt){ out.push('r:'+(pl||per)); feat.push(null); }   // 음표를 못 찾은 마디는 쉼표 한 마디로
       for(let j=sg.i0;j<sg.i0+sg.cnt;j++){ const n=nts[j]; if(n){ out.push(n.tok+':'+n.beats); feat.push(fk(geo.notes[j],j)); } }
       if(si<seg.length-1)out.push('|');
     });
@@ -6523,7 +6566,7 @@ async function addGeomMelody(draft,say){
       s.geo.notes.forEach((n,i)=>{ const mm=geomMidi(n.name,sig,ac[i]); if(mm!==null)all.push({midi:mm,beats:n.beats||1}); }); } });
     key=all.length>=6?guessKeyFromMelody(all):{pc:0,minor:false};
   }
-  let melN=0, melSys=0, melSure=0, guessN=0, keepN=0, restN=0;
+  let melN=0, melSys=0, melSure=0, guessN=0, keepN=0, restN=0, meterN=0;
   const FR=window.__NOFIX?{}:fixRules(), FO=fixLoad(); let fixN=0;
   const pages=draft.sys.map(s=>{
     const ok=s.geo&&geomSane(s.geo.notes);
@@ -6533,9 +6576,11 @@ async function addGeomMelody(draft,say){
        사진 위 하이라이트가 소리와 같은 자리를 가리킨다. */
     let og=ok?origGeomOf(s.geo):null;
     if(og&&og.seg&&applyRestCands(s.geo,og.seg,P.beats)){ restN++; og=origGeomOf(s.geo); }
-    if(og&&og.seg&&og.seg.length>1&&fitBeatsToBars(s.geo,og.seg,P.beats))og=origGeomOf(s.geo);
+    const pers=(og&&og.seg&&!window.__NOMETER)?inferBarMeters(s.geo,og.seg,P.beats):null;   // 박자가 바뀐 마디(v82)
+    if(pers){ meterN+=pers.filter(Boolean).length; s.meters=pers; }
+    if(og&&og.seg&&og.seg.length>1&&fitBeatsToBars(s.geo,og.seg,P.beats,pers))og=origGeomOf(s.geo);
     const seg=(og&&og.seg&&og.seg.length>1)?og.seg:null;
-    const mel=ok?geomMelodyLine(s.geo,P.beats,sig,seg):'';
+    const mel=ok?geomMelodyLine(s.geo,P.beats,sig,seg,pers):'';
     if(mel){ melN+=s.geo.notes.length; melSys++; if(s.geo.durSure)melSure++; }
     /* 마디선을 못 찾았으면 코드 줄을 새로 짜지 않는다 — 어느 마디인지 모르는 채로
        코드를 늘어놓으면 없느니만 못하다. 그때는 OCR 이 읽은 줄을 그대로 쓴다. */
@@ -6598,7 +6643,7 @@ async function addGeomMelody(draft,say){
     return (s.out=[mel,txt].filter(t=>t&&t.trim()).join('\n'));
   }).filter(t=>t.trim());
   if(!window.__NOFIX)fixSave(FO);
-  return Object.assign({},draft,{text:pages.join('\n\n'),melN,melSys,melSure,restN,fixN,
+  return Object.assign({},draft,{text:pages.join('\n\n'),melN,melSys,melSure,restN,meterN,fixN,
     sigN:Object.keys(sig).length,guessN,keepN,key2:key});
 }
 /* 오선이 모인 줄(단)을 찾아 한 단씩 잘라낸다.
@@ -7339,6 +7384,7 @@ async function runOCR(){
     chips.push(chip('코드 <b>'+((keepN||0)+(guessN||0))+'</b>'+(guessN?' <small>(짐작 '+guessN+')</small>':'')));
     if(keyNm)chips.push(chip('<b>'+keyNm+'</b>조'));
     if(S.photos.length>1)chips.push(chip(S.photos.length+'쪽'));
+    if(draft.meterN)chips.push(chip('박자 바뀐 마디 <b>'+draft.meterN+'</b>','good'));
     if(draft.fixN)chips.push(chip('배운 교정 <b>'+draft.fixN+'</b> 적용','good'));
     if(LACK)chips.push(chip('⚠ 확인할 마디 <b>'+LACK+'</b>','bad'));
     const items=[];
@@ -8547,6 +8593,9 @@ function openPanel(name){
       const scaled=idx.map(j=>(R.b.notes[j].beats||0)*k);
       const snapped=snapBeats(scaled,target,null,1)||scaled.map(v=>+v.toFixed(4));
       idx.forEach((j,i)=>{ R.b.notes[j].beats=snapped[i]; });
+      /* 재생이 이 마디를 제 길이(target)로 치도록 첫 음에 적어 둔다 — 기본 박자와 같으면 지운다(v82) */
+      idx.forEach(j=>{ delete R.b.notes[j].bl; });
+      if(Math.abs(target-(P.beats||4))>1e-6)R.b.notes[idx[0]].bl=target;
       writeBackMelody(); renderAll(); openPanel('staff');
       toast('이 마디를 '+target+'박으로 맞췄습니다.');
     };
