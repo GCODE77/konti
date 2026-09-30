@@ -3552,7 +3552,17 @@ function fitCanvas(img,cap){
 }
 async function prepImage(f){
   const dataUrl=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f)});
-  const raw=await new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=dataUrl});
+  const raw0=await new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=dataUrl});
+  /* ★ 투명 배경 PNG 는 흰 바탕에 먼저 깐다(v85). 아래 사본은 전부 JPEG 라 투명한 칸이
+     **검정**이 된다 — 실측(「나의 가장 낮은 마음」, 픽셀 90% 가 alpha 0): 쪽 전체가 까맣게
+     칠해져 splitSystems 가 null, 멜로디 0음. */
+  const raw=await (async()=>{
+    try{
+      const c=document.createElement('canvas'); c.width=raw0.width; c.height=raw0.height;
+      const g=c.getContext('2d'); g.fillStyle='#fff'; g.fillRect(0,0,c.width,c.height); g.drawImage(raw0,0,0);
+      return await imgFrom(c.toDataURL('image/png'));
+    }catch(e){ return raw0; }
+  })();
   /* ★ 먼저 사진을 펌다(v55) — 기울기를 되돌리고 책상·배경을 잘라 종이만 남긴다.
      여기서 한 번만 하면 뒤따르는 모든 사본(보내는 것·OCR·재는 것·화면용)이 같이 펴진다.
      화면용 사본도 같이 펴지므로 사진 위 마디 표시 자리도 저절로 맞는다. */
@@ -4933,7 +4943,11 @@ async function staffGeom(url,clef){
            이것 때문에 8분음표 셋이 4분음표로 둔갑했다. 둘레 비율(0.82)로는 안 갈렸다.
            ※ 아주 작게 인쇄된 온음표는 구멍이 세로로 긴 슬릿이 되는데(9×14), 그건 줄 위에
              놓였을 때 얘기이고 그 경우는 첫 번째 찾기가 이미 잡는다. */
-        if(bw<=bh||bw<sp*0.55)continue;
+        /* ★ 예외(v85): 칸에 놓인 **온음표**는 글꼴에 따라 구멍이 기운 좁은 타원이라 세로가 더 길다
+           (「나의 가장 낮은 마음」 12마디: 16×18px, 0.74×0.84칸, 위·아래 폭 0.44·0.38, 둘레 진짜 잉크 0.90).
+           그런 구멍은 위아래가 뚜렷이 좁고 둘레가 거의 다 진짜 잉크다 — 주머니(0.5~0.7)와 갈린다. */
+        const slitOk=!window.__NOSLIT&&bw>=sp*0.6&&wTop<=wMid*0.55&&wBot<=wMid*0.55&&real>=edge*0.85;
+        if((bw<=bh&&!slitOk)||bw<sp*0.55)continue;
         /* ★ 그리고 **위아래가 좁아져야** 한다. 음표 머리의 속은 눕힌 타원이라 맨 윗줄·맨 아랫줄이
            가운데보다 훨씬 좁다(실측 0.17·0.28). 줄·자리표·기둥이 두른 빈 칸은 **네모**라
            위아래가 가운데와 같다(실측 1.00·1.00) — 둘레가 진짜 잉크인지(0.79)로는 못 갈랐다.
@@ -5105,8 +5119,23 @@ async function staffGeom(url,clef){
     }
     devs.push(Math.abs(q-step));
     res.push({x:c.cx/sc, cy:c.cy, step, abs:base+step, name:diaName(base+step), acc:colAcc[ci]||'',
-              beats:d.beats, sure:d.sure, stem:d.stem, bands:d.bands, dot:d.dot, hollow:d.hollow});
+              beats:d.beats, sure:d.sure, stem:d.stem, bands:d.bands, dot:d.dot, hollow:d.hollow,
+              hw:(c.x1-c.x0+1)/sp});
   });
+  /* ★ 머리치고 너무 좁은 '속 찬 머리'는 4분쉼표 조각이다(v85). 줄을 지우면 번개꼴 4분쉼표가
+     토막 나서 가운데 토막이 머리로, 세로획이 기둥으로, 지그재그가 꼬리로 읽힌다.
+     실측(「나의 가장 낮은 마음」 9·13·17마디 첫머리): 그 '머리' 폭 0.84칸 / 같은 단 진짜 머리
+     1.26~1.35칸. 머리 폭은 글꼴마다 달라 **그 단 속 찬 머리 폭의 중앙값**과 견준다.
+     ★ 11장 전수: 잘린 쉼표 조각은 폭 0.56~0.75칸·오선 가운데(반칸 2~7). 흐린 악보(540장·「많은 사람들」)는
+     머리가 뭉쳐 중앙값이 1.7~1.9칸이라 폭 0.9~1.2칸짜리 **진짜 음**도 걸렸다 → 폭 0.8칸 미만 + 가운데 자리로 좁혔다. */
+  {
+    const fw=res.filter(n=>!n.hollow).map(n=>n.hw).sort((p,q)=>p-q);
+    if(fw.length>=6&&!window.__NONARROW){
+      const md=fw[fw.length>>1];
+      if(window.__NARDBG)window.__NARDBG.push({md:+md.toFixed(2),cut:res.filter(n=>!n.hollow&&n.hw<md*0.72&&n.hw<0.8&&n.step>=2&&n.step<=7).map(n=>({x:Math.round(n.x),nm:n.name,hw:+n.hw.toFixed(2)}))});
+      if(md>=1.0)for(let i=res.length-1;i>=0;i--)if(!res[i].hollow&&res[i].hw<md*0.72&&res[i].hw<0.8&&res[i].step>=2&&res[i].step<=7)res.splice(i,1);
+    }
+  }
   if(res.length<3)return null;
   /* ★★ 32분음표(0.125박)로 읽혔지만 sure:false 인 음이, 바로 옆 음표가 0.25박으로
      확신되면 그 값을 물려받는다(v76, 「하나님의 부르심」 사진의 x=1227·1392 두 음 —

@@ -109,6 +109,19 @@ export default async function photoTest(){
       ok(label+' — 단마다 오선을 잰다 (실제 '+measured+'/4)',measured>=3,{measured,err});
       ok(label+' — 음표를 찾는다 (실제 '+notes+'음)',notes>=20,{notes,err});
     }
+    /* 투명 배경 PNG(v85) — 흰 종이 대신 투명(alpha 0)인 파일. JPEG 사본으로 바꿀 때 투명한 칸이
+       검정이 되어 쪽 전체가 까맣게 칠해졌다(「나의 가장 낮은 마음」: splitSystems null, 멜로디 0음). */
+    {
+      const tc=document.createElement('canvas'); tc.width=page.width; tc.height=page.height;
+      const tg=tc.getContext('2d'); tg.drawImage(page,0,0);
+      const id=tg.getImageData(0,0,tc.width,tc.height), dd=id.data;
+      for(let i=0;i<dd.length;i+=4){ const v=(dd[i]+dd[i+1]+dd[i+2])/3; dd[i+3]=255-v; dd[i]=dd[i+1]=dd[i+2]=0; }
+      tg.putImageData(id,0,0);
+      const blob=await new Promise(r=>tc.toBlob(r,'image/png'));
+      const ph=await prepImage(new File([blob],'t.png',{type:'image/png'}));
+      const parts=await splitSystems(ph.hiUrl||ph.url);
+      ok('투명 배경 PNG — 단을 4개 찾는다 (실제 '+(parts?parts.length:0)+')',!!parts&&parts.length===4,parts&&parts.length);
+    }
     /* 사진을 펴는 단계가 실제로 일을 하는지 — 기울인 그림이 반듯해져야 한다 */
     const tilted=await new Promise(r=>{const i=new Image();i.onload=()=>r(i);i.src=asPhoto(page,{rot:2.5});});
     const fixed=await deskewPaper(tilted);
