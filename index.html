@@ -11,20 +11,22 @@
 <title>콘티 — 코드 차트 이조기</title>
 <style>
 :root{
-  --ink:#10161E; --raise:#1B242F; --line:#2B3744; --paper:#F2EEE6;
-  --dim:#8D9AA8; --brass:#F0B95E; --ribbon:#A32E3E; --mint:#7FC8A9;
+  --ink:#10161E; --raise:#1B242F; --line:#3A4858; --paper:#F2EEE6;
+  --dim:#A9B5C2; --brass:#F0B95E; --ribbon:#A32E3E; --mint:#7FC8A9;
   --ui:'Pretendard Variable',Pretendard,-apple-system,BlinkMacSystemFont,'Segoe UI','Apple SD Gothic Neo','Noto Sans KR',sans-serif;
   --mono:ui-monospace,SFMono-Regular,'SF Mono','JetBrains Mono',Menlo,Consolas,'D2Coding',monospace;
 }
 html[data-theme="light"]{
   color-scheme:light;
-  --ink:#FBFAF7; --raise:#FFFFFF; --line:#DFD9CC; --paper:#1A1F26;
-  --dim:#6B7683; --brass:#9A6B15; --ribbon:#A32E3E; --mint:#2F7D5B;
+  --ink:#FBFAF7; --raise:#FFFFFF; --line:#CFC8B8; --paper:#1A1F26;
+  --dim:#525D69; --brass:#8A5D0E; --ribbon:#A32E3E; --mint:#2F7D5B;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;height:100%}
 body{background:var(--ink);color:var(--paper);font-family:var(--ui);display:flex;flex-direction:column;min-height:100%}
 button,input,textarea{font-family:inherit}
+input[type=range]{accent-color:var(--brass)}
+[hidden]{display:none!important}
 button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
 .scroll::-webkit-scrollbar{width:0;height:0}
 
@@ -148,7 +150,7 @@ nav .btn.on .ni{opacity:1}
   transition:background .15s,color .15s}
 .seg button:last-child{border-right:none}
 .seg button.on{background:var(--brass);color:var(--ink)}
-.seg button:disabled{opacity:.35;cursor:default}
+.seg button:disabled{opacity:.4;cursor:default}
 @media (max-width:520px){
   /* 휴대폰에서는 두 줄로 — 보기 전환이 한 줄을 다 쓰고(가장 자주 누른다), 나머지 넷이 아랫줄.
      ★ order 로 올린다. DOM 순서를 바꾸면 넓은 화면에서 '가져오기'가 가운데로 가 버린다. */
@@ -183,6 +185,10 @@ body.editing main{padding-bottom:calc(var(--footh,182px) + 46vh)}
   transition:color .15s,border-color .15s}
 .ptabs button.on{color:var(--brass);border-bottom-color:var(--brass)}
 .note{font-size:12.5px;color:var(--dim);line-height:1.7;margin:0 0 12px}
+/* v87: 긴 설명은 접어 둔다 — 단추를 찾으려고 글을 헤치지 않게 */
+details.help{margin:16px 0 4px;border:1px solid var(--line);border-radius:10px;padding:8px 12px}
+details.help summary{cursor:pointer;color:var(--dim);font-weight:700;font-size:12.5px}
+details.help[open] summary{color:var(--paper)}
 .field{background:var(--ink);color:var(--paper);border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-size:13px;width:100%;outline:none}
 textarea.field{font-family:var(--mono);min-height:220px;line-height:1.5;resize:vertical}
 .btns{display:flex;gap:9px;flex-wrap:wrap;margin-top:12px}
@@ -218,7 +224,8 @@ footer{position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--raise)
 #transport{display:flex;align-items:center;gap:8px;padding:6px 12px 6px}
 #play{width:44px;height:36px;font-size:15px;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
 .tempo{display:flex;align-items:center;gap:2px;border:1px solid var(--line);border-radius:999px;padding:2px 4px}
-.tempo button{background:none;border:none;color:var(--paper);font-size:15px;width:26px;height:28px;cursor:pointer}
+.tempo button{background:none;border:none;color:var(--paper);font-size:15px;width:36px;height:36px;border-radius:999px;cursor:pointer}
+.tempo button:active{background:var(--line)}
 .tempo input{font-family:var(--mono);font-size:14px;width:46px;text-align:center;font-weight:700;background:none;border:none;color:var(--paper);outline:none;padding:2px 0;-moz-appearance:textfield}
 .tempo input::-webkit-outer-spin-button,.tempo input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .tempo input:focus{color:var(--brass)}
@@ -332,8 +339,7 @@ body.focus #focusout{display:block}
     <button id="b-text" data-view="text">가사</button>
   </div>
   <button class="btn nb" id="b-verse">1절</button>
-  <button class="btn nb" data-panel="view"><span class="ni">⚙</span>설정</button>
-  <button class="btn nb" data-panel="more"><span class="ni">⋯</span>더보기</button>
+  <button class="btn nb" data-panel="menu"><span class="ni">☰</span>메뉴</button>
 </nav>
 </footer>
 
@@ -360,7 +366,7 @@ window.onerror=function(msg,src,ln){
    예) const SCAN_ENDPOINT = "https://konti-scan.내계정.workers.dev";
 */
 const SCAN_ENDPOINT = "";
-const APP_VER = "81";
+const APP_VER = "87";
 /* file:// 나 content:// 로 열면 브라우저가 외부 호출을 막는다(CORS). 미리 알려준다. */
 const LOCAL_FILE = !/^https?:$/.test(location.protocol);
 /* Claude 앱처럼 iframe 안에서 실행 중이면 키 없이도 인식이 통한다. */
@@ -1587,19 +1593,34 @@ function AC(){
   if(!actx){
     const A=window.AudioContext||window.webkitAudioContext; if(!A)return null;
     actx=new A();
+    /* ★ 음질·균형(v87, 사용자 요청 "악기 사운드 균형 및 음질 좀 좋게").
+       ① 버스 압축을 부드럽게(-16dB·3.4:1 → -20dB·2.4:1) — 세게 누르면 여러 악기가 한 덩어리로 뭉개졌다.
+       ② 맨 끝에 리미터를 따로 둔다 — 악기를 많이 켜도 찢어지는 소리(클리핑)가 나지 않게.
+       ③ 30Hz 아래 웅웅거림 걷기 + 250Hz 둘레 살짝 낮추기(탁함) + 5kHz 위 살짝 올리기(또렷함).
+       ④ 잔향: 앞에 22ms 틈(pre-delay)을 두고 280Hz 아래를 잘라 보낸다 — 저음이 잔향에 섞이면
+          반주가 늪처럼 흐려진다. 잔향 꼬리는 5.2kHz 로 눅여 쇳소리를 없앤다. */
+    const lim=actx.createDynamicsCompressor();
+    lim.threshold.value=-3; lim.knee.value=0; lim.ratio.value=20;
+    lim.attack.value=.002; lim.release.value=.12;
+    lim.connect(actx.destination);
     const comp=actx.createDynamicsCompressor();
-    comp.threshold.value=-16; comp.knee.value=22; comp.ratio.value=3.4;
-    comp.attack.value=.006; comp.release.value=.26;
-    comp.connect(actx.destination);
-    master=actx.createGain(); master.gain.value=.85;
-    dry=actx.createGain(); dry.gain.value=.82;
+    comp.threshold.value=-20; comp.knee.value=14; comp.ratio.value=2.4;
+    comp.attack.value=.012; comp.release.value=.22;
+    const hp=actx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=30; hp.Q.value=.7;
+    const mud=actx.createBiquadFilter(); mud.type='peaking'; mud.frequency.value=260; mud.Q.value=.9; mud.gain.value=-2.2;
+    const air=actx.createBiquadFilter(); air.type='highshelf'; air.frequency.value=5000; air.gain.value=1.8;
+    comp.connect(hp); hp.connect(mud); mud.connect(air); air.connect(lim);
+    master=actx.createGain(); master.gain.value=.9;
+    dry=actx.createGain(); dry.gain.value=.86;
     wet=actx.createGain(); wet.gain.value=.30;
     const rev=actx.createConvolver();
-    try{ rev.buffer=makeIR(actx,2.6,2.4); }catch(e){}
+    try{ rev.buffer=makeIR(actx,2.4,2.6); }catch(e){}
+    const pre=actx.createDelay(.1); pre.delayTime.value=.022;
+    const rhp=actx.createBiquadFilter(); rhp.type='highpass'; rhp.frequency.value=280;
     const damp=actx.createBiquadFilter();
-    damp.type='lowpass'; damp.frequency.value=3600;
+    damp.type='lowpass'; damp.frequency.value=5200;
     master.connect(dry); dry.connect(comp);
-    master.connect(wet); wet.connect(rev); rev.connect(damp); damp.connect(comp);
+    master.connect(wet); wet.connect(pre); pre.connect(rhp); rhp.connect(rev); rev.connect(damp); damp.connect(comp);
   }
   if(actx.state==='suspended')actx.resume();
   return actx;
@@ -1667,7 +1688,49 @@ async function fetchSample(folder,pc,oct){
   const r=await fetch(url); if(!r.ok)throw new Error('no sample');
   const buf=await r.arrayBuffer();
   const ctx=AC(); if(!ctx)throw new Error('no audio context');
-  return await ctx.decodeAudioData(buf);
+  return normSample(await ctx.decodeAudioData(buf),folder);
+}
+/* ★ 샘플 크기 맞추기(v87). GM 샘플은 악기·음마다 녹음 크기가 제각각이다 — 오르간은 크게,
+   플루트·첼로는 작게, 같은 피아노도 낮은 음과 높은 음이 2~3배 차이 났다. 그래서 악기를 섞으면
+   어떤 악기는 묻히고 어떤 음만 툭 튀었다. 받자마자 앞 0.6초의 RMS 를 재서 같은 크기로 맞춘다
+   (0.35~16배 안에서만 — 원본이 RMS 0.02 로 아주 작게 녹음된 것이 많다). 그 위에 악기별 손질값(SAMPLE_TRIM)으로 합주 속 자리를 잡는다. */
+const SAMPLE_TRIM={piano:1,ep:.95,organ:.72,strings:.85,cello:.95,brass:.78,flute:1.05,choir:.85,pad:.8,guitar:1.05,bass:1.25};
+function normSample(ab,folder){
+  try{
+    const d=ab.getChannelData(0), n=Math.min(d.length,Math.floor(ab.sampleRate*.6));
+    let sq=0,pk=0; for(let i=0;i<n;i++){ const v=d[i]; sq+=v*v; const a=v<0?-v:v; if(a>pk)pk=a; }
+    const rms=Math.sqrt(sq/Math.max(1,n));
+    if(rms>1e-5){
+      const inst=Object.keys(SAMPLE_MAP).find(k=>SAMPLE_MAP[k]===folder);
+      let g=Math.max(.35,Math.min(16,.2/rms))*(SAMPLE_TRIM[inst]||1);
+      if(pk*g>.98)g=.98/pk;                      // 샘플 자체가 찢어지지 않게
+      for(let c=0;c<ab.numberOfChannels;c++){ const x=ab.getChannelData(c); for(let i=0;i<x.length;i++)x[i]*=g; }
+    }
+  }catch(e){}
+  return ab;
+}
+/* 재생 전에 이 곡에 나올 음을 **정확한 옥타브로** 미리 받아 둔다(v87). 예전에는 처음 나오는 음을
+   합성음으로 때우거나 먼 옥타브 샘플을 재생속도로 늘여(옥타브 두 개면 소리가 뭉개지거나 가늘어진다)
+   썼다 — 첫 바퀴가 유난히 어색하게 들린 이유다. */
+function prewarmSong(evs){
+  if(P.realInst===false)return;
+  const want=new Set();
+  const add=(inst,m)=>{ const I=INSTRUMENTS[inst], f=SAMPLE_MAP[inst]; if(!I||!f)return;
+    const mm=m+(I.oct||0)*12; if(mm<21||mm>108)return; want.add(f+'|'+mod(mm)+'|'+(Math.floor(mm/12)-1)); };
+  const insts=accompOn()?instList():[];
+  for(const ev of evs){
+    if(ev.type==='m'&&melodyOn())add(P.melInst,ev.midi+S.semis+(P.melOct||0)*12);
+    else if(ev.type==='mb'&&P.playBass)add('bass',ev.midi+S.semis);
+    else if(ev.type==='c'&&insts.length){
+      const v=ev.v||chordVoicing(ev.chord,S.semis);
+      insts.forEach((k,ii)=>{
+        if(INSTRUMENTS[k].bassOnly){add(k,v.bass);return;}
+        const ms=[v.bass,v.bass-12].concat(v.upper,layerOf(ii,v,insts.length));
+        ms.forEach(m=>add(k,m));
+      });
+    }
+  }
+  want.forEach(key=>{ const [f,pc,o]=key.split('|'); warmSample(f,+pc,+o); });
 }
 function warmSample(folder,pc,oct){        // 백그라운드로 미리 받아둔다 — 지금 재생을 막지 않는다
   const key=sampleKey(folder,pc,oct);
@@ -2349,6 +2412,7 @@ function startPlay(){
   const ctx=AC(); if(!ctx){toast('이 브라우저에서는 소리를 낼 수 없습니다.');return;}
   const tl=buildTimeline();
   if(!tl.evs.length){toast('재생할 내용이 없습니다.');return;}
+  prewarmSong(tl.evs);
   P.evs=tl.evs; P.total=tl.total;
   P.playing=true; P.k=0; P.lastAt=0; P.marks=[]; P.vmarks=[]; P.vnext=S.verse; P.cur=-1; P.sound=[];
   P.nmarks=[]; P.curNote=null;
@@ -2634,7 +2698,7 @@ function renderChartStaff(){
     const d=document.createElement('div'); d.className='suspect';
     d.innerHTML='<b>음표를 빠뜨린 것 같은 마디 '+LACK+'개</b> — 마디 번호 옆에 '
       +'<b>⚠음표 N개</b> 라고 적힌 곳입니다. 가사 음절보다 음표가 그만큼 적습니다. '
-      +'<span style="opacity:.7">그 마디 음표를 누른 뒤 <b>설정 → 오선보</b>에서 '
+      +'<span style="opacity:.7">그 마디 음표를 누른 뒤 <b>메뉴 → 오선보</b>에서 '
       +'<b>둘로 쪼개기</b>(두 음을 하나로 읽은 경우) 또는 <b>＋ 넣기</b>로 채워 주세요.</span>';
     el.appendChild(d);
   }
@@ -3163,13 +3227,17 @@ function renderToolbar(){
     b.setAttribute('aria-pressed',v===cur?'true':'false');
   });
   const mv=maxVerse(), vb=$('b-verse');
-  if(vb){ vb.textContent=S.verse+'절'+(mv>1?' / '+mv:''); vb.disabled=mv<2; vb.classList.toggle('on',S.verse>1); }
+  if(vb){ vb.textContent=S.verse+'절'+(mv>1?' / '+mv:''); vb.disabled=mv<2; vb.hidden=mv<2; vb.classList.toggle('on',S.verse>1); }
 }
 function renderAll(){renderRail();renderMeta();renderChart();renderToolbar();scheduleSave();}
 
 /* ── 마지막 상태 자동 저장 ── */
 let saveT=null;
-function scheduleSave(){clearTimeout(saveT);saveT=setTimeout(saveLast,500);}
+function scheduleSave(){clearTimeout(saveT);saveT=setTimeout(saveLast,500);idleWarm();}
+/* 곡·악기·키가 바뀌면 쉬는 동안 샘플을 미리 받아 둔다(v87) — 재생을 누르는 순간부터 실제 악기 소리로.
+   오디오를 한 번이라도 켠 뒤에만(브라우저가 첫 터치 전에는 소리 장치를 못 쓰게 한다). */
+let warmT=null;
+function idleWarm(){ clearTimeout(warmT); warmT=setTimeout(()=>{ try{ if(actx&&!P.playing)prewarmSong(buildTimeline().evs); }catch(e){} },1200); }
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'){clearTimeout(saveT);saveLast();}});
 window.addEventListener('pagehide',()=>{clearTimeout(saveT);saveLast();});
 function saveLast(){
@@ -7452,7 +7520,7 @@ async function runOCR(){
     if(LACK)chips.push(chip('⚠ 확인할 마디 <b>'+LACK+'</b>','bad'));
     const items=[];
     if(LACK)items.push('<b style="color:var(--ribbon)">음표를 빠뜨린 것 같은 마디 '+LACK+'개</b> — ⚠ 표시된 음표를 누르고 '
-      +'<b>설정 → 오선보</b>에서 <b>둘로 쪼개기</b>·<b>＋ 넣기</b>로 채워 주세요.');
+      +'<b>메뉴 → 오선보</b>에서 <b>둘로 쪼개기</b>·<b>＋ 넣기</b>로 채워 주세요.');
     items.push(melN?'<b>음표·박자·쉼표는 사진에서 잰 것</b>입니다(8분·4분쉼표까지). 틀린 음은 누르면 바로 고칠 수 있습니다.'
           /* ★ 아무것도 못 읽었을 때가 제일 중요하다 — 사용자가 다음에 뭐를 해야 하는지
              알게 해 줘야 한다. */
@@ -8177,7 +8245,7 @@ async function runScan(){
        *"처음부터 잘 발견할수 있도록 해야한다. 누락없이!!"* */
     if(LACK)bits.push('<b style="color:var(--ribbon)">음표를 빠뜨린 것 같은 마디 '+LACK+'개</b>를 '
       +'⚠ 로 표시했습니다(가사 음절보다 음표가 적습니다) — 그 음표를 누르고 '
-      +'<b>설정 → 오선보</b>에서 <b>둘로 쪼개기</b>나 <b>＋ 넣기</b>로 채워 주세요');
+      +'<b>메뉴 → 오선보</b>에서 <b>둘로 쪼개기</b>나 <b>＋ 넣기</b>로 채워 주세요');
     if(LAST_TRUNCATED)bits.push('길이 제한으로 뒷부분이 잘렸을 수 있습니다 — 악보를 반씩 나눠 찍으면 더 잘 됩니다');
     showResult('ok','악보를 옮겼습니다',bits.join('. ')+'.<br>'
       +(hasSheet()?'<b>올린 사진을 그대로 띄웠습니다</b> — 재생하면 사진 위에서 따라갑니다.'
@@ -8253,13 +8321,16 @@ async function ocrFallback(existing,say,fail,err){
      더보기 = 악보 편집 · 저장된 콘티 · 내보내기
    묶음 안에서는 패널 사이를 오갈 때 **제목이 바뀌지 않는다** — 지금 어디 있는지는
    켜진 탭 하나로만 보인다(제목까지 같이 바뀌면 어디가 어디인지 헷갈린다). */
-const PGROUP={view:'set',play:'set',staff:'set',diag:'set',input:'more',library:'more',export:'more'};
-const GTABS={set:[['view','보기'],['play','재생'],['staff','오선보'],['diag','진단']],
-             more:[['input','편집'],['library','저장'],['export','내보내기']]};
-const GTITLE={set:'설정',more:'더보기'};
+/* v87: 「설정」과 「더보기」를 「메뉴」 하나로 합쳤다 — 어디 있는지 두 번 찾지 않게. 자주 쓰는 순서로 탭을 둔다. */
+const PGROUP={play:'m',view:'m',staff:'m',input:'m',library:'m',export:'m',diag:'m'};
+const GTABS={m:[['play','악기·재생'],['view','보기'],['staff','오선보'],['input','편집'],['library','저장'],['export','내보내기'],['diag','진단']]};
+const GTITLE={m:'메뉴'};
 function openPanel(name){
+  const keepY=(S.curPanel===name&&$('sheet'))?$('sheet').scrollTop:0;
   if(name==='more')name='input';
   if(name==='set')name='view';
+  if(name==='menu')name=S.lastTab||'play';
+  if(PGROUP[name])S.lastTab=name;
   const s=$('sheet');
   /* ★ v60에서 '가져오기'가 한 가지 길로 줄었다 — 사진 인식뿐이다.
      사용자 판단: *"현재 인터넷으로만으로도 충분하니깐 다른 안 쓰는 기능들은 정리하자"*.
@@ -8513,7 +8584,7 @@ function openPanel(name){
         +'<button id="n-m4">4박</button></span></div>'
         +'<div class="btns"><button class="btn wide" id="n-del">'+(isRest?'이 쉼표 지우기':'이 음 지우기')+'</button></div></div>'
       : '<p class="note">고칠 음이 없습니다 — 이 곡에는 멜로디가 없습니다. '
-        +'<b>더보기 → 편집</b>에서 <code>♪ 1:1 5:0.5</code> 처럼 직접 넣을 수 있습니다.</p>';
+        +'<b>메뉴 → 편집</b>에서 <code>♪ 1:1 5:0.5</code> 처럼 직접 넣을 수 있습니다.</p>';
     /* ★★ 패널 안에 오선보를 **한 번 더 그리지 않는다**(v66, 사용자 요청).
        사용자 말 그대로: *"화면 밑에 것 수정하는 걸로 보니까 너무 작고 구별하기 어렵다.
        실제 위에 악보가 있는데 실시간으로 그걸로 고치는 걸로 하자! 빨간 네모 박스 보여주지
@@ -8795,32 +8866,7 @@ function openPanel(name){
       +'<span id="'+id+'num" style="font-family:var(--mono);font-size:15px;font-weight:800;color:var(--brass);min-width:44px;text-align:right">'+Math.round(v*100)+'%</span>'
       +'</div>';
     body.innerHTML=
-      '<span class="lbl">악기</span><div class="opts" id="insts">'
-      +Object.keys(INSTRUMENTS).map(k=>
-        '<button class="btn '+(instList().indexOf(k)>=0?'on':'')+'" data-inst="'+k+'">'+INSTRUMENTS[k].label+'</button>').join('')
-      +'</div><p class="note" style="margin:-6px 0 14px">여러 개를 골라 함께 울릴 수 있습니다. 현악+플루트, 피아노+첼로처럼 겹쳐 보세요.<br>'
-      +(instList().length
-        ? '<b>다시 누르면 꺼집니다</b> — 전부 끄면 반주 없이 멜로디만 울립니다.'
-        : '<b style="color:var(--ribbon)">악기를 하나도 안 골랐습니다 — 반주는 쉽니다.</b> '
-          +(hasMelody()&&P.melody!==false?'멜로디만 울립니다.':'멜로디도 꺼져 있어 <b>아무 소리도 나지 않습니다.</b>'))
-      +'</p>'
-      +'<div class="rowline"><span><b>실제 악기음</b><small>합성음 대신 실제 녹음된 악기 소리를 씁니다. 온라인일 때만 되고, 처음 나오는 음은 받는 동안만 합성음으로 대신합니다</small></span>'
-      +'<button class="btn '+(P.realInst!==false?'on':'')+'" id="realinst">'+(P.realInst!==false?'켬':'끔')+'</button></div>'
-      +(hasMelody()
-        ? '<span class="lbl">멜로디</span><div class="opts">'
-          +'<button class="btn '+(P.melody?'on':'')+'" id="mel">'+(P.melody?'켬':'끔')+'</button>'
-          +opt('minst',P.melInst,Object.keys(INSTRUMENTS).filter(k=>k!=='bass').map(k=>[k,INSTRUMENTS[k].label]))
-          +'</div>'
-          +'<span class="lbl">멜로디 높이</span><div class="opts">'
-          +opt('moct',P.melOct||0,[[-1,'한 옥타브 아래'],[0,'그대로'],[1,'한 옥타브 위']])+'</div>'
-          +'<span class="lbl">마디 맞춤</span><div class="opts">'
-          +'<button class="btn '+(P.melFit!==false?'on':'')+'" id="melfit">'
-          +(P.melFit!==false?'켬 · 마디에 강제로 맞춤':'끔 · 읽은 음가 그대로')+'</button></div>'
-        : '')
-      +(hasBassMelody()
-        ? '<div class="rowline"><span><b>낮은음자리표도 재생</b><small>오선보에 낮은음자리(베이스 보표)가 따로 있으면 그 음도 함께 울립니다. 반주 악기의 베이스음과 겹쳐 들릴 수 있어요</small></span>'
-          +'<button class="btn '+(P.playBass?'on':'')+'" id="playbass">'+(P.playBass?'켬':'끔')+'</button></div>'
-        : '')
+      ''
       /* 지금 켜진 칸은 **실제로 울리는 것**을 기준으로 표시한다(v63) — 악기를 다 끄면
          '반주 켬'이라고 적혀 있어도 반주는 안 울리므로, 그때는 '멜로디만'이 켜져 보여야 한다 */
       +'<span class="lbl">소리 구성</span><div class="opts">'
@@ -8839,6 +8885,30 @@ function openPanel(name){
       +volRow('accvol','반주 크기',P.accVol)
       +'<span class="lbl">장르</span><div class="opts">'
       +opt('genre',P.genre,Object.keys(GENRES).map(k=>[k,GENRES[k].label]))+'</div>'
+      +'<span class="lbl">악기</span><div class="opts" id="insts">'
+      +Object.keys(INSTRUMENTS).map(k=>
+        '<button class="btn '+(instList().indexOf(k)>=0?'on':'')+'" data-inst="'+k+'">'+INSTRUMENTS[k].label+'</button>').join('')
+      +'</div><p class="note" style="margin:-6px 0 14px">여러 개를 골라 함께 울릴 수 있습니다. 현악+플루트, 피아노+첼로처럼 겹쳐 보세요.<br>'
+      +(instList().length
+        ? '<b>다시 누르면 꺼집니다</b> — 전부 끄면 반주 없이 멜로디만 울립니다.'
+        : '<b style="color:var(--ribbon)">악기를 하나도 안 골랐습니다 — 반주는 쉽니다.</b> '
+          +(hasMelody()&&P.melody!==false?'멜로디만 울립니다.':'멜로디도 꺼져 있어 <b>아무 소리도 나지 않습니다.</b>'))
+      +'</p>'
+      +(hasMelody()
+        ? '<span class="lbl">멜로디</span><div class="opts">'
+          +'<button class="btn '+(P.melody?'on':'')+'" id="mel">'+(P.melody?'켬':'끔')+'</button>'
+          +opt('minst',P.melInst,Object.keys(INSTRUMENTS).filter(k=>k!=='bass').map(k=>[k,INSTRUMENTS[k].label]))
+          +'</div>'
+          +'<span class="lbl">멜로디 높이</span><div class="opts">'
+          +opt('moct',P.melOct||0,[[-1,'한 옥타브 아래'],[0,'그대로'],[1,'한 옥타브 위']])+'</div>'
+          +'<span class="lbl">마디 맞춤</span><div class="opts">'
+          +'<button class="btn '+(P.melFit!==false?'on':'')+'" id="melfit">'
+          +(P.melFit!==false?'켬 · 마디에 강제로 맞춤':'끔 · 읽은 음가 그대로')+'</button></div>'
+        : '')
+      +(hasBassMelody()
+        ? '<div class="rowline"><span><b>낮은음자리표도 재생</b><small>오선보에 낮은음자리(베이스 보표)가 따로 있으면 그 음도 함께 울립니다. 반주 악기의 베이스음과 겹쳐 들릴 수 있어요</small></span>'
+          +'<button class="btn '+(P.playBass?'on':'')+'" id="playbass">'+(P.playBass?'켬':'끔')+'</button></div>'
+        : '')
       +'<span class="lbl">반주 패턴</span><div class="opts">'
       +opt('pat',P.pattern,Object.keys(PATTERNS).map(k=>[k,PATTERNS[k].label]))+'</div>'
       +'<span class="lbl">마디당 박</span><div class="opts" id="beats">'
@@ -8851,7 +8921,9 @@ function openPanel(name){
       +'<div class="opts" style="margin-top:10px">'
       +'<button class="btn '+(P.click?'on':'')+'" id="clk">메트로놈</button>'
       +'<button class="btn '+(P.loop?'on':'')+'" id="lp">반복</button></div>'
-      +'<p class="note" style="margin-top:14px">'
+      +'<div class="rowline"><span><b>실제 악기음</b><small>합성음 대신 실제 녹음된 악기 소리를 씁니다. 온라인일 때만 되고, 처음 나오는 음은 받는 동안만 합성음으로 대신합니다</small></span>'
+      +'<button class="btn '+(P.realInst!==false?'on':'')+'" id="realinst">'+(P.realInst!==false?'켬':'끔')+'</button></div>'
+      +'<details class="help"><summary>도움말</summary><p class="note" style="margin-top:8px">'
       +(hasMelody()
         ? (()=>{const tl=buildTimeline();
             return '이 곡에는 <b>멜로디 '+tl.melNotes+'음</b>이 들어 있습니다. 각 단의 첫 코드에 맞춰 재생됩니다. '
@@ -8863,7 +8935,7 @@ function openPanel(name){
       +'반주 패턴은 코드 구성음을 어떻게 쪼개 칠지를 정합니다.<br>'
       +'<b>연주 중에 코드를 누르면 그 자리부터</b> 다시 칩니다. 진행 바를 눌러도 됩니다.<br><br>'
       +'절이 여러 개면 <b>1절을 끝까지 친 뒤 2절로 넘어갑니다.</b> 화면 가사도 따라 바뀝니다. '
-      +'<b>반복</b>을 끄면 마지막 절에서 멈추고, 켜면 처음으로 돌아갑니다.</p>';
+      +'<b>반복</b>을 끄면 마지막 절에서 멈추고, 켜면 처음으로 돌아갑니다.</p></details>';
     body.querySelectorAll('[data-inst]').forEach(b=>b.onclick=()=>{
       const k=b.dataset.inst, cur=instList().slice(), at=cur.indexOf(k);
       /* ★ 마지막 하나도 끌 수 있다(v63) — 끄기 전에 무엇이었는지 기억해 두었다가,
@@ -8933,12 +9005,16 @@ function openPanel(name){
   const edit=(name==='staff');
   $('scrim').classList.toggle('edit',edit);
   document.body.classList.toggle('editing',edit);
+  /* v87: 같은 창 안에서 단추를 누를 때마다 맨 위로 튀던 것 — 보던 자리를 지킨다 */
+  $('sheet').scrollTop=keepY; S.curPanel=name;
 }
-function closePanel(){closeCam();$('scrim').classList.remove('open');
+function closePanel(){S.curPanel=null;closeCam();$('scrim').classList.remove('open');
   $('scrim').classList.remove('edit');document.body.classList.remove('editing');}
 $('scrim').onclick=e=>{if(e.target===$('scrim'))closePanel()};
 
 /* ============ 배선 ============ */
+/* 첫 터치에 소리 장치를 깨워 두고 샘플을 받기 시작한다(v87) — 첫 재생부터 실제 악기 소리. */
+document.addEventListener('pointerdown',()=>{ if(!actx&&P.realInst!==false){ AC(); idleWarm(); } },{once:true,capture:true});
 document.querySelectorAll('nav [data-panel]').forEach(b=>b.onclick=()=>openPanel(b.dataset.panel));
 $('up').onclick=()=>{S.semis=Math.min(12,S.semis+1);renderAll()};
 $('down').onclick=()=>{S.semis=Math.max(-12,S.semis-1);renderAll()};
