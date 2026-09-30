@@ -3956,12 +3956,13 @@ function headDur(ink,vr,hr,W,c,sp,y0,y1,bot,nextX0,others,lineRow){
          실제로 있다(높은 음의 아래 기둥). 회귀 테스트가 그걸 잡았다. 그래서 굵기 추정에서만
          빼고, 빔을 셀 때는 모든 행을 그대로 쓴다.
        깨끗한 악보에서는 기둥이 2px 라 예전 문턱(0.3칸)이 그대로 이긴다 — 판정이 안 바뀐다. */
+    let sw0=0;
     {
       let nz=dbg.filter((v,i)=>v>0&&!isL[i]&&!isLedge[i]);
       if(nz.length<4)nz=dbg.filter(v=>v>0);
       nz.sort((a,b)=>a-b);
       if(nz.length>=4){
-        const sw=nz[Math.floor(nz.length*0.25)];
+        const sw=nz[Math.floor(nz.length*0.25)]; sw0=sw;
         need=Math.max(need,sw+Math.max(2,Math.round(sp*0.12)));
       }
     }
@@ -4024,11 +4025,18 @@ function headDur(ink,vr,hr,W,c,sp,y0,y1,bot,nextX0,others,lineRow){
        머리 때문에 안 지워지고 남은 토막이다 — 폭으로는 진짜 2차 빔(31~36)과 못 가른다. */
     if(got.length>1){
       let at=0; got.forEach((g2,k)=>{ if(g2.m>got[at].m)at=k; });
-      const link=sp*1.0; let lo=at, hi=at;
+      /* ★ 1칸 → 0.55칸(v86). 실측(「주의 이름 높이며」34마디 16분 B·B): 빔 두 겹 아래 0.79칸(17행)
+         떨어진 **손으로 그은 대시**가 셋째 빔으로 세어져 32분음표가 됐다. 진짜 겹 사이는 0.2~0.25칸이다.
+         `window.__OLDLINK=1` 이면 예전 값. */
+      const link=sp*(window.__OLDLINK?1.0:0.55); let lo=at, hi=at;
       while(lo>0&&got[lo].s-got[lo-1].e-1<=link)lo--;
       while(hi<got.length-1&&got[hi+1].s-got[hi].e-1<=link)hi++;
       bands=hi-lo+1;
     }else bands=got.length;
+    /* ★ 혼자뿐인 층이 기둥보다 겨우 몇 px 넓으면 꼬리가 아니다(v86). 꼬리는 기둥 옆으로 1칸 가까이
+       휘어 나간다. 실측(「주의 이름 높이며」34마디 4분음표 D5): 기둥 한가운데를 가로지른 대시가
+       폭 8(기둥 5, 문턱 7)로 꼬리 하나가 되어 8분음표로 읽혔다. `window.__OLDFLAG=1` 이면 끈다. */
+    if(!window.__OLDFLAG&&bands===1&&got.length===1&&sw0>0&&got[0].m<sw0+sp*0.3)bands=0;
     /* 디버그 고리: window.__DURDBG=[] 을 먼저 두면 기둥 옆 잉크 양이 줄줄이 담긴다.
        이 판정도 눈에 보이는 출력이 없어서, 이게 없으면 왜 꼬리를 놓쳤는지 알 수 없다. */
     if(window.__DURDBG)window.__DURDBG.push({cx:+c.cx.toFixed(0),stemX:stem.x,up:stem.up,need,minBand,gapTol,bands,sp:+sp.toFixed(1),side:dbg.slice(),isL:isL.slice(),step0,ledgerYs:ledgerYs.slice(),ya:Math.round(c.cy+(stem.up?-1:1)*sp*0.85),cy:+c.cy.toFixed(1)});
