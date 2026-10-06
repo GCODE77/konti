@@ -7501,7 +7501,12 @@ const CG_RE=new RegExp('^('+CG_ONE+')(?:('+CG_ONE+')|\\(('+CG_ONE+')\\))?$');
    문법은 한 낱말에 코드 둘까지다(실측 「내가 주인 삼은」 1단). 틈은 글자 키의 0.15배 이상, 많아야 둘을 잘라 본다.
    잘린 조각이 **전부** 코드로 읽혀야 받는다. */
 function chordGlyphRead(band,a,b){
-  const r=chordGlyphRead1(band,a,b);
+  let r=chordGlyphRead1(band,a,b);
+  /* ★ 첫 음표보다 왼쪽 조각 떼기가 진짜 으뜸음까지 뗄 때가 있다(「나 주님」류 p8 6단 첫 "Em" → m 만 남아 EM 0.62).
+     자신 없게(0.7 밑) 읽혔으면 떼지 않고 다시 읽어 더 나으면 쓴다. */
+  if(r&&r.score<0.7&&band.firstF!=null&&/^[A-G][#b]?M/.test(r.chords[0])&&!window.__NOFIRSTRETRY){   // 으뜸음이 떨어져 나가면 m 이 M(maj)으로 읽힌다 — 그때만
+    const ff=band.firstF; band.firstF=null;
+    try{ const r2=chordGlyphRead1(band,a,b); if(r2&&r2.score>=0.7&&r2.score>r.score+0.05)r=r2; }finally{ band.firstF=ff; } }
   /* ★ 통째 읽기가 겨우 붙었으면(0.7 밑) 쪼갠 읽기와 겨룬다(v91, 「주 하나님 독생자」 "A D A" → A9 A9 0.62) */
   const weak=r&&r.score<0.7&&!window.__NOWEAKSPLIT;
   if((r&&!weak)||window.__NOWORDSPLIT||b-a<8)return r;
