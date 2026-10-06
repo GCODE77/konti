@@ -989,6 +989,72 @@ A        | D
     }catch(e){ ok('첫머리 가짜 음 테스트가 오류 없이 돈다',false,String(e)); }
   }
 
+  /* ★★ 13) **코드 글자 전용 인식기** (v88, CLAUDE.md 95번). 코드 띠에서 낱말 하나를 글자 덩어리로 나눠
+     틀과 맞대고 코드 문법으로 고른다. 빗금이 붙은 "E/G#", 작은 m, 숫자, sus 를 그려서 읽힌다. */
+  {
+    try{
+      const read=(txt,font)=>{
+        const c=document.createElement('canvas'); c.width=420; c.height=110;
+        const x=c.getContext('2d'); x.fillStyle='#fff'; x.fillRect(0,0,420,110);
+        x.fillStyle='#000'; x.font=font||'bold 46px "Times New Roman",serif'; x.textBaseline='alphabetic'; x.fillText(txt,20,74);
+        const d=x.getImageData(0,0,420,110); for(let i=0;i<d.data.length;i+=4){ const v=d.data[i]<150?0:255; d.data[i]=d.data[i+1]=d.data[i+2]=v; }
+        x.putImageData(d,0,0);
+        const r=chordGlyphRead({cv:c,W:420,H:110},0,419);
+        return r?r.chords.join('+'):null;
+      };
+      for(const t of ['A','E/G#','F#m','Bm7','C#m/E','A/C#','Dm6','E7','Esus4'])
+        { const g=read(t); ok('코드 글자 "'+t+'" 를 그대로 읽는다',g===t,g); }
+      { const g=read('E/G#','bold 46px Arial,sans-serif'); ok('고딕체 "E/G#" 도 읽는다',g==='E/G#',g); }
+      { const g=read('=65'); ok('코드가 아닌 글자("=65")는 코드로 만들지 않는다',g===null,g); }
+      for(const [t,want] of [['Cb','Cb'],['/G#','/G#']])
+        { const g=read(t); ok('"'+t+'" → '+want+' (C♭ 허용 · 베이스만 적은 코드)',g===want,g); }
+      ok('없는 코드 "Dm2" 는 문법에서 뺀다',!CG_RE.test('Dm2')&&CG_RE.test('Dsus4')&&CG_RE.test('Bm7')&&CG_RE.test('Cmaj7'),'');
+      for(const [t,want] of [['C(add2)','C(add2)'],['Am7(add11)','Am7(add11)'],['E7(A7)','E7']])
+        { const g=read(t); ok('괄호 코드 "'+t+'" → '+want,g===want,g); }
+      { // 빠르기 숫자처럼 바닥선 위로 뜬 조각이 앞에 붙어 있어도 코드만 읽는다
+        const c=document.createElement('canvas'); c.width=420; c.height=110;
+        const x=c.getContext('2d'); x.fillStyle='#fff'; x.fillRect(0,0,420,110); x.fillStyle='#000';
+        x.font='bold 30px "Times New Roman",serif'; x.fillText('95',10,44);
+        x.font='bold 46px "Times New Roman",serif'; x.fillText('G/B',70,90);
+        const d=x.getImageData(0,0,420,110); for(let i=0;i<d.data.length;i+=4){ const v=d.data[i]<150?0:255; d.data[i]=d.data[i+1]=d.data[i+2]=v; } x.putImageData(d,0,0);
+        const r=chordGlyphRead({cv:c,W:420,H:110},0,419); const g=r?r.chords.join('+'):null;
+        ok('위에 뜬 숫자("95")는 버리고 "G/B" 만 읽는다',g==='G/B',g); }
+      { // v89: 한 낱말로 묶인 코드 셋은 틈에서 쪼개 읽는다(문법은 한 낱말에 둘까지)
+        const g=read('C  G/B  Am','bold 40px "Times New Roman",serif');
+        ok('촘촘한 "C G/B Am" 을 셋으로 읽는다',g==='C+G/B+Am',g);
+        window.__NOWORDSPLIT=1; const g0=read('C  G/B  Am','bold 40px "Times New Roman",serif'); window.__NOWORDSPLIT=0;
+        ok('(거짓 확인) 쪼개기를 끄면 못 읽는다',g0===null,g0); }
+    }catch(e){ ok('코드 글자 인식기 테스트가 오류 없이 돈다',false,String(e)); }
+  }
+
+  /* ★★ 14) **코드 없는 첫 조각** (v88). 인쇄 악보는 단 첫머리의 짧은 조각(곡 첫 못갖춘마디 · 앞 단에서
+     이어진 마디)에 코드를 적지 않는다 — 코드 줄이 "| C | G" 처럼 마디선으로 시작한다. 그 조각은
+     앞 화음을 이어 가는 마디여야 하고(곡 첫머리는 반주 없이), 음표가 늘어나면 안 된다. */
+  {
+    const keep={raw:S.raw,save:window.scheduleSave};
+    window.scheduleSave=()=>{};
+    try{
+      S.raw=['♪ C4:0.5 | E4:1 E4:1 E4:1 E4:1 | G4:2 G4:1.5','| C               | G','',
+             '♪ D4:0.5 | F4:4 | E4:4','| F       | C'].join('\n');
+      reparse();
+      const tl=buildTimeline();
+      const bars=tl.bars.map(b=>b.at+':'+b.beats);
+      ok('마디 칸: 못갖춘 0.5 · 4 · 3.5 · 이어진 조각 0.5 · 4 · 4',bars.join(',')==='0:0.5,0.5:4,4.5:3.5,8:0.5,8.5:4,12.5:4',bars.join(','));
+      const cs=tl.evs.filter(e=>e.type==='c').map(e=>showChord(e.chord,0,'sharp')+'@'+e.at+'/'+e.beats);
+      ok('곡 첫 못갖춘마디에는 반주가 없고, 줄바꿈 조각은 앞 화음(G)이 이어진다',cs.join(' ')==='C@0.5/4 G@4.5/4 F@8.5/4 C@12.5/4',cs.join(' '));
+      const ms=tl.evs.filter(e=>e.type==='m').map(e=>e.at+'/'+e.beats);
+      ok('음표는 늘어나지 않는다(줄바꿈 조각 D4 는 8박에서 0.5박)',ms.includes('8/0.5')&&ms.includes('6.5/1.5')&&ms.includes('0/0.5'),ms.join(' '));
+      let N=0,pm=null; for(const b of blocks){ if(b.k==='mel'){pm=b;continue;} if(b.k==='pairs'){ N+=measuresOfBlock(pm,b).N; pm=null; } }
+      ok('화면 마디 수 = 인쇄본(조각 포함 6)',N===6,N);
+      S.raw='| G | C | D | G'; reparse();
+      ok('멜로디 없는 손 차트 "| G | C …" 는 그대로 4마디',buildTimeline().bars.length===4,buildTimeline().bars.length);
+      window.__NOHOLD=1; S.raw=['♪ C4:0.5 | E4:1 E4:1 E4:1 E4:1 | G4:2 G4:1.5','| C               | G'].join('\n'); reparse();
+      const old=buildTimeline().bars.map(b=>b.at+':'+b.beats).join(',');
+      ok('(거짓 확인) 이어 가기를 끄면 칸이 달라진다',old!=='0:0.5,0.5:4,4.5:3.5',old);
+    }catch(e){ ok('코드 없는 첫 조각 테스트가 오류 없이 돈다',false,String(e)); }
+    finally{ window.__NOHOLD=0; S.raw=keep.raw; reparse(); window.scheduleSave=keep.save; }
+  }
+
   _restore();
   console.table(T.map(t=>({검사:t.name,결과:t.cond?'통과':'실패'})));
   console.log((fail?'✗ ':'✓ ')+'score: '+pass+' 통과 / '+fail+' 실패');
