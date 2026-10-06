@@ -7958,6 +7958,15 @@ function cgBoth(band,a,b){
   if(L){ window.__cgLearn=L; L.push(...((pick===2?lB:lA)||[])); }
   return pick===2?r2:r1;
 }
+/* ★ 이 곡이 아래첨자 "2"(C₂·D₂) 를 쓰면(읽힌 X2 가 셋 이상) 자신 없는 낱말의 뭉개진 첨자(b·#·4·5·9)는 2 로 본다(v92, 복사본 p3).
+   으뜸음 임시표를 자신 있게 읽은 글자(CG_ACC 두 번 이상)는 건드리지 않는다. */
+function cgSub2Consensus(pre){
+  if(window.__NOSUB2)return; let n2=0;
+  for(const p of pre)if(p.toks)for(const tk of p.toks)
+    if(tk.cg&&tk.cg.chords.length===1&&tk.cg.score>=0.65&&/^[A-G][#b]?2$/.test(tk.cg.chords[0]))n2++;
+  if(n2>=3)for(const p of pre)if(p.toks)for(const tk of p.toks){ const c=tk.cg; if(!c||c.chords.length!==1||c.score>=0.9)continue;
+    const m=/^([A-G])(b|#|#4|4|5|9)$/.exec(c.chords[0]); if(m&&!((CG_ACC[m[1]+m[2][0]]||0)>=2))c.chords=[m[1]+'2']; }
+}
 function cgSecond(tk){
   const r=cgBoth(tk.band,tk.a,tk.b), r1=tk.cg;
   if(tk.left&&!(r&&r.score>=0.7))return r1;
@@ -8067,6 +8076,7 @@ async function ocrDraft(photoUrls,say){
         CG_PAGE=learned.map(t=>({ch:t.ch,g:t.g,ar:t.ar}));
         CG_ACCP=window.__NOACCP?null:CG_ACC;
         for(const p of pre)if(p.toks)for(const tk of p.toks)try{ tk.cg=cgSecond(tk); }catch(e){}
+        cgSub2Consensus(pre);
       }
       CG_PAGE=[]; CG_ACCP=null; }
     for(let j=0;j<shots.length;j++){
