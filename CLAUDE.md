@@ -1,6 +1,6 @@
 # 콘티 — 교회 찬양팀 악보 앱
 
-**현재 상태:** `index.html` 하나. v91. `https://gcode77.github.io/konti/` 에 배포됨.
+**현재 상태:** `index.html` 하나. v98 (악보 연주·건반 연주·튜너·메트로놈 4기능, 104~112번). `https://gcode77.github.io/konti/` 에 배포됨.
 **데스크톱판(v78):** `desktop/` — 인터넷 없이 도는 윈도 실행 파일(`KontiSetup.exe`). 아래 83번 항목.
 **저장소:** `github.com/GCODE77/konti` (public), 브랜치 `main`, 파일명 반드시 `index.html`.
 
