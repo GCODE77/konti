@@ -10709,12 +10709,12 @@ function tnNames2(m){ m=Math.round(m); const o=Math.floor(m/12)-1; return {kr:TN
 function yinPitch(buf,sr){
   const N=buf.length, half=N>>1, tauMax=Math.min(half-1,Math.floor(sr/38)), tauMin=Math.max(2,Math.floor(sr/2200));
   let rms=0; for(let i=0;i<N;i++)rms+=buf[i]*buf[i]; rms=Math.sqrt(rms/N);
-  if(rms<.006)return {rms,f:null};
+  if(rms<.0012)return {rms,f:null};              // 폰 마이크는 조용하다 — 게인을 자동으로 올려 받으므로 문턱을 낮게 둔다
   const d=new Float32Array(tauMax+1); d[0]=1; let run=0;
   for(let tau=1;tau<=tauMax;tau++){ let s=0; for(let i=0;i<half;i++){ const x=buf[i]-buf[i+tau]; s+=x*x; } run+=s; d[tau]=run>0?s*tau/run:1; }
   let tau=-1;
-  for(let t=tauMin;t<=tauMax;t++){ if(d[t]<.14){ while(t+1<=tauMax&&d[t+1]<d[t])t++; tau=t; break; } }
-  if(tau<0){ let m=tauMin; for(let t=tauMin;t<=tauMax;t++)if(d[t]<d[m])m=t; if(d[m]<.22)tau=m; }
+  for(let t=tauMin;t<=tauMax;t++){ if(d[t]<.2){ while(t+1<=tauMax&&d[t+1]<d[t])t++; tau=t; break; } }
+  if(tau<0){ let m=tauMin; for(let t=tauMin;t<=tauMax;t++)if(d[t]<d[m])m=t; if(d[m]<.38)tau=m; }
   if(tau<0)return {rms,f:null};
   const a=d[tau-1]===undefined?d[tau]:d[tau-1], c=d[tau+1]===undefined?d[tau]:d[tau+1], den=a+c-2*d[tau];
   const sh=den!==0?(a-c)/(2*den):0, t2=tau+Math.max(-1,Math.min(1,sh));
@@ -10774,10 +10774,10 @@ async function tnStart(){
   /* 소리 장치는 **누른 직후(제스처 안)** 에 만들고 깨운다 — 마이크 허락창을 거친 뒤에 만들면 폰에서 멈춘 채로 시작한다 */
   const A=window.AudioContext||window.webkitAudioContext; const ctx0=new A(); try{ ctx0.resume(); }catch(e){}
   try{
-    TN.stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+    TN.stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:true}});
   }catch(e){ try{ctx0.close();}catch(_){} $('tnsub').textContent='마이크를 쓸 수 없어요 — 주소창의 권한(자물쇠)에서 마이크를 허용해 주세요.'; toast('마이크 권한이 필요해요'); return; }
   TN.ctx=ctx0; if(TN.ctx.state==='suspended')TN.ctx.resume();
-  TN.src=TN.ctx.createMediaStreamSource(TN.stream); TN.an=TN.ctx.createAnalyser(); TN.an.fftSize=4096; TN.an.smoothingTimeConstant=0;
+  TN.src=TN.ctx.createMediaStreamSource(TN.stream); TN.an=TN.ctx.createAnalyser(); TN.an.fftSize=8192; TN.an.smoothingTimeConstant=0;
   TN.src.connect(TN.an); TN.buf=new Float32Array(TN.an.fftSize); TN.on=true; TN.hist=[]; TN.trace=[];
   const b=$('tnmic'); b.textContent='■ 정지'; b.classList.add('live'); $('tnsub').textContent='소리를 내 보세요 (악기를 한 음씩 길게)';
   TN.timer=setInterval(tnTick,50);
@@ -10794,16 +10794,19 @@ function tnTick(){
   if(!TN.on||!TN.an)return;
   if(TN.ctx.state==='suspended'){ TN.ctx.resume(); return; }
   TN.an.getFloatTimeDomainData(TN.buf);
-  const r=yinPitch(TN.buf,TN.ctx.sampleRate), now=performance.now();
+  /* 최근 4096 샘플로 재고, 아주 낮은 음(75Hz 아래 — 베이스·기타 6번줄)은 8192 샘플로 다시 재서 정확도를 올린다 */
+  let r=yinPitch(TN.buf.subarray(TN.buf.length-4096),TN.ctx.sampleRate); const now=performance.now();
+  if(r.f&&r.f<75)r=yinPitch(TN.buf,TN.ctx.sampleRate);
   $('tnlevelbar').style.width=Math.min(100,(r.rms||0)*600)+'%';
   if(TN.playing){ return; }                         // 목표음을 들려 주는 동안은 듣지 않는다(스피커 소리를 주워 담는다)
   let m=null;
-  if(r.f&&r.prob>.8&&r.f>35&&r.f<2400){
+  if(r.f&&r.prob>.55&&r.f>35&&r.f<2400){
     TN.hist.push(tnMidi(r.f)); if(TN.hist.length>5)TN.hist.shift();
     const s=TN.hist.slice().sort((a,b)=>a-b), med=s[s.length>>1];
-    const agree=TN.hist.filter(x=>Math.abs(x-med)<.7).length;
-    if(TN.hist.length>=3&&agree>=Math.min(3,TN.hist.length))m=med;       // 튀는 한 번(배음·잡음)은 버린다
+    const agree=TN.hist.filter(x=>Math.abs(x-med)<.9).length;
+    if(TN.hist.length>=2&&agree>=Math.min(2,TN.hist.length)){ m=med; TN.heard=now; }       // 튀는 한 번(배음·잡음)은 버린다 — 실제 악기는 흔들리므로 2번 일치면 받는다
   }else{ TN.hist=TN.hist.slice(-2); }
+  TN.rmsNow=r.rms||0; TN.rmsMax=Math.max((TN.rmsMax||0)*.97,r.rms||0);
   tnRender(m,now);
 }
 function tnRender(m,now){
@@ -10811,7 +10814,8 @@ function tnRender(m,now){
   TN.trace.push({t:now,m}); while(TN.trace.length&&now-TN.trace[0].t>6000)TN.trace.shift();
   if(m==null){
     nd.classList.remove('on','ok'); if(TN.holdUntil&&now<TN.holdUntil){ tnGraph(now); return; }
-    st.className=''; st.textContent=TN.last==null?'–':'소리를 기다리는 중…'; if(tnIsGuitar(TN.pre))tnGuitarDet(-1,false); tnGraph(now); return; }
+    st.className=''; st.textContent=TN.last==null?'–':'소리를 기다리는 중…';
+    { const q=TN.rmsNow||0, mute=q<.0025; if(TN.on&&(!TN.holdUntil||now>TN.holdUntil+900))$('tnsub').textContent=mute?'소리가 안 들려요 — 마이크 가까이에서 한 음씩 길게 내 보세요':(q<.01?'소리가 작아요 — 조금 더 크게, 마이크에 가까이':'음을 못 잡았어요 — 한 줄(한 음)씩 또렷하게, 주변 소리를 줄여 보세요'); } if(tnIsGuitar(TN.pre))tnGuitarDet(-1,false); tnGraph(now); return; }
   // 목표: 직접 고른 음 > 프리셋에서 가장 가까운 줄 > 가장 가까운 반음
   let tgt=TN.target; const pre=(TN_PRE[TN.pre]||[0,[]])[1];
   if(tgt==null&&pre.length){ tgt=pre.reduce((a,b)=>Math.abs(b-m)<Math.abs(a-m)?b:a); }
