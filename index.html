@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ko" data-theme="dark">
+<html class="hm" lang="ko" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
@@ -316,7 +316,9 @@ body.focus #focusout{display:block}
 @media (prefers-reduced-motion:reduce){.spin{animation:none}}
 
 /* ===== 첫 화면 · 건반 연주 ===== */
-#home{position:fixed;inset:0;z-index:80;background:var(--ink);display:flex;align-items:center;justify-content:center;padding:calc(18px + env(safe-area-inset-top)) 18px calc(18px + env(safe-area-inset-bottom));overflow:auto}
+html.hm,html.hm body{overflow:hidden;height:100%;overscroll-behavior:none}
+html.hm body>:not(#home):not(#kb):not(#toast):not(#errbar):not(script):not(style){display:none!important}
+#home{position:fixed;inset:0;height:100vh;height:100dvh;overscroll-behavior:none;touch-action:none;z-index:80;background:var(--ink);display:flex;align-items:center;justify-content:center;padding:calc(18px + env(safe-area-inset-top)) 18px calc(18px + env(safe-area-inset-bottom));overflow:hidden}
 #home[hidden],#kb[hidden]{display:none}
 #home .hbox{width:min(760px,100%);text-align:center}
 #home .hlogo{font-size:34px;font-weight:800;letter-spacing:.02em;color:var(--brass)}
@@ -330,34 +332,61 @@ body.focus #focusout{display:block}
 .hcard small{color:var(--dim);font-size:13.5px;line-height:1.45}
 @media (max-width:520px){#home .hcards{grid-template-columns:1fr}.hcard{min-height:150px;flex-direction:row;gap:16px;text-align:left;justify-content:flex-start;padding:16px 20px}.hcard .hi{font-size:48px}.hcard>span:last-child{display:flex;flex-direction:column;gap:4px}}
 @media (orientation:landscape) and (max-height:520px){#home .hcards{grid-template-columns:1fr 1fr}.hcard{min-height:150px;flex-direction:column;text-align:center}#home p{margin-bottom:12px}}
-#kb{position:fixed;inset:0;z-index:70;background:var(--ink);display:flex;flex-direction:column;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);user-select:none;-webkit-user-select:none;touch-action:none}
-#kb .kbtop,#kb .kbbar{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--line)}
-#kb .kbbar{flex-wrap:wrap}
-#kbinst{display:flex;gap:6px;overflow-x:auto;flex:1;touch-action:pan-x;padding-bottom:2px}
-#kbinst .btn{white-space:nowrap;flex:none}
-#kb .kbbar .lab{color:var(--dim);font-size:13px}
-#kb .kbbar input[type=range]{width:110px}
-#kbkeys{position:relative;flex:1;min-height:150px;margin:8px 10px 6px;border-radius:10px;overflow:hidden;touch-action:none}
+#kb{position:fixed;inset:0;height:100vh;height:100dvh;z-index:70;background:var(--ink);display:flex;flex-direction:column;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);user-select:none;-webkit-user-select:none;touch-action:none;overscroll-behavior:none}
+/* 건반 돌리기: 폰이 세로여도 화면을 시계/반시계로 눕힌다(자동 회전을 꺼 둔 폰·고정된 폰용) */
+#kb.rot1{inset:auto;top:0;left:100vw;width:100vh;width:100dvh;height:100vw;transform-origin:0 0;transform:rotate(90deg)}
+#kb.rot2{inset:auto;top:100vh;top:100dvh;left:0;width:100vh;width:100dvh;height:100vw;transform-origin:0 0;transform:rotate(-90deg)}
+#kb .kbrow{display:flex;align-items:center;gap:7px;padding:6px 10px;border-bottom:1px solid var(--line);flex:none}
+#kb .kbopt{overflow-x:auto;touch-action:pan-x;scrollbar-width:none}
+#kb .kbopt::-webkit-scrollbar{display:none}
+#kb .kbact{flex-wrap:wrap}
+#kb .btn{white-space:nowrap;flex:none;min-height:40px}
+#kb .btn.sq{min-width:40px;padding-left:0;padding-right:0;text-align:center}
+#kb .grow{flex:1}
+#kb .sep{width:1px;align-self:stretch;background:var(--line);margin:2px 2px}
+#kb .lab{color:var(--dim);font-size:13px;white-space:nowrap;flex:none}
+#kb b{white-space:nowrap}
+#kb .kbinstbtn{background:var(--brass);color:#10161E;border-color:var(--brass);font-weight:700}
+#kb .btn.rec{background:var(--ribbon);color:#fff;border-color:var(--ribbon);font-weight:700}
+#kb .btn.rec.live{animation:kbpulse 1.1s infinite}
+#kb .btn.cta{background:var(--mint);color:#10161E;border-color:var(--mint);font-weight:700}
+#kb .btn:disabled{opacity:.38}
+@keyframes kbpulse{50%{opacity:.65}}
+#kb input[type=range]{width:100px;flex:none}
+#kbbpm{width:64px;background:var(--raise);color:var(--paper);border:1px solid var(--line);border-radius:10px;padding:8px;font-size:15px;flex:none}
+#kbpat{background:var(--raise);color:var(--paper);border:1px solid var(--line);border-radius:10px;padding:9px 6px;font-size:14px;font-family:inherit;flex:none}
+#kbstaff{overflow-x:auto;overflow-y:hidden;border-bottom:1px solid var(--line);background:var(--raise);touch-action:pan-x;flex:none;max-height:220px;scrollbar-width:thin}
+#kbstaff:empty,#kbstaff[hidden]{display:none}
+#kbmap{position:relative;height:30px;flex:none;margin:6px 10px 0;border-radius:8px;background:#F7F4EC;overflow:hidden;touch-action:none;cursor:ew-resize}
+#kbmap svg{position:absolute;inset:0;width:100%;height:100%}
+#kbmapwin{position:absolute;top:0;bottom:0;border:2px solid var(--ribbon);background:rgba(163,46,62,.22);border-radius:6px}
+#kbkeys{position:relative;flex:1;min-height:130px;margin:6px 10px 6px;border-radius:10px;overflow:hidden;touch-action:none}
+#kbroll{position:absolute;top:0;bottom:0;left:0}
 #kbkeys .wk{position:absolute;top:0;bottom:0;background:#F7F4EC;border:1px solid #9a948a;border-top:0;border-radius:0 0 8px 8px;display:flex;align-items:flex-end;justify-content:center;padding-bottom:10px;color:#4a4740;font-size:13px;font-weight:600}
 #kbkeys .wk.on{background:var(--brass);color:#10161E}
-#kbkeys .bk{position:absolute;top:0;height:62%;background:#1a1d22;border:1px solid #000;border-top:0;border-radius:0 0 6px 6px;z-index:2;display:flex;align-items:flex-end;justify-content:center;padding-bottom:7px;color:#bfc6cf;font-size:11px}
-#kbkeys .bk.on{background:var(--ribbon);color:#fff}
+#kbkeys .bk{position:absolute;top:0;height:62%;background:#1a1d22;border:1px solid #000;border-top:0;border-radius:0 0 6px 6px;z-index:2}
+#kbkeys .bk.on{background:var(--ribbon)}
 #kbkeys.pads{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;overflow:auto}
+#kbkeys.pads #kbroll{display:none}
 #kbkeys .pad{border-radius:16px;border:2px solid var(--line);background:var(--raise);color:var(--paper);display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:700;text-align:center;min-height:70px}
 #kbkeys .pad.on{background:var(--brass);color:#10161E;border-color:var(--brass);transform:scale(.97)}
-@media (orientation:portrait){#kbkeys.pads{grid-template-columns:repeat(3,1fr)}}
-#kbhint{color:var(--dim);font-size:12.5px;padding:0 12px 8px;text-align:center}
-@media (orientation:landscape) and (max-height:520px){#kbhint{display:none}#kb .kbtop,#kb .kbbar{padding:5px 8px}#kbkeys{margin:5px 8px}}
-#kbstaff{overflow-x:auto;overflow-y:hidden;border-bottom:1px solid var(--line);background:var(--raise);touch-action:pan-x;flex:none;max-height:236px}
-#kbstaff[hidden]{display:none}
-#kbrec.rec{background:var(--ribbon);color:#fff;border-color:var(--ribbon);animation:kbpulse 1.1s infinite}
-@keyframes kbpulse{50%{opacity:.7}}
-#kbpat{background:var(--raise);color:var(--paper);border:1px solid var(--line);border-radius:10px;padding:9px 8px;font-size:14px;font-family:inherit}
-#kbbpm{width:64px;background:var(--raise);color:var(--paper);border:1px solid var(--line);border-radius:10px;padding:8px;font-size:15px}
-.btn:disabled{opacity:.4}
-@media (orientation:landscape) and (max-height:520px){#kbstaff{max-height:170px}}
-@media (max-height:560px){#kb .kbbar{flex-wrap:nowrap;overflow-x:auto;gap:6px;padding:4px 8px}#kb .kbbar .btn{padding:6px 10px;font-size:13px;white-space:nowrap;flex:none}#kb .kbtop .btn{padding:6px 10px;font-size:13px}#kbstaff{max-height:132px}#kbkeys{min-height:96px}#kb .kbbar .lab,#kb .kbbar b{white-space:nowrap;flex:none}#kbhint{display:none}}
-@media (min-height:561px){#kbstaff{max-height:210px}}
+#kb.pads #kbmap,#kb.pads .kbnotes{display:none}
+#kb.portrait #kbkeys.pads{grid-template-columns:repeat(3,1fr)}
+#kbhint{color:var(--dim);font-size:12.5px;padding:0 12px 8px;text-align:center;flex:none}
+#kb.short #kbhint{display:none}
+#kb.short .kbrow{padding:4px 8px;gap:5px}
+#kb.short .btn{min-height:34px;padding:5px 10px;font-size:13px}
+#kb.short .kbact{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+#kb.short #kbstaff{max-height:122px}
+#kb.short #kbmap{height:22px;margin-top:4px}
+#kb.short #kbkeys{min-height:84px;margin:4px 8px}
+#kbpop{position:absolute;inset:0;z-index:20;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:12px;touch-action:auto}
+#kbpop[hidden]{display:none}
+.kbpopcard{width:min(640px,100%);max-height:100%;overflow:auto;background:var(--raise);border:1px solid var(--line);border-radius:18px;padding:14px}
+.kbpophead{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;font-size:17px}
+.kbgrp{margin:10px 0 4px;color:var(--dim);font-size:13px;font-weight:700}
+.kbgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:8px}
+.kbgrid .btn{min-height:48px;font-size:15px}
 </style>
 </head>
 <body>
@@ -414,29 +443,40 @@ body.focus #focusout{display:block}
   </div>
 </div>
 <div id="kb" hidden>
-  <div class="kbtop"><button class="btn" id="kbhome" type="button">⌂ 처음</button><div id="kbinst" role="group" aria-label="악기 선택"></div></div>
-  <div class="kbbar">
-    <span class="lab">옥타브</span><button class="btn" id="kboctd" type="button" aria-label="옥타브 내리기">−</button><b id="kboct">C4</b><button class="btn" id="kboctu" type="button" aria-label="옥타브 올리기">+</button>
-    <button class="btn" id="kbnames" type="button">도레미</button>
-    <button class="btn" id="kbsus" type="button" aria-pressed="false">서스테인</button>
-    <span class="lab">음량</span><input id="kbvol" type="range" min="10" max="100" value="80" aria-label="음량">
-    <button class="btn" id="kbfs" type="button">전체화면·가로</button>
+  <div class="kbrow kbtop">
+    <button class="btn" id="kbhome" type="button">⌂ 처음</button>
+    <button class="btn kbinstbtn" id="kbinstbtn" type="button" aria-haspopup="dialog">악기: <b id="kbinstname">피아노</b> ▾</button>
+    <button class="btn sq" id="kbprev" type="button" aria-label="이전 악기">◀</button><button class="btn sq" id="kbnext" type="button" aria-label="다음 악기">▶</button>
+    <span class="grow"></span>
+    <button class="btn" id="kbrot" type="button" title="폰을 돌리지 않고도 건반을 가로로 눕힙니다">⟲ 건반 돌리기</button>
+    <button class="btn sq" id="kbfs" type="button" aria-label="전체화면">⛶</button>
   </div>
-  <div class="kbbar kbrecbar">
-    <button class="btn" id="kbrec" type="button">● 녹음</button>
+  <div class="kbrow kbact">
+    <button class="btn rec" id="kbrec" type="button">● 녹음</button>
     <button class="btn" id="kbplay" type="button" disabled>▶ 듣기</button>
     <button class="btn" id="kbclr" type="button" disabled>지우기</button>
     <span class="lab" id="kbrecinfo">녹음 없음</span>
-    <span class="lab">BPM</span><input id="kbbpm" type="number" min="30" max="300" value="90" inputmode="numeric" aria-label="녹음 빠르기">
-    <button class="btn on" id="kbmetro" type="button">메트로놈</button>
+    <span class="sep"></span>
     <select id="kbpat" aria-label="드럼 비트 고르기"></select><button class="btn" id="kbbeat" type="button">▶ 비트</button>
-    <button class="btn" id="kbstf" type="button" title="건반을 누르면 악보에 바로 적힙니다">악보 기입</button>
-    <button class="btn" id="kbsend" type="button" disabled>악보로 보내기</button>
+    <span class="lab">BPM</span><input id="kbbpm" type="number" min="30" max="300" value="90" inputmode="numeric" aria-label="빠르기 BPM">
+    <span class="grow"></span>
+    <button class="btn cta" id="kbsend" type="button" disabled>악보로 보내기 →</button>
+  </div>
+  <div class="kbrow kbopt">
+    <button class="btn on" id="kbstf" type="button" aria-pressed="true">악보 보기</button>
+    <button class="btn on" id="kbmetro" type="button">메트로놈</button>
+    <button class="btn" id="kbsus" type="button" aria-pressed="false">서스테인</button>
+    <button class="btn" id="kbnames" type="button">도레미</button>
+    <span class="lab">옥타브</span><button class="btn sq" id="kboctd" type="button" aria-label="옥타브 내리기">−</button><b id="kboct">C4</b><button class="btn sq" id="kboctu" type="button" aria-label="옥타브 올리기">+</button>
+    <span class="lab">건반 크기</span><button class="btn sq" id="kbzoomd" type="button" aria-label="건반 좁게">−</button><button class="btn sq" id="kbzoomu" type="button" aria-label="건반 넓게">+</button>
+    <span class="lab">음량</span><input id="kbvol" type="range" min="10" max="100" value="80" aria-label="음량">
     <button class="btn" id="kbmidi" type="button" disabled>MIDI 저장</button>
   </div>
-  <div id="kbstaff" hidden aria-label="연주한 음이 적히는 악보"></div>
-  <div id="kbkeys"></div>
-  <div id="kbhint">화면을 가로로 돌리면 건반이 더 넓어져요 · 손가락을 옆으로 밀면 이어서 칠 수 있어요</div>
+  <div id="kbstaff" aria-label="연주한 음이 적히는 악보"></div>
+  <div id="kbmap" aria-label="전체 건반 — 밀어서 이동"><div id="kbmapwin"></div></div>
+  <div id="kbkeys"><div id="kbroll"></div></div>
+  <div id="kbhint">건반을 누르면 위 악보에 바로 적혀요 · 위 작은 막대를 밀면 더 많은 건반 · 「건반 돌리기」로 가로로 눕혀 보세요</div>
+  <div id="kbpop" hidden role="dialog" aria-label="악기 고르기"><div class="kbpopcard"><div class="kbpophead"><b>악기 고르기</b><button class="btn sq" id="kbpopx" type="button" aria-label="닫기">✕</button></div><div id="kbpopbody"></div></div></div>
 </div>
 <div id="toast" role="status"></div>
 <button id="workbar" type="button" role="status"></button>
@@ -10090,40 +10130,84 @@ function kbUp(pid){
 }
 function kbUnsustain(){ KB.heldSus.forEach(kbRelease); KB.heldSus=[]; }
 function kbAllOff(){ for(const pid of [...KB.ptr.keys()])kbUp(pid); kbUnsustain(); KB.notes.forEach(kbRelease); KB.notes.clear(); }
+/* ---- 건반 화면 (v95: 가로로 길게 이어진 건반 + 미니맵 + 악기 팝업 + 건반 돌리기) ---- */
+const KB_WH=[]; for(let m=21;m<=108;m++)if(![1,3,6,8,10].includes(m%12))KB_WH.push(m);        // 흰 건반 52개 (A0~C8)
+const KB_GROUPS=[['건반·타악',['piano','ep','organ','vibes','marimba','harp']],['현악',['violin','strings','cello','guitar','bass']],
+  ['관악',['brass','trombone','clarinet','sax','oboe','flute']],['목소리·패드',['choir','pad']],['리듬',['drums']]];
+KB.zoom=1; KB.rot=0; KB.left=60;                      // KB.left = 맨 왼쪽에 보이는 음(기본 가운데 도)
+const kbEff=()=>{ const r=KB.rot?{w:innerHeight,h:innerWidth}:{w:innerWidth,h:innerHeight}; return r; };
+function kbLayout(){
+  const e=kbEff(), kb=$('kb'), land=e.w>e.h;
+  kb.classList.toggle('rot1',KB.rot===1); kb.classList.toggle('rot2',KB.rot===2);
+  kb.classList.toggle('short',e.h<=560); kb.classList.toggle('portrait',!land); kb.classList.toggle('pads',KB.inst==='drums');
+}
+const kbKW=()=>Math.round((kbEff().w>kbEff().h?58:46)*KB.zoom);
+const kbWhiteIdx=m=>{ let i=0; while(i<KB_WH.length-1&&KB_WH[i]<m)i++; return i; };
 function kbBuild(){
-  const wrap=$('kbkeys'); wrap.innerHTML=''; wrap.classList.toggle('pads',KB.inst==='drums');
-  $('kboct').textContent=KB.inst==='drums'?'—':'C'+KB.oct;
-  ['kboctd','kboctu','kbnames','kbsus'].forEach(i=>{ $(i).style.display=KB.inst==='drums'?'none':''; });
+  kbLayout();
+  const wrap=$('kbkeys'), roll=$('kbroll');
+  wrap.classList.toggle('pads',KB.inst==='drums');
+  wrap.querySelectorAll('.pad').forEach(e=>e.remove());
+  ['kboctd','kboctu','kbnames','kbsus','kbzoomd','kbzoomu'].forEach(i=>{ $(i).style.display=KB.inst==='drums'?'none':''; });
   if(KB.inst==='drums'){
-    wrap.innerHTML=KB_PADS.map(p=>'<div class="pad" data-pad="'+p[0]+'">'+p[1]+'</div>').join(''); return; }
-  const land=innerWidth>innerHeight, w=wrap.clientWidth||innerWidth, n=Math.max(8,Math.min(29,Math.round(w/(land?60:40))));
-  const start=12*(KB.oct+1), ww=100/n; let wi=0, html='';
+    roll.innerHTML=''; wrap.insertAdjacentHTML('beforeend',KB_PADS.map(p=>'<div class="pad" data-pad="'+p[0]+'">'+p[1]+'</div>').join('')); return; }
+  const KW=kbKW(), BW=Math.round(KW*.62);
   const lab=m=>{ const pc=m%12; if(KB.nameMode===2)return ''; const nm=(KB.nameMode===0?KB_DO:KB_ABC)[pc]; return pc===0?nm+(Math.floor(m/12)-1):nm; };
-  for(let m=start;wi<n;m++){
+  let html='', x=0;
+  for(let m=21;m<=108;m++){
     const pc=m%12;
-    if([1,3,6,8,10].includes(pc)){ html+='<div class="bk" data-m="'+m+'" style="left:'+(wi*ww-ww*.3)+'%;width:'+(ww*.6)+'%"></div>'; continue; }
-    html+='<div class="wk" data-m="'+m+'" style="left:'+(wi*ww)+'%;width:'+ww+'%">'+lab(m)+'</div>'; wi++;
+    if([1,3,6,8,10].includes(pc)){ html+='<div class="bk" data-m="'+m+'" style="left:'+(x-BW/2)+'px;width:'+BW+'px"></div>'; continue; }
+    html+='<div class="wk" data-m="'+m+'" style="left:'+x+'px;width:'+KW+'px">'+lab(m)+'</div>'; x+=KW;
   }
-  wrap.innerHTML=html;
-  /* 미리 받아 두기 — 누르는 순간 실제 악기 소리가 나도록 */
-  const f=SAMPLE_MAP[KB.inst];
-  if(f&&P.realInst!==false){ const I=INSTRUMENTS[KB.inst];
-    wrap.querySelectorAll('[data-m]').forEach(e=>{ const m=+e.dataset.m+(I.oct||0)*12; if(m>=21&&m<=108)warmSample(f,mod(m),Math.floor(m/12)-1); }); }
+  roll.style.width=x+'px'; roll.innerHTML=html; KB.rollW=x;
+  // 미니맵: 전체 건반을 얇게 그려 두고, 지금 보이는 구간을 빨간 창으로 보여 준다
+  const n=KB_WH.length; let ms='<svg viewBox="0 0 '+n+' 10" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">', wi=0;
+  for(let m=21;m<=108;m++){ const pc=m%12; if([1,3,6,8,10].includes(pc))ms+='<rect x="'+(wi-.3)+'" y="0" width=".6" height="6" fill="#1a1d22"/>'; else{ ms+='<rect x="'+wi+'" y="0" width=".04" height="10" fill="#9a948a"/>'; if(pc===0)ms+='<text x="'+(wi+.1)+'" y="9.6" font-size="2.6" fill="#4a4740">C'+(Math.floor(m/12)-1)+'</text>'; wi++; } }
+  $('kbmap').querySelector('svg')&&$('kbmap').querySelector('svg').remove(); $('kbmap').insertAdjacentHTML('afterbegin',ms+'</svg>');
+  kbScrollTo(KB.left,true);
+}
+function kbScrollTo(midi,instant){
+  const wrap=$('kbkeys'), KW=kbKW(); KB.left=midi;
+  const max=Math.max(0,(KB.rollW||0)-wrap.clientWidth);
+  wrap.scrollLeft=Math.max(0,Math.min(max,kbWhiteIdx(midi)*KW)); kbOnScroll();
+}
+function kbOnScroll(){
+  const wrap=$('kbkeys'), roll=KB.rollW||1, KW=kbKW();
+  const i=Math.round(wrap.scrollLeft/KW), m=KB_WH[Math.min(KB_WH.length-1,i)]; KB.left=m;
+  let c=m; while(c%12!==0&&c<108)c++; KB.oct=Math.floor(c/12)-1; $('kboct').textContent='C'+KB.oct;
+  const w=$('kbmapwin'); w.style.left=(wrap.scrollLeft/roll*100)+'%'; w.style.width=Math.min(100,wrap.clientWidth/roll*100)+'%';
+  clearTimeout(KB.warmT); KB.warmT=setTimeout(kbWarmVisible,160);
+}
+/* 보이는 구간 + 양옆 한 옥타브의 실제 악기 소리를 미리 받아 둔다 */
+function kbWarmVisible(){
+  const f=SAMPLE_MAP[KB.inst]; if(!f||P.realInst===false||KB.inst==='drums')return;
+  const I=INSTRUMENTS[KB.inst], wrap=$('kbkeys'), KW=kbKW();
+  const a=Math.max(0,Math.floor(wrap.scrollLeft/KW)-7), b=Math.min(KB_WH.length-1,Math.ceil((wrap.scrollLeft+wrap.clientWidth)/KW)+7);
+  for(let k=a;k<=b;k++)for(const d of [0,1]){ const m=KB_WH[k]+d, mm=m+(I.oct||0)*12; if(m<=108&&mm>=21&&mm<=108)warmSample(f,mod(mm),Math.floor(mm/12)-1); }
 }
 function kbPick(x,y){ const e=document.elementFromPoint(x,y); return e&&e.closest?e.closest('#kbkeys [data-m],#kbkeys [data-pad]'):null; }
-function kbVel(el,y){ const r=el.getBoundingClientRect(); return .5+.5*Math.max(0,Math.min(1,(y-r.top)/Math.max(1,r.height))); }
+function kbVel(el,ev){          // 건반의 아래쪽을 누를수록 세게(돌려 놓은 화면에서는 가로 위치로 잰다)
+  const r=el.getBoundingClientRect(); let f;
+  if(KB.rot===1)f=(r.right-ev.clientX)/Math.max(1,r.width);
+  else if(KB.rot===2)f=(ev.clientX-r.left)/Math.max(1,r.width);
+  else f=(ev.clientY-r.top)/Math.max(1,r.height);
+  return .5+.5*Math.max(0,Math.min(1,f));
+}
+const kbInstLabel=k=>(KB_INSTS.find(i=>i[0]===k)||[0,k])[1];
 function kbRenderInst(){
-  $('kbinst').innerHTML=KB_INSTS.map(i=>'<button class="btn'+(i[0]===KB.inst?' on':'')+'" data-i="'+i[0]+'" type="button">'+i[1]+'</button>').join('');
+  $('kbinstname').textContent=kbInstLabel(KB.inst);
+  $('kbpopbody').innerHTML=KB_GROUPS.map(g=>'<div class="kbgrp">'+g[0]+'</div><div class="kbgrid">'+g[1].map(k=>
+    '<button class="btn'+(k===KB.inst?' on':'')+'" data-i="'+k+'" type="button">'+kbInstLabel(k)+'</button>').join('')+'</div>').join('');
 }
 function kbSetInst(k){
-  kbAllOff(); KB.inst=k; kbRenderInst(); if(k!=='drums')setReverb([k]); kbBuild();
-  const b=$('kbinst').querySelector('.on'); if(b&&b.scrollIntoView)b.scrollIntoView({block:'nearest',inline:'center'});
-  try{localStorage.setItem('konti:kbinst',k);}catch(e){}
+  kbAllOff(); const wasDrums=KB.inst==='drums'; KB.inst=k; kbRenderInst(); if(k!=='drums')setReverb([k]);
+  if(wasDrums||k==='drums')kbBuild(); else kbWarmVisible();
+  kbLayout(); try{localStorage.setItem('konti:kbinst',k);}catch(e){}
 }
 function showScreen(which){
-  KB.shown=which; $('home').hidden=which!=='home'; $('kb').hidden=which!=='kb';
+  document.documentElement.classList.toggle('hm',which!=='score'); KB.shown=which; $('home').hidden=which!=='home'; $('kb').hidden=which!=='kb';
   if(which!=='kb')kbAllOff();
-  if(which==='kb'){ AC(); setReverb([KB.inst==='drums'?'piano':KB.inst]); kbBuild(); }
+  if(which==='kb'){ AC(); setReverb([KB.inst==='drums'?'piano':KB.inst]); kbBuild(); kbRenderStaff(); }
 }
 function goHome(){ if(P.playing)try{stopPlay();}catch(e){} showScreen('home'); }
 (function kbInit(){
@@ -10136,9 +10220,24 @@ function goHome(){ if(P.playing)try{stopPlay();}catch(e){} showScreen('home'); }
   $('kbhome').onclick=back;
   $('gohome').onclick=back;
   window.addEventListener('popstate',goHome);
-  $('kbinst').onclick=e=>{ const b=e.target.closest('[data-i]'); if(b)kbSetInst(b.dataset.i); };
-  $('kboctd').onclick=()=>{ KB.oct=Math.max(0,KB.oct-1); kbAllOff(); kbBuild(); };
-  $('kboctu').onclick=()=>{ KB.oct=Math.min(7,KB.oct+1); kbAllOff(); kbBuild(); };
+  /* 악기 고르기 — 팝업(분류별 큰 단추) + ◀ ▶ 로 바로 옆 악기 */
+  const pop=$('kbpop'), step=d=>{ const i=KB_INSTS.findIndex(x=>x[0]===KB.inst); kbSetInst(KB_INSTS[(i+d+KB_INSTS.length)%KB_INSTS.length][0]); };
+  $('kbinstbtn').onclick=()=>{ pop.hidden=false; };
+  $('kbpopx').onclick=()=>{ pop.hidden=true; };
+  pop.onclick=e=>{ if(e.target===pop)pop.hidden=true; };
+  $('kbpopbody').onclick=e=>{ const b=e.target.closest('[data-i]'); if(b){ kbSetInst(b.dataset.i); pop.hidden=true; } };
+  $('kbprev').onclick=()=>step(-1); $('kbnext').onclick=()=>step(1);
+  /* 건반 돌리기: 세로 → 오른쪽으로 눕힘 → 왼쪽으로 눕힘 → 세로 */
+  $('kbrot').onclick=()=>{ kbAllOff(); KB.rot=(KB.rot+1)%3; $('kbrot').textContent=KB.rot?'⟲ 세로로':'⟲ 건반 돌리기'; kbBuild(); kbRenderStaff(); toast(KB.rot?'건반을 눕혔어요 — 한 번 더 누르면 반대쪽, 또 누르면 세로':'세로로 돌아왔어요'); };
+  const scrollBy=n=>{ const w=$('kbkeys'); w.scrollTo?w.scrollTo({left:Math.max(0,w.scrollLeft+n*7*kbKW()),behavior:'smooth'}):(w.scrollLeft+=n*7*kbKW()); };
+  $('kboctd').onclick=()=>scrollBy(-1); $('kboctu').onclick=()=>scrollBy(1);
+  $('kbkeys').addEventListener('scroll',kbOnScroll);
+  $('kbzoomd').onclick=()=>{ KB.zoom=Math.max(.6,KB.zoom-.15); kbBuild(); }; $('kbzoomu').onclick=()=>{ KB.zoom=Math.min(1.8,KB.zoom+.15); kbBuild(); };
+  /* 미니맵을 누르거나 밀면 그 자리로 건반이 이동한다 */
+  const map=$('kbmap'), mapTo=e=>{ const r=map.getBoundingClientRect(), fx=KB.rot===1?(e.clientY-r.top)/Math.max(1,r.height):KB.rot===2?1-(e.clientY-r.top)/Math.max(1,r.height):(e.clientX-r.left)/Math.max(1,r.width);
+    const w=$('kbkeys'); w.scrollLeft=Math.max(0,Math.min(1,fx)*(KB.rollW||1)-w.clientWidth/2); };
+  let mapDrag=false; map.addEventListener('pointerdown',e=>{ mapDrag=true; try{map.setPointerCapture(e.pointerId);}catch(_){} mapTo(e); });
+  map.addEventListener('pointermove',e=>{ if(mapDrag)mapTo(e); }); map.addEventListener('pointerup',()=>{ mapDrag=false; }); map.addEventListener('pointercancel',()=>{ mapDrag=false; });
   $('kbnames').onclick=()=>{ KB.nameMode=(KB.nameMode+1)%3; $('kbnames').textContent=KB_NAMES[KB.nameMode]; kbBuild(); };
   $('kbsus').onclick=()=>{ KB.sus=!KB.sus; $('kbsus').classList.toggle('on',KB.sus); $('kbsus').setAttribute('aria-pressed',String(KB.sus)); if(!KB.sus)kbUnsustain(); };
   $('kbvol').oninput=e=>{ KB.vol=e.target.value/100; };
@@ -10146,31 +10245,32 @@ function goHome(){ if(P.playing)try{stopPlay();}catch(e){} showScreen('home'); }
     try{
       if(document.fullscreenElement){ await document.exitFullscreen(); try{screen.orientation.unlock();}catch(e){} }
       else{ await $('kb').requestFullscreen(); try{ await screen.orientation.lock('landscape'); }catch(e){} }
-    }catch(e){ toast('이 기기에서는 전체화면을 쓸 수 없어요. 폰을 직접 가로로 돌려 주세요.'); } };
+    }catch(e){ toast('이 기기에서는 전체화면을 쓸 수 없어요. 「건반 돌리기」를 써 보세요.'); } };
   const wrap=$('kbkeys');
   wrap.addEventListener('pointerdown',e=>{
     e.preventDefault(); const el=kbPick(e.clientX,e.clientY); if(!el)return;
     try{wrap.setPointerCapture(e.pointerId);}catch(_){}
-    kbDown(el,e.pointerId,kbVel(el,e.clientY)); });
+    kbDown(el,e.pointerId,kbVel(el,e)); });
   wrap.addEventListener('pointermove',e=>{
     const st=KB.ptr.get(e.pointerId); if(!st||st.el.dataset.pad)return;
     const el=kbPick(e.clientX,e.clientY);
-    if(el&&el!==st.el&&el.dataset.m){ kbUp(e.pointerId); kbDown(el,e.pointerId,kbVel(el,e.clientY)); } });
+    if(el&&el!==st.el&&el.dataset.m){ kbUp(e.pointerId); kbDown(el,e.pointerId,kbVel(el,e)); } });
   const up=e=>kbUp(e.pointerId);
   wrap.addEventListener('pointerup',up); wrap.addEventListener('pointercancel',up); wrap.addEventListener('lostpointercapture',up);
   wrap.addEventListener('contextmenu',e=>e.preventDefault());
-  /* 컴퓨터 자판으로도 친다(a=도 · w=도♯ · s=레 …, 드럼은 a s d f g h j k l ;) */
+  /* 컴퓨터 자판으로도 친다(a=도 · w=도♯ · s=레 …, 드럼은 a s d f g h j k l ;) — 지금 맨 왼쪽에 보이는 도부터 */
   const QK={a:0,w:1,s:2,e:3,d:4,f:5,t:6,g:7,y:8,h:9,u:10,j:11,k:12,o:13,l:14,p:15,';':16};
   const DK={a:'kick',s:'snare',d:'hatc',f:'hato',g:'tomh',h:'tomm',j:'toml',k:'crash',l:'ride',';':'clap'}, down=new Set();
   addEventListener('keydown',e=>{
     if(KB.shown!=='kb'||e.repeat||e.ctrlKey||e.metaKey||e.altKey)return;
+    const tg=e.target&&e.target.tagName; if(tg==='INPUT'||tg==='SELECT'||tg==='TEXTAREA')return;
     const k=e.key.toLowerCase(); if(down.has(k))return;
     let el=null;
     if(KB.inst==='drums'){ if(DK[k])el=wrap.querySelector('[data-pad="'+DK[k]+'"]'); }
     else if(QK[k]!==undefined)el=wrap.querySelector('[data-m="'+(12*(KB.oct+1)+QK[k])+'"]');
     if(el){ down.add(k); kbDown(el,'k'+k,.8); } });
   addEventListener('keyup',e=>{ const k=e.key.toLowerCase(); if(down.delete(k))kbUp('k'+k); });
-  const redo=()=>{ if(KB.shown==='kb'){ kbAllOff(); kbBuild(); } };
+  const redo=()=>{ if(KB.shown==='kb'){ kbAllOff(); kbBuild(); kbRenderStaff(); } };
   addEventListener('resize',redo);
   addEventListener('orientationchange',()=>setTimeout(redo,250));
   document.addEventListener('visibilitychange',()=>{ if(document.hidden)kbAllOff(); });
@@ -10221,7 +10321,7 @@ function kbRecStop(){
 }
 function kbRecUI(){
   const R=KB.rec, has=R.notes.length>0, waiting=R.on&&kbNow()<R.t0;
-  const b=$('kbrec'); b.textContent=R.on?(waiting?'● 준비…':'■ 녹음 중지'):'● 녹음'; b.classList.toggle('rec',R.on);
+  const b=$('kbrec'); b.textContent=R.on?(waiting?'● 준비…':'■ 녹음 중지'):'● 녹음'; b.classList.toggle('live',R.on);
   $('kbplay').disabled=!has||R.on; $('kbplay').textContent=R.play?'■ 정지':'▶ 듣기';
   $('kbclr').disabled=!has&&!R.on; $('kbsend').disabled=!R.notes.some(n=>n.k==='n'); $('kbmidi').disabled=!has;
   const dur=has?Math.max.apply(null,R.notes.map(n=>(n.t1==null?kbNow()-R.t0:n.t1))):0;
@@ -10233,8 +10333,7 @@ function kbCapture(el,vel){
   if(!R.on){
     if(!R.staff||KB.shown!=='kb')return null;
     /* 악보 기입을 켜 두고 건반을 누르면 첫 음에서 저절로 시작한다 — 첫 음이 1마디 1박이다 */
-    if(!R.notes.length||R.autoDone){ R.notes=[]; R.autoDone=false; R.on=true; R.auto=true; R.t0=kbNow(); kbMetroStart(R.t0,0);
-      R.timer=setInterval(()=>{ kbRecUI(); kbRenderStaff(); },400); }
+    if(!R.notes.length||R.autoDone){ R.notes=[]; R.autoDone=false; R.on=true; R.auto=true; R.t0=kbNow(); R.timer=setInterval(()=>{ kbRecUI(); kbRenderStaff(); },400); }
     else return null;
   }
   const t=kbNow()-R.t0; if(t<-40)return null;      // 카운트인 동안 누른 것은 적지 않는다
@@ -10392,7 +10491,7 @@ function kbRenderStaff(){
   if(R.on&&wasEnd||R.on)box.scrollLeft=Math.max(0,left+nowB*pxb-box.clientWidth*.6);
 }
 (function kbRecInit(){
-  const R=KB.rec;
+  const R=KB.rec; R.staff=true;
   $('kbrec').onclick=()=>{ if(R.on)kbRecStop(); else kbRecStart(true); };
   $('kbplay').onclick=()=>{ if(R.play)kbPlayStop(); else kbPlay(); };
   $('kbclr').onclick=()=>{ if(R.on)kbRecStop(); kbPlayStop(); R.notes=[]; R.autoDone=false; kbRecUI(); kbRenderStaff(); };
