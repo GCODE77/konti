@@ -404,7 +404,7 @@ html.hm body>:not(#home):not(#kb):not(#tn):not(#mt):not(#toast):not(#errbar):not
 #tn .btn.rec.live{background:var(--mint);color:#10161E;border-color:var(--mint)}
 #tn .btn.cta,#mt .btn.cta{background:var(--mint);color:#10161E;border-color:var(--mint);font-weight:700}
 #tnbody,#mtbody{flex:1;overflow-y:auto;padding:10px 12px 14px;display:flex;flex-direction:column;align-items:center;gap:10px;touch-action:pan-y}
-#tnnote{font-size:84px;font-weight:800;line-height:1;margin-top:4px;min-height:84px;color:var(--paper);letter-spacing:.01em;text-align:center}
+#tnnote{font-size:84px;font-weight:800;line-height:1;margin-top:4px;min-height:122px;color:var(--paper);letter-spacing:.01em;text-align:center}
 #tnnote small{display:block;font-size:20px;font-weight:600;color:var(--dim);letter-spacing:0}
 #tnnote.ok{color:var(--mint)}
 #tnsub{color:var(--dim);font-size:14px;text-align:center;min-height:20px}
@@ -435,7 +435,7 @@ html.hm body>:not(#home):not(#kb):not(#tn):not(#mt):not(#toast):not(#errbar):not
 #tnlevel{width:min(560px,100%);height:6px;border-radius:3px;background:var(--raise);overflow:hidden;flex:none}
 #tnlevelbar{display:block;height:100%;width:0;background:var(--brass);transition:width .08s}
 #tnhint,#mthint{color:var(--dim);font-size:12.5px;text-align:center;max-width:560px}
-@media (orientation:landscape) and (max-height:520px){#tnnote{font-size:52px;min-height:52px}#tnnote small{font-size:15px}#tnkeys{height:84px}#tngraph{height:70px}#tnhint{display:none}}
+@media (orientation:landscape) and (max-height:520px){#tnnote{font-size:52px;min-height:78px}#tnnote small{font-size:15px}#tnkeys{height:84px}#tngraph{height:70px}#tnhint{display:none}}
 /* 메트로놈 */
 #mtdots{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;min-height:44px;margin-top:6px}
 #mtdots i{width:34px;height:34px;border-radius:50%;background:var(--raise);border:2px solid var(--line);transition:transform .06s,background .06s}
@@ -457,6 +457,23 @@ html.hm body>:not(#home):not(#kb):not(#tn):not(#mt):not(#toast):not(#errbar):not
 @media (min-width:760px){#home .hcards{grid-template-columns:repeat(4,1fr)}}
 @media (max-width:520px){#home .hcards{grid-template-columns:1fr 1fr;gap:12px}#home .hcard{min-height:170px;flex-direction:column;text-align:center;justify-content:center;gap:6px;padding:14px 8px}#home .hcard .hi{font-size:48px}#home .hcard small{font-size:12.5px}}
 @media (orientation:landscape) and (max-height:520px){#home .hcards{grid-template-columns:repeat(4,1fr)}#home .hcard{min-height:130px}#home .hcard .hi{font-size:38px}}
+#tnmodes{display:flex;gap:8px;justify-content:center}
+#tnmodes .btn.on{background:var(--brass);color:#10161E;border-color:var(--brass);font-weight:700}
+#tngtr{display:grid;grid-template-columns:1fr 70px 1fr;gap:6px 8px;width:min(520px,100%);align-items:center}
+#tngtr .gl,#tngtr .gr{display:flex;flex-direction:column;gap:8px}
+#tngtr .gh{height:100%;min-height:150px;border-radius:30px 30px 14px 14px;background:linear-gradient(180deg,#5a3a22,#3d2616);display:flex;justify-content:space-evenly;padding:12px 0;position:relative}
+#tngtr .gh s{display:block;width:3px;height:100%;background:linear-gradient(180deg,#cfcfcf,#8a8a8a);border-radius:2px}
+#tngtr .peg{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:62px;border-radius:16px;border:2px solid var(--line);background:var(--raise);color:var(--paper);font-family:inherit;cursor:pointer;padding:4px}
+#tngtr .peg b{font-size:24px;line-height:1.1}
+#tngtr .peg small{font-size:11.5px;color:var(--dim)}
+#tngtr .peg i{display:none;position:absolute;top:3px;right:8px;font-style:normal;color:var(--mint);font-weight:800}
+#tngtr .peg.done{border-color:var(--mint)}#tngtr .peg.done i{display:block}
+#tngtr .peg.tg{box-shadow:0 0 0 2px var(--brass) inset}
+#tngtr .peg.det{background:var(--brass);color:#10161E;border-color:var(--brass);transform:scale(1.04)}
+#tngtr .peg.det small{color:#3a2a08}
+#tngtr>.btn{grid-column:1/-1;justify-self:center}
+#tngtr>#tngauto{grid-column:1/2}#tngtr>#tngreset{grid-column:3/4}
+@media (orientation:landscape) and (max-height:520px){#tngtr .peg{min-height:44px}#tngtr .peg b{font-size:18px}#tngtr .gh{min-height:110px}}
 </style>
 </head>
 <body>
@@ -558,10 +575,12 @@ html.hm body>:not(#home):not(#kb):not(#tn):not(#mt):not(#toast):not(#errbar):not
     <button class="btn rec" id="tnmic" type="button">🎤 시작</button>
   </div>
   <div id="tnbody">
+    <div id="tnmodes"><button class="btn" data-mode="chrom" type="button">🎤 모든 음</button><button class="btn" data-mode="guitar" type="button">🎸 기타 모드</button></div>
     <div id="tnnote" aria-live="polite">–</div>
     <div id="tnsub">마이크를 켜고 악기 소리를 내 보세요</div>
     <div id="tnmeter" aria-hidden="true"><i class="z0"></i><i class="zc"></i><span class="tk" style="left:0"></span><span class="tk" style="left:25%"></span><span class="tk big" style="left:50%"></span><span class="tk" style="left:75%"></span><span class="tk" style="left:100%"></span><div id="tnneedle"></div><em class="lo">♭ 낮음</em><em class="hi">높음 ♯</em></div>
     <div id="tnstate">–</div>
+    <div id="tngtr" hidden aria-label="기타 6줄"></div>
     <div id="tnstrings"></div>
     <canvas id="tngraph" height="96" aria-label="최근 6초 음높이 기록"></canvas>
     <div id="tnkeys"><div id="tnroll"></div></div>
@@ -10672,8 +10691,10 @@ function kbBeatUI(){ const b=$('kbbeat'); if(!b)return; b.textContent=KB.beat.on
    음높이는 YIN(자기상관의 개선판)으로 잰다 — 낮은 베이스 E1(41Hz)부터 높은 E7 까지. 처리는 전부 기기 안에서 한다(소리를 밖으로 보내지 않는다). */
 const TN={on:false,stream:null,ctx:null,an:null,src:null,buf:null,timer:null,hist:[],trace:[],ref:440,pre:'chrom',tr:0,nameMode:0,
   target:null,okSince:0,okFired:false,playing:false,last:null,rollW:0,warmed:false};
-const TN_PRE={chrom:['자유 (모든 음)',[]],guitar:['기타 6줄',[40,45,50,55,59,64]],bass:['베이스 4줄',[28,33,38,43]],uke:['우쿨렐레',[67,60,64,69]],
+const TN_PRE={chrom:['자유 (모든 음)',[]],guitar:['기타 6줄 · 표준 (EADGBE)',[40,45,50,55,59,64]],guitar_eb:['기타 · 반음 내림 (E♭A♭D♭G♭B♭E♭)',[39,44,49,54,58,63]],guitar_dropd:['기타 · 드롭 D (DADGBE)',[38,45,50,55,59,64]],guitar_dadgad:['기타 · DADGAD',[38,45,50,55,57,62]],guitar_openg:['기타 · 오픈 G (DGDGBD)',[38,43,50,55,59,62]],bass:['베이스 4줄',[28,33,38,43]],uke:['우쿨렐레',[67,60,64,69]],
   violin:['바이올린',[55,62,69,76]],viola:['비올라',[48,55,62,69]],cello:['첼로',[36,43,50,57]]};
+const tnIsGuitar=k=>/^guitar/.test(k||'');
+TN.done={};
 const TN_TR=[['0','실제 소리 (C)'],['2','B♭ 악기 (트럼펫·클라리넷·테너)'],['9','E♭ 악기 (알토 색소폰)'],['7','F 악기 (호른)']];
 const tnHz=m=>TN.ref*Math.pow(2,(m-69)/12), tnMidi=f=>69+12*Math.log2(f/TN.ref);
 const TN_SH=['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'], TN_DOS=['도','도♯','레','레♯','미','파','파♯','솔','솔♯','라','라♯','시'];
@@ -10713,10 +10734,24 @@ function tnMark(){
   if(TN.last!=null){ const e=roll.querySelector('[data-m="'+Math.round(TN.last)+'"]'); if(e)e.classList.add('on'); }
   if(TN.target!=null){ const e=roll.querySelector('[data-m="'+TN.target+'"]'); if(e)e.classList.add('tg'); }
   $('tnstrings').querySelectorAll('.btn').forEach(b=>b.classList.toggle('tg',+b.dataset.m===TN.target));
+  $('tngtr').querySelectorAll('.peg').forEach(b=>b.classList.toggle('tg',+b.dataset.m===TN.target));
+}
+/* 기타 모드: 헤드스톡 모양으로 6개의 줄감개(페그)를 늘어놓는다 — 4·5·6번줄은 왼쪽, 3·2·1번줄은 오른쪽(실제 기타와 같다) */
+function tnGuitar(arr){
+  const peg=i=>{ const m=arr[i], n=tnNames2(m); return '<button class="peg'+(TN.done[TN.pre+':'+i]?' done':'')+(m===TN.target?' tg':'')+'" data-m="'+m+'" data-i="'+i+'" type="button"><b>'+(TN.nameMode?n.en.replace(/\d/g,''):n.kr)+'</b><small>'+(6-i)+'번줄 '+n.en+'</small><i>✓</i></button>'; };
+  $('tngtr').innerHTML='<div class="gl">'+[2,1,0].map(peg).join('')+'</div><div class="gh" aria-hidden="true"><s></s><s></s><s></s><s></s><s></s><s></s></div><div class="gr">'+[3,4,5].map(peg).join('')+'</div>'
+    +'<button class="btn" id="tngauto" type="button">자동으로 줄 찾기</button><button class="btn" id="tngreset" type="button">처음부터 다시</button>';
+}
+function tnGuitarDet(i,tuned,pre){
+  const pegs=$('tngtr').querySelectorAll('.peg'); pegs.forEach(p=>p.classList.toggle('det',+p.dataset.i===i));
+  if(i>=0&&tuned){ const k=TN.pre+':'+i; if(!TN.done[k]){ TN.done[k]=true; const p=$('tngtr').querySelector('.peg[data-i="'+i+'"]'); if(p)p.classList.add('done');
+      const all=pre.every((_,j)=>TN.done[TN.pre+':'+j]); if(all){ toast('🎸 6줄 모두 맞췄어요!'); try{navigator.vibrate&&navigator.vibrate([40,60,40]);}catch(e){} } } }
 }
 function tnStrings(){
-  const arr=(TN_PRE[TN.pre]||[0,[]])[1];
-  $('tnstrings').innerHTML=arr.length?'<button class="btn'+(TN.target==null?' tg':'')+'" data-m="" type="button">자동</button>'+arr.map(m=>'<button class="btn" data-m="'+m+'" type="button">'+tnNames2(m).kr+'<small> '+tnNames2(m).en+'</small></button>').join(''):'';
+  const arr=(TN_PRE[TN.pre]||[0,[]])[1], gt=tnIsGuitar(TN.pre)&&arr.length===6;
+  $('tngtr').hidden=!gt; $('tnstrings').style.display=gt?'none':''; if(gt)tnGuitar(arr);
+  $('tnmodes').querySelectorAll('.btn').forEach(b=>b.classList.toggle('on',(b.dataset.mode==='guitar')===gt));
+  $('tnstrings').innerHTML=(arr.length&&!gt)?'<button class="btn'+(TN.target==null?' tg':'')+'" data-m="" type="button">자동</button>'+arr.map(m=>'<button class="btn" data-m="'+m+'" type="button">'+tnNames2(m).kr+'<small> '+tnNames2(m).en+'</small></button>').join(''):'';
   tnMark();
 }
 /* 참조음 — 정확한 Hz 로 낸다(기준음 A4 를 바꿔도 맞게 직접 만든다) */
@@ -10771,7 +10806,7 @@ function tnRender(m,now){
   TN.trace.push({t:now,m}); while(TN.trace.length&&now-TN.trace[0].t>6000)TN.trace.shift();
   if(m==null){
     nd.classList.remove('on','ok'); if(TN.holdUntil&&now<TN.holdUntil){ tnGraph(now); return; }
-    st.className=''; st.textContent=TN.last==null?'–':'소리를 기다리는 중…'; tnGraph(now); return; }
+    st.className=''; st.textContent=TN.last==null?'–':'소리를 기다리는 중…'; if(tnIsGuitar(TN.pre))tnGuitarDet(-1,false); tnGraph(now); return; }
   // 목표: 직접 고른 음 > 프리셋에서 가장 가까운 줄 > 가장 가까운 반음
   let tgt=TN.target; const pre=(TN_PRE[TN.pre]||[0,[]])[1];
   if(tgt==null&&pre.length){ tgt=pre.reduce((a,b)=>Math.abs(b-m)<Math.abs(a-m)?b:a); }
@@ -10788,7 +10823,8 @@ function tnRender(m,now){
   else{ TN.okSince=0; TN.okFired=false; cls='warn';
     msg=ac<=15?(cents>0?'거의 맞아요 · 조금 낮추세요 ▼':'거의 맞아요 · 조금 올리세요 ▲'):(cents>0?'높아요 · 낮추세요 ▼':'낮아요 · 올리세요 ▲'); }
   st.className=cls; st.textContent=msg+'  ('+(cents>0?'+':'')+cents.toFixed(0)+' 센트)';
-  sub.textContent=tgt!=null?('목표: '+tnNames2(tgt+shift).kr+' '+tnNames2(tgt+shift).en+(TN.target!=null?' (직접 고름)':'')):'가장 가까운 음 기준';
+  if(tnIsGuitar(TN.pre)&&pre.length===6)tnGuitarDet(pre.indexOf(tgt),ok&&TN.okFired,pre);
+  sub.textContent=tgt!=null?((tnIsGuitar(TN.pre)&&pre.length===6?(6-pre.indexOf(tgt))+'번줄 · ':'')+'목표: '+tnNames2(tgt+shift).kr+' '+tnNames2(tgt+shift).en+(TN.target!=null?' (직접 고름)':'')):'가장 가까운 음 기준';
   tnMark(); tnScrollTo(Math.round(m),true); tnGraph(now);
 }
 function tnGraph(now){
@@ -10835,6 +10871,11 @@ function mtSetBpm(v,restart){ v=Math.max(30,Math.min(300,Math.round(v||90))); MT
   $('tnpre').innerHTML=Object.keys(TN_PRE).map(k=>'<option value="'+k+'">'+TN_PRE[k][0]+'</option>').join('');
   $('tntr').innerHTML=TN_TR.map(t=>'<option value="'+t[0]+'">'+t[1]+'</option>').join('');
   $('tnpre').onchange=e=>{ TN.pre=e.target.value; TN.target=null; tnStrings(); };
+  $('tnmodes').onclick=e=>{ const b=e.target.closest('.btn'); if(!b)return; TN.pre=b.dataset.mode==='guitar'?(tnIsGuitar(TN.pre)?TN.pre:'guitar'):'chrom'; $('tnpre').value=TN.pre; TN.target=null; tnStrings(); };
+  $('tngtr').onclick=e=>{ const g=e.target.closest('#tngauto'), r=e.target.closest('#tngreset'), p=e.target.closest('.peg');
+    if(g){ tnSetTarget(null,false); return; }
+    if(r){ Object.keys(TN.done).forEach(k=>{ if(k.indexOf(TN.pre+':')===0)delete TN.done[k]; }); tnStrings(); return; }
+    if(p){ const m=+p.dataset.m; tnSetTarget(TN.target===m?null:m,TN.target!==m); } };
   $('tntr').onchange=e=>{ TN.tr=+e.target.value; };
   $('tnmic').onclick=()=>{ if(TN.on)tnStop(); else tnStart(); };
   $('tnrefd').onclick=()=>{ TN.ref=Math.max(415,TN.ref-1); $('tnref').textContent=TN.ref; }; $('tnrefu').onclick=()=>{ TN.ref=Math.min(466,TN.ref+1); $('tnref').textContent=TN.ref; };
