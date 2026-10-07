@@ -317,7 +317,7 @@ body.focus #focusout{display:block}
 
 /* ===== 첫 화면 · 건반 연주 ===== */
 html.hm,html.hm body{overflow:hidden;height:100%;overscroll-behavior:none}
-html.hm body>:not(#home):not(#kb):not(#toast):not(#errbar):not(script):not(style){display:none!important}
+html.hm body>:not(#home):not(#kb):not(#tn):not(#mt):not(#toast):not(#errbar):not(script):not(style){display:none!important}
 #home{position:fixed;inset:0;height:100vh;height:100dvh;overscroll-behavior:none;touch-action:none;z-index:80;background:var(--ink);display:flex;align-items:center;justify-content:center;padding:calc(18px + env(safe-area-inset-top)) 18px calc(18px + env(safe-area-inset-bottom));overflow:hidden}
 #home[hidden],#kb[hidden]{display:none}
 #home .hbox{width:min(760px,100%);text-align:center}
@@ -337,7 +337,7 @@ html.hm body>:not(#home):not(#kb):not(#toast):not(#errbar):not(script):not(style
 #kb.rot1{inset:auto;top:0;left:100vw;width:100vh;width:100dvh;height:100vw;transform-origin:0 0;transform:rotate(90deg)}
 #kb.rot2{inset:auto;top:100vh;top:100dvh;left:0;width:100vh;width:100dvh;height:100vw;transform-origin:0 0;transform:rotate(-90deg)}
 #kb .kbrow{display:flex;align-items:center;gap:7px;padding:6px 10px;border-bottom:1px solid var(--line);flex:none}
-#kb .kbopt{overflow-x:auto;touch-action:pan-x;scrollbar-width:none}
+#kb .kbopt{flex-wrap:wrap}
 #kb .kbopt::-webkit-scrollbar{display:none}
 #kb .kbact{flex-wrap:wrap}
 #kb .btn{white-space:nowrap;flex:none;min-height:40px}
@@ -376,10 +376,16 @@ html.hm body>:not(#home):not(#kb):not(#toast):not(#errbar):not(script):not(style
 #kb.short #kbhint{display:none}
 #kb.short .kbrow{padding:4px 8px;gap:5px}
 #kb.short .btn{min-height:34px;padding:5px 10px;font-size:13px}
-#kb.short .kbact{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
-#kb.short #kbstaff{max-height:122px}
+#kb.short .kbact,#kb.short .kbopt{flex-wrap:wrap;overflow:visible;row-gap:4px}
+#kb.short .btn{min-height:30px;padding:3px 9px;font-size:12.5px}
+#kb.short .btn.sq{min-width:32px;padding:3px 0}
+#kb.short .lab{font-size:12px}
+#kb.short input[type=range]{width:80px}
+#kb.short #kbbpm{padding:4px 6px;width:56px;font-size:13px}
+#kb.short #kbpat{padding:5px 4px;font-size:12.5px}
+#kb.short #kbstaff{max-height:96px}
 #kb.short #kbmap{height:22px;margin-top:4px}
-#kb.short #kbkeys{min-height:84px;margin:4px 8px}
+#kb.short #kbkeys{min-height:70px;margin:4px 8px}
 #kbpop{position:absolute;inset:0;z-index:20;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:12px;touch-action:auto}
 #kbpop[hidden]{display:none}
 .kbpopcard{width:min(640px,100%);max-height:100%;overflow:auto;background:var(--raise);border:1px solid var(--line);border-radius:18px;padding:14px}
@@ -387,6 +393,70 @@ html.hm body>:not(#home):not(#kb):not(#toast):not(#errbar):not(script):not(style
 .kbgrp{margin:10px 0 4px;color:var(--dim);font-size:13px;font-weight:700}
 .kbgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:8px}
 .kbgrid .btn{min-height:48px;font-size:15px}
+/* ===== 튜너 · 메트로놈 (v96) ===== */
+#tn,#mt{position:fixed;inset:0;height:100vh;height:100dvh;z-index:70;background:var(--ink);display:flex;flex-direction:column;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);user-select:none;-webkit-user-select:none;overscroll-behavior:none}
+#tn[hidden],#mt[hidden]{display:none}
+.tnrow{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--line);flex:none}
+.tnrow .grow{flex:1}.tnttl{font-size:17px}
+#tn .btn,#mt .btn{white-space:nowrap;min-height:42px}
+#tn .btn.sq,#mt .btn.sq{min-width:42px;padding-left:0;padding-right:0;text-align:center}
+#tn .btn.rec{background:var(--ribbon);color:#fff;border-color:var(--ribbon);font-weight:700}
+#tn .btn.rec.live{background:var(--mint);color:#10161E;border-color:var(--mint)}
+#tn .btn.cta,#mt .btn.cta{background:var(--mint);color:#10161E;border-color:var(--mint);font-weight:700}
+#tnbody,#mtbody{flex:1;overflow-y:auto;padding:10px 12px 14px;display:flex;flex-direction:column;align-items:center;gap:10px;touch-action:pan-y}
+#tnnote{font-size:84px;font-weight:800;line-height:1;margin-top:4px;min-height:84px;color:var(--paper);letter-spacing:.01em;text-align:center}
+#tnnote small{display:block;font-size:20px;font-weight:600;color:var(--dim);letter-spacing:0}
+#tnnote.ok{color:var(--mint)}
+#tnsub{color:var(--dim);font-size:14px;text-align:center;min-height:20px}
+#tnmeter{position:relative;width:min(560px,100%);height:46px;border-radius:12px;background:var(--raise);border:1px solid var(--line);overflow:hidden;flex:none}
+#tnmeter i{position:absolute;top:0;bottom:0}
+#tnmeter .z0{left:0;right:0;background:linear-gradient(90deg,#7a3a2e 0%,#8a6a2a 30%,#8a6a2a 40%,#2f7d5b 46%,#2f7d5b 54%,#8a6a2a 60%,#8a6a2a 70%,#7a3a2e 100%);opacity:.55}
+#tnmeter .tk{position:absolute;top:0;width:1px;height:12px;background:var(--paper);opacity:.5}
+#tnmeter .tk.big{height:22px;width:2px;opacity:.9}
+#tnmeter em{position:absolute;bottom:2px;font-size:11px;font-style:normal;color:var(--dim)}
+#tnmeter .lo{left:8px}#tnmeter .hi{right:8px}
+#tnneedle{position:absolute;top:0;bottom:0;left:50%;width:6px;margin-left:-3px;border-radius:3px;background:var(--brass);box-shadow:0 0 0 2px rgba(0,0,0,.35);transition:left .09s linear,background .1s;opacity:.35}
+#tnneedle.on{opacity:1}#tnneedle.ok{background:#7be0a8}
+#tnstate{font-size:20px;font-weight:700;text-align:center;min-height:28px}
+#tnstate.ok{color:var(--mint)}#tnstate.warn{color:var(--brass)}
+#tnstrings{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;min-height:0}
+#tnstrings .btn{min-width:64px;font-size:15px}
+#tnstrings .btn.tg{background:var(--mint);color:#10161E;border-color:var(--mint);font-weight:700}
+#tngraph{width:min(560px,100%);height:96px;border-radius:12px;background:var(--raise);border:1px solid var(--line);flex:none}
+#tnkeys{position:relative;width:min(760px,100%);height:112px;border-radius:10px;overflow:hidden;flex:none;touch-action:none;background:#000}
+#tnroll{position:absolute;top:0;bottom:0;left:0}
+#tnroll .wk{position:absolute;top:0;bottom:0;background:#F7F4EC;border:1px solid #9a948a;border-top:0;border-radius:0 0 7px 7px;display:flex;align-items:flex-end;justify-content:center;padding-bottom:6px;font-size:11px;font-weight:600;color:#4a4740}
+#tnroll .bk{position:absolute;top:0;height:60%;background:#1a1d22;border:1px solid #000;border-top:0;border-radius:0 0 5px 5px;z-index:2}
+#tnroll .wk.on{background:#ff8a8a;color:#10161E}#tnroll .bk.on{background:#e04a4a}
+#tnroll .wk.tg{box-shadow:inset 0 -9px 0 var(--mint)}#tnroll .bk.tg{box-shadow:inset 0 -8px 0 var(--mint)}
+.tnopts{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:center;width:min(760px,100%)}
+.tnopts .lab{color:var(--dim);font-size:13px}
+.tnopts select{background:var(--raise);color:var(--paper);border:1px solid var(--line);border-radius:10px;padding:9px 8px;font-size:14px;font-family:inherit;max-width:46vw}
+#tnlevel{width:min(560px,100%);height:6px;border-radius:3px;background:var(--raise);overflow:hidden;flex:none}
+#tnlevelbar{display:block;height:100%;width:0;background:var(--brass);transition:width .08s}
+#tnhint,#mthint{color:var(--dim);font-size:12.5px;text-align:center;max-width:560px}
+@media (orientation:landscape) and (max-height:520px){#tnnote{font-size:52px;min-height:52px}#tnnote small{font-size:15px}#tnkeys{height:84px}#tngraph{height:70px}#tnhint{display:none}}
+/* 메트로놈 */
+#mtdots{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;min-height:44px;margin-top:6px}
+#mtdots i{width:34px;height:34px;border-radius:50%;background:var(--raise);border:2px solid var(--line);transition:transform .06s,background .06s}
+#mtdots i.on{background:var(--brass);border-color:var(--brass);transform:scale(1.18)}
+#mtdots i.acc.on{background:var(--ribbon);border-color:var(--ribbon)}
+#mtbpmrow{display:flex;align-items:center;gap:14px}
+#mtbig{text-align:center}
+#mtbpm{width:150px;font-size:64px;font-weight:800;text-align:center;background:transparent;color:var(--paper);border:0;border-bottom:2px solid var(--line);font-family:inherit}
+#mtword{display:block;color:var(--dim);font-size:15px;margin-top:2px}
+#mt .btn.big{min-width:64px;min-height:64px;font-size:28px}
+#mtslide{width:min(520px,100%)}
+#mt .mtgo{min-width:200px;min-height:60px;font-size:20px}
+#mt .tnopts select{max-width:30vw}
+@media (orientation:landscape) and (max-height:520px){#mtbpm{font-size:42px;width:110px}#mt .btn.big{min-height:48px}#mtdots{min-height:30px}#mtdots i{width:24px;height:24px}#mthint{display:none}}
+/* 첫 화면 카드 4개 */
+#home .hcards{grid-template-columns:1fr 1fr}
+#home .hcard{min-height:180px;padding:16px 10px}
+#home .hcard .hi{font-size:52px}
+@media (min-width:760px){#home .hcards{grid-template-columns:repeat(4,1fr)}}
+@media (max-width:520px){#home .hcards{grid-template-columns:1fr 1fr;gap:12px}#home .hcard{min-height:170px;flex-direction:column;text-align:center;justify-content:center;gap:6px;padding:14px 8px}#home .hcard .hi{font-size:48px}#home .hcard small{font-size:12.5px}}
+@media (orientation:landscape) and (max-height:520px){#home .hcards{grid-template-columns:repeat(4,1fr)}#home .hcard{min-height:130px}#home .hcard .hi{font-size:38px}}
 </style>
 </head>
 <body>
@@ -439,6 +509,8 @@ html.hm body>:not(#home):not(#kb):not(#toast):not(#errbar):not(script):not(style
     <div class="hcards">
       <button class="hcard" id="h-score" type="button"><span class="hi">🎼</span><span><b>악보 연주</b><br><small>악보 사진을 악보로 바꾸고<br>반주와 함께 연주해요</small></span></button>
       <button class="hcard" id="h-kb" type="button"><span class="hi">🎹</span><span><b>건반 연주</b><br><small>건반을 직접 눌러 연주해요<br>피아노·트럼펫·바이올린·드럼 …</small></span></button>
+      <button class="hcard" id="h-tn" type="button"><span class="hi">🎤</span><span><b>튜너 · 음 찾기</b><br><small>악기 소리를 듣고 음 이름과<br>음정이 맞는지 알려 줘요</small></span></button>
+      <button class="hcard" id="h-mt" type="button"><span class="hi">⏱</span><span><b>메트로놈</b><br><small>박자·쪼개기·탭 템포로<br>연습 박자를 맞춰요</small></span></button>
     </div>
   </div>
 </div>
@@ -477,6 +549,52 @@ html.hm body>:not(#home):not(#kb):not(#toast):not(#errbar):not(script):not(style
   <div id="kbkeys"><div id="kbroll"></div></div>
   <div id="kbhint">건반을 누르면 위 악보에 바로 적혀요 · 위 작은 막대를 밀면 더 많은 건반 · 「건반 돌리기」로 가로로 눕혀 보세요</div>
   <div id="kbpop" hidden role="dialog" aria-label="악기 고르기"><div class="kbpopcard"><div class="kbpophead"><b>악기 고르기</b><button class="btn sq" id="kbpopx" type="button" aria-label="닫기">✕</button></div><div id="kbpopbody"></div></div></div>
+</div>
+<div id="tn" hidden>
+  <div class="tnrow">
+    <button class="btn" id="tnhome" type="button">⌂ 처음</button>
+    <b class="tnttl">🎤 튜너 · 음 찾기</b>
+    <span class="grow"></span>
+    <button class="btn rec" id="tnmic" type="button">🎤 시작</button>
+  </div>
+  <div id="tnbody">
+    <div id="tnnote" aria-live="polite">–</div>
+    <div id="tnsub">마이크를 켜고 악기 소리를 내 보세요</div>
+    <div id="tnmeter" aria-hidden="true"><i class="z0"></i><i class="zc"></i><span class="tk" style="left:0"></span><span class="tk" style="left:25%"></span><span class="tk big" style="left:50%"></span><span class="tk" style="left:75%"></span><span class="tk" style="left:100%"></span><div id="tnneedle"></div><em class="lo">♭ 낮음</em><em class="hi">높음 ♯</em></div>
+    <div id="tnstate">–</div>
+    <div id="tnstrings"></div>
+    <canvas id="tngraph" height="96" aria-label="최근 6초 음높이 기록"></canvas>
+    <div id="tnkeys"><div id="tnroll"></div></div>
+    <div class="tnopts">
+      <span class="lab">기준음 A4</span><button class="btn sq" id="tnrefd" type="button" aria-label="기준 낮추기">−</button><b id="tnref">440</b><button class="btn sq" id="tnrefu" type="button" aria-label="기준 올리기">+</button><span class="lab">Hz</span>
+      <select id="tnpre" aria-label="악기 튜닝 고르기"></select>
+      <select id="tntr" aria-label="이조 악기"></select>
+      <button class="btn" id="tnnames" type="button">도레미</button>
+      <button class="btn cta" id="tnlisten" type="button">🔊 목표음 듣기</button>
+    </div>
+    <div id="tnlevel"><i id="tnlevelbar"></i></div>
+    <div id="tnhint">건반을 누르면 그 음이 목표가 돼요(소리도 나요). 목표를 정하면 그 음에 얼마나 맞는지 보여 줘요.</div>
+  </div>
+</div>
+<div id="mt" hidden>
+  <div class="tnrow">
+    <button class="btn" id="mthome" type="button">⌂ 처음</button>
+    <b class="tnttl">⏱ 메트로놈</b>
+  </div>
+  <div id="mtbody">
+    <div id="mtdots"></div>
+    <div id="mtbpmrow"><button class="btn sq big" id="mtd" type="button" aria-label="느리게">−</button><div id="mtbig"><input id="mtbpm" type="number" min="30" max="300" value="90" inputmode="numeric" aria-label="BPM"><small id="mtword">보통</small></div><button class="btn sq big" id="mtu" type="button" aria-label="빠르게">+</button></div>
+    <input id="mtslide" type="range" min="30" max="300" value="90" aria-label="빠르기">
+    <button class="btn cta mtgo" id="mtgo" type="button">▶ 시작</button>
+    <div class="tnopts">
+      <span class="lab">박자</span><select id="mtbeats" aria-label="한 마디 박 수"></select>
+      <span class="lab">쪼개기</span><select id="mtsub" aria-label="박을 쪼개서 치기"></select>
+      <button class="btn" id="mttap" type="button">탭 템포</button>
+      <button class="btn on" id="mtacc" type="button">첫 박 강조</button>
+      <span class="lab">음량</span><input id="mtvol" type="range" min="10" max="100" value="80" aria-label="음량">
+    </div>
+    <div id="mthint">「탭 템포」를 박자에 맞춰 여러 번 두드리면 빠르기를 알아서 맞춰요.</div>
+  </div>
 </div>
 <div id="toast" role="status"></div>
 <button id="workbar" type="button" role="status"></button>
@@ -10205,8 +10323,11 @@ function kbSetInst(k){
   kbLayout(); try{localStorage.setItem('konti:kbinst',k);}catch(e){}
 }
 function showScreen(which){
-  document.documentElement.classList.toggle('hm',which!=='score'); KB.shown=which; $('home').hidden=which!=='home'; $('kb').hidden=which!=='kb';
+  document.documentElement.classList.toggle('hm',which!=='score'); KB.shown=which; $('home').hidden=which!=='home'; $('kb').hidden=which!=='kb'; $('tn').hidden=which!=='tn'; $('mt').hidden=which!=='mt';
   if(which!=='kb')kbAllOff();
+  if(which!=='tn'&&typeof tnStop==='function')tnStop();
+  if(which!=='mt'&&typeof mtStop==='function')mtStop();
+  if(which==='tn'){ tnScrollTo(60,false); tnGraph(performance.now()); }
   if(which==='kb'){ AC(); setReverb([KB.inst==='drums'?'piano':KB.inst]); kbBuild(); kbRenderStaff(); }
 }
 function goHome(){ if(P.playing)try{stopPlay();}catch(e){} showScreen('home'); }
@@ -10542,6 +10663,206 @@ function kbBeatUI(){ const b=$('kbbeat'); if(!b)return; b.textContent=KB.beat.on
   sel.onchange=()=>{ KB.beat.pat=sel.value; if(KB.beat.on){ if(sel.value==='none')kbBeatStop(); else kbBeatStart(null,KB.beat.byRec); } };
   $('kbbeat').onclick=()=>{ if(KB.beat.on)kbBeatStop(); else{ if(KB.beat.pat==='none'){ sel.value='rock'; KB.beat.pat='rock'; } kbBeatStart(null,false); } };
   $('kbbpm').addEventListener('input',()=>{ if(KB.beat.on)kbBeatStart(null,KB.beat.byRec); });   // 빠르기를 바꾸면 새 빠르기로 다시 시작
+})();
+
+/* ============ 튜너(음 찾기) · 메트로놈 (v96, 사용자 요청) ============
+   ③ 튜너: 마이크로 들은 소리의 높이를 재서 음 이름·정확도(센트)를 보여 주고, 건반·막대·최근 기록 그래프로 시각화한다.
+      목표음(기타 줄·건반으로 고른 음)에 얼마나 맞는지 알려 주고, 목표음을 소리로 들려 준다.
+   ④ 메트로놈(덤): 박자·쪼개기·탭 템포.
+   음높이는 YIN(자기상관의 개선판)으로 잰다 — 낮은 베이스 E1(41Hz)부터 높은 E7 까지. 처리는 전부 기기 안에서 한다(소리를 밖으로 보내지 않는다). */
+const TN={on:false,stream:null,ctx:null,an:null,src:null,buf:null,timer:null,hist:[],trace:[],ref:440,pre:'chrom',tr:0,nameMode:0,
+  target:null,okSince:0,okFired:false,playing:false,last:null,rollW:0,warmed:false};
+const TN_PRE={chrom:['자유 (모든 음)',[]],guitar:['기타 6줄',[40,45,50,55,59,64]],bass:['베이스 4줄',[28,33,38,43]],uke:['우쿨렐레',[67,60,64,69]],
+  violin:['바이올린',[55,62,69,76]],viola:['비올라',[48,55,62,69]],cello:['첼로',[36,43,50,57]]};
+const TN_TR=[['0','실제 소리 (C)'],['2','B♭ 악기 (트럼펫·클라리넷·테너)'],['9','E♭ 악기 (알토 색소폰)'],['7','F 악기 (호른)']];
+const tnHz=m=>TN.ref*Math.pow(2,(m-69)/12), tnMidi=f=>69+12*Math.log2(f/TN.ref);
+const TN_SH=['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'], TN_DOS=['도','도♯','레','레♯','미','파','파♯','솔','솔♯','라','라♯','시'];
+function tnName(m,mode){ m=Math.round(m); const o=Math.floor(m/12)-1; return (mode===0?TN_DOS:TN_SH)[mod(m)]+(mode===0?'':o); }
+function tnNames2(m){ m=Math.round(m); const o=Math.floor(m/12)-1; return {kr:TN_DOS[mod(m)],en:TN_SH[mod(m)]+o}; }
+/* YIN — 주기를 찾는다. buf: Float32Array. 못 찾으면 null. */
+function yinPitch(buf,sr){
+  const N=buf.length, half=N>>1, tauMax=Math.min(half-1,Math.floor(sr/38)), tauMin=Math.max(2,Math.floor(sr/2200));
+  let rms=0; for(let i=0;i<N;i++)rms+=buf[i]*buf[i]; rms=Math.sqrt(rms/N);
+  if(rms<.006)return {rms,f:null};
+  const d=new Float32Array(tauMax+1); d[0]=1; let run=0;
+  for(let tau=1;tau<=tauMax;tau++){ let s=0; for(let i=0;i<half;i++){ const x=buf[i]-buf[i+tau]; s+=x*x; } run+=s; d[tau]=run>0?s*tau/run:1; }
+  let tau=-1;
+  for(let t=tauMin;t<=tauMax;t++){ if(d[t]<.14){ while(t+1<=tauMax&&d[t+1]<d[t])t++; tau=t; break; } }
+  if(tau<0){ let m=tauMin; for(let t=tauMin;t<=tauMax;t++)if(d[t]<d[m])m=t; if(d[m]<.22)tau=m; }
+  if(tau<0)return {rms,f:null};
+  const a=d[tau-1]===undefined?d[tau]:d[tau-1], c=d[tau+1]===undefined?d[tau]:d[tau+1], den=a+c-2*d[tau];
+  const sh=den!==0?(a-c)/(2*den):0, t2=tau+Math.max(-1,Math.min(1,sh));
+  return {rms,f:sr/t2,prob:1-d[tau]};
+}
+function tnBuildKeys(){
+  const roll=$('tnroll'), KW=34, BW=21; let html='', x=0;
+  for(let m=24;m<=96;m++){   // C1 ~ C7
+    const pc=m%12;
+    if([1,3,6,8,10].includes(pc)){ html+='<div class="bk" data-m="'+m+'" style="left:'+(x-BW/2)+'px;width:'+BW+'px"></div>'; continue; }
+    html+='<div class="wk" data-m="'+m+'" style="left:'+x+'px;width:'+KW+'px">'+(pc===0?'C'+(Math.floor(m/12)-1):'')+'</div>'; x+=KW;
+  }
+  roll.style.width=x+'px'; roll.innerHTML=html; TN.rollW=x; TN.KW=KW;
+}
+function tnScrollTo(m,smooth){
+  const wrap=$('tnkeys'); let wi=0; for(let k=24;k<m;k++)if(![1,3,6,8,10].includes(k%12))wi++;
+  const want=Math.max(0,Math.min(TN.rollW-wrap.clientWidth,wi*TN.KW+TN.KW/2-wrap.clientWidth/2));
+  if(Math.abs(wrap.scrollLeft-want)>wrap.clientWidth*.28||!smooth)wrap.scrollLeft=want;
+}
+function tnMark(){
+  const roll=$('tnroll'); roll.querySelectorAll('.on,.tg').forEach(e=>e.classList.remove('on','tg'));
+  if(TN.last!=null){ const e=roll.querySelector('[data-m="'+Math.round(TN.last)+'"]'); if(e)e.classList.add('on'); }
+  if(TN.target!=null){ const e=roll.querySelector('[data-m="'+TN.target+'"]'); if(e)e.classList.add('tg'); }
+  $('tnstrings').querySelectorAll('.btn').forEach(b=>b.classList.toggle('tg',+b.dataset.m===TN.target));
+}
+function tnStrings(){
+  const arr=(TN_PRE[TN.pre]||[0,[]])[1];
+  $('tnstrings').innerHTML=arr.length?'<button class="btn'+(TN.target==null?' tg':'')+'" data-m="" type="button">자동</button>'+arr.map(m=>'<button class="btn" data-m="'+m+'" type="button">'+tnNames2(m).kr+'<small> '+tnNames2(m).en+'</small></button>').join(''):'';
+  tnMark();
+}
+/* 참조음 — 정확한 Hz 로 낸다(기준음 A4 를 바꿔도 맞게 직접 만든다) */
+function tnTone(m,secs){
+  const ctx=AC(); if(!ctx)return; const f=tnHz(m), t=ctx.currentTime+.02, d=secs||2.2, g=ctx.createGain();
+  g.gain.setValueAtTime(.0001,t); g.gain.linearRampToValueAtTime(.34,t+.03); g.gain.setTargetAtTime(.0001,t+d-.35,.12);
+  g.connect(master);
+  [[1,1],[2,.28],[3,.1]].forEach(([k,a])=>{ const o=ctx.createOscillator(), og=ctx.createGain(); o.type='sine'; o.frequency.value=f*k; og.gain.value=a; o.connect(og); og.connect(g); o.start(t); o.stop(t+d+.1); });
+  TN.playing=true; clearTimeout(TN.playT); TN.playT=setTimeout(()=>{ TN.playing=false; },d*1000+250);
+}
+function tnSetTarget(m,play){ TN.target=m; TN.okSince=0; TN.okFired=false; tnMark(); tnStrings(); if(m!=null&&play)tnTone(m); }
+async function tnStart(){
+  if(TN.on)return;
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){ toast('이 브라우저에서는 마이크를 쓸 수 없어요.'); return; }
+  /* 소리 장치는 **누른 직후(제스처 안)** 에 만들고 깨운다 — 마이크 허락창을 거친 뒤에 만들면 폰에서 멈춘 채로 시작한다 */
+  const A=window.AudioContext||window.webkitAudioContext; const ctx0=new A(); try{ ctx0.resume(); }catch(e){}
+  try{
+    TN.stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+  }catch(e){ try{ctx0.close();}catch(_){} $('tnsub').textContent='마이크를 쓸 수 없어요 — 주소창의 권한(자물쇠)에서 마이크를 허용해 주세요.'; toast('마이크 권한이 필요해요'); return; }
+  TN.ctx=ctx0; if(TN.ctx.state==='suspended')TN.ctx.resume();
+  TN.src=TN.ctx.createMediaStreamSource(TN.stream); TN.an=TN.ctx.createAnalyser(); TN.an.fftSize=4096; TN.an.smoothingTimeConstant=0;
+  TN.src.connect(TN.an); TN.buf=new Float32Array(TN.an.fftSize); TN.on=true; TN.hist=[]; TN.trace=[];
+  const b=$('tnmic'); b.textContent='■ 정지'; b.classList.add('live'); $('tnsub').textContent='소리를 내 보세요 (악기를 한 음씩 길게)';
+  TN.timer=setInterval(tnTick,50);
+}
+function tnStop(){
+  if(TN.timer){ clearInterval(TN.timer); TN.timer=null; }
+  try{ TN.stream&&TN.stream.getTracks().forEach(t=>t.stop()); }catch(e){}
+  try{ TN.ctx&&TN.ctx.close(); }catch(e){}
+  TN.on=false; TN.stream=null; TN.ctx=null; TN.an=null; TN.src=null;
+  const b=$('tnmic'); if(b){ b.textContent='🎤 시작'; b.classList.remove('live'); }
+  $('tnlevelbar').style.width='0';
+}
+function tnTick(){
+  if(!TN.on||!TN.an)return;
+  if(TN.ctx.state==='suspended'){ TN.ctx.resume(); return; }
+  TN.an.getFloatTimeDomainData(TN.buf);
+  const r=yinPitch(TN.buf,TN.ctx.sampleRate), now=performance.now();
+  $('tnlevelbar').style.width=Math.min(100,(r.rms||0)*600)+'%';
+  if(TN.playing){ return; }                         // 목표음을 들려 주는 동안은 듣지 않는다(스피커 소리를 주워 담는다)
+  let m=null;
+  if(r.f&&r.prob>.8&&r.f>35&&r.f<2400){
+    TN.hist.push(tnMidi(r.f)); if(TN.hist.length>5)TN.hist.shift();
+    const s=TN.hist.slice().sort((a,b)=>a-b), med=s[s.length>>1];
+    const agree=TN.hist.filter(x=>Math.abs(x-med)<.7).length;
+    if(TN.hist.length>=3&&agree>=Math.min(3,TN.hist.length))m=med;       // 튀는 한 번(배음·잡음)은 버린다
+  }else{ TN.hist=TN.hist.slice(-2); }
+  tnRender(m,now);
+}
+function tnRender(m,now){
+  const note=$('tnnote'), sub=$('tnsub'), st=$('tnstate'), nd=$('tnneedle'), shift=TN.tr;
+  TN.trace.push({t:now,m}); while(TN.trace.length&&now-TN.trace[0].t>6000)TN.trace.shift();
+  if(m==null){
+    nd.classList.remove('on','ok'); if(TN.holdUntil&&now<TN.holdUntil){ tnGraph(now); return; }
+    st.className=''; st.textContent=TN.last==null?'–':'소리를 기다리는 중…'; tnGraph(now); return; }
+  // 목표: 직접 고른 음 > 프리셋에서 가장 가까운 줄 > 가장 가까운 반음
+  let tgt=TN.target; const pre=(TN_PRE[TN.pre]||[0,[]])[1];
+  if(tgt==null&&pre.length){ tgt=pre.reduce((a,b)=>Math.abs(b-m)<Math.abs(a-m)?b:a); }
+  const nearest=Math.round(m), ref=tgt!=null?tgt:nearest, cents=(m-ref)*100;
+  TN.last=m; TN.holdUntil=now+450;
+  const shown=Math.round(m)+shift, n2=tnNames2(shown), big=TN.nameMode===0?n2.kr:n2.en.replace(/\d/g,'');
+  note.innerHTML=big+'<small>'+(TN.nameMode===0?n2.en:n2.kr+' · ')+' · '+tnHz(m).toFixed(1)+' Hz</small>'.replace(/^ · /,'');
+  note.innerHTML=big+'<small>'+(TN.nameMode===0?n2.en:n2.kr+n2.en.replace(/\D/g,''))+' · '+(tnHz(m)).toFixed(1)+' Hz</small>';
+  const ac=Math.abs(cents), ok=ac<=6;
+  nd.classList.add('on'); nd.classList.toggle('ok',ok); nd.style.left=(50+Math.max(-50,Math.min(50,cents)))+'%';
+  note.classList.toggle('ok',ok);
+  let msg, cls='';
+  if(ok){ msg='✓ 딱 맞아요!'; cls='ok'; if(!TN.okSince)TN.okSince=now; if(!TN.okFired&&now-TN.okSince>500){ TN.okFired=true; try{navigator.vibrate&&navigator.vibrate(30);}catch(e){} } }
+  else{ TN.okSince=0; TN.okFired=false; cls='warn';
+    msg=ac<=15?(cents>0?'거의 맞아요 · 조금 낮추세요 ▼':'거의 맞아요 · 조금 올리세요 ▲'):(cents>0?'높아요 · 낮추세요 ▼':'낮아요 · 올리세요 ▲'); }
+  st.className=cls; st.textContent=msg+'  ('+(cents>0?'+':'')+cents.toFixed(0)+' 센트)';
+  sub.textContent=tgt!=null?('목표: '+tnNames2(tgt+shift).kr+' '+tnNames2(tgt+shift).en+(TN.target!=null?' (직접 고름)':'')):'가장 가까운 음 기준';
+  tnMark(); tnScrollTo(Math.round(m),true); tnGraph(now);
+}
+function tnGraph(now){
+  const cv=$('tngraph'), W=cv.clientWidth||320, H=cv.clientHeight||96, dpr=Math.min(2,window.devicePixelRatio||1);
+  if(cv.width!==Math.round(W*dpr)){ cv.width=Math.round(W*dpr); cv.height=Math.round(H*dpr); }
+  const g=cv.getContext('2d'); g.setTransform(dpr,0,0,dpr,0,0); g.clearRect(0,0,W,H);
+  const pts=TN.trace.filter(p=>p.m!=null); const cen=pts.length?pts[pts.length-1].m:(TN.last==null?60:TN.last);
+  const lo=Math.round(cen)-6.5, hi=Math.round(cen)+6.5, y=m=>H-(m-lo)/(hi-lo)*H;
+  g.font='10px sans-serif'; g.textBaseline='middle';
+  for(let k=Math.ceil(lo);k<=hi;k++){ const nat=![1,3,6,8,10].includes(mod(k)); g.strokeStyle=nat?'rgba(255,255,255,.22)':'rgba(255,255,255,.07)'; g.beginPath(); g.moveTo(22,y(k)); g.lineTo(W,y(k)); g.stroke();
+    if(nat){ g.fillStyle='rgba(255,255,255,.55)'; g.fillText(TN_DOS[mod(k)],2,y(k)); } }
+  if(TN.target!=null&&TN.target>=lo&&TN.target<=hi){ g.strokeStyle='#7FC8A9'; g.lineWidth=2; g.beginPath(); g.moveTo(22,y(TN.target)); g.lineTo(W,y(TN.target)); g.stroke(); g.lineWidth=1; }
+  for(const p of TN.trace){ if(p.m==null)continue; const x=22+(W-22)*(1-(now-p.t)/6000), c=Math.abs(p.m-Math.round(p.m))*100;
+    g.fillStyle=c<=8?'#7FC8A9':(c<=20?'#F0B95E':'#d9674f'); g.beginPath(); g.arc(x,y(p.m),2.6,0,6.3); g.fill(); }
+}
+/* ---------------- 메트로놈 ---------------- */
+const MT={on:false,bpm:90,beats:4,sub:1,acc:true,vol:.8,timer:null,next:0,idx:0,taps:[]};
+const MT_WORD=b=>b<60?'매우 느리게':b<76?'느리게':b<108?'보통':b<132?'조금 빠르게':b<168?'빠르게':'매우 빠르게';
+function mtClick(at,kind){      // kind: 2=첫 박, 1=박, 0=쪼갠 박
+  const ctx=AC(); if(!ctx)return; const o=ctx.createOscillator(), g=ctx.createGain();
+  o.type='square'; o.frequency.value=kind===2?1760:(kind===1?1180:880);
+  const v=MT.vol*(kind===2?.34:kind===1?.26:.13);
+  g.gain.setValueAtTime(.0001,at); g.gain.linearRampToValueAtTime(v,at+.002); g.gain.exponentialRampToValueAtTime(.0001,at+.05);
+  o.connect(g); g.connect(ctx.destination); o.start(at); o.stop(at+.07);
+}
+function mtDots(){ $('mtdots').innerHTML=Array.from({length:MT.beats},(_,i)=>'<i class="'+(i===0&&MT.acc?'acc':'')+'"></i>').join(''); }
+function mtFlash(i){ const d=$('mtdots').children; for(let k=0;k<d.length;k++)d[k].classList.toggle('on',k===i); }
+function mtStart(){
+  const ctx=AC(); if(!ctx)return; mtStop(true); MT.on=true; MT.idx=0; MT.next=ctx.currentTime+.08; $('mtgo').textContent='■ 정지';
+  MT.timer=setInterval(()=>{
+    const stepSec=60/MT.bpm/MT.sub;
+    while(MT.next<ctx.currentTime+.12){
+      const sIdx=MT.idx%(MT.beats*MT.sub), beat=Math.floor(sIdx/MT.sub), isBeat=sIdx%MT.sub===0;
+      mtClick(MT.next,isBeat?((beat===0&&MT.acc)?2:1):0);
+      if(isBeat)setTimeout(()=>{ if(MT.on)mtFlash(beat); },Math.max(0,(MT.next-ctx.currentTime)*1000));
+      MT.next+=stepSec; MT.idx++; }
+  },25);
+}
+function mtStop(quiet){ if(MT.timer){ clearInterval(MT.timer); MT.timer=null; } MT.on=false; if(!quiet){ $('mtgo').textContent='▶ 시작'; mtFlash(-1); } }
+function mtSetBpm(v,restart){ v=Math.max(30,Math.min(300,Math.round(v||90))); MT.bpm=v; $('mtbpm').value=v; $('mtslide').value=v; $('mtword').textContent=MT_WORD(v); if(MT.on&&restart)mtStart(); }
+(function toolsInit(){
+  /* 튜너 */
+  tnBuildKeys();
+  $('tnpre').innerHTML=Object.keys(TN_PRE).map(k=>'<option value="'+k+'">'+TN_PRE[k][0]+'</option>').join('');
+  $('tntr').innerHTML=TN_TR.map(t=>'<option value="'+t[0]+'">'+t[1]+'</option>').join('');
+  $('tnpre').onchange=e=>{ TN.pre=e.target.value; TN.target=null; tnStrings(); };
+  $('tntr').onchange=e=>{ TN.tr=+e.target.value; };
+  $('tnmic').onclick=()=>{ if(TN.on)tnStop(); else tnStart(); };
+  $('tnrefd').onclick=()=>{ TN.ref=Math.max(415,TN.ref-1); $('tnref').textContent=TN.ref; }; $('tnrefu').onclick=()=>{ TN.ref=Math.min(466,TN.ref+1); $('tnref').textContent=TN.ref; };
+  $('tnnames').onclick=()=>{ TN.nameMode=(TN.nameMode+1)%2; $('tnnames').textContent=TN.nameMode?'ABC':'도레미'; };
+  $('tnlisten').onclick=()=>{ const t=TN.target!=null?TN.target:(TN.last!=null?Math.round(TN.last):69); tnTone(t); };
+  $('tnstrings').onclick=e=>{ const b=e.target.closest('.btn'); if(!b)return; const v=b.dataset.m; tnSetTarget(v===''?null:+v,v!==''); };
+  $('tnkeys').addEventListener('pointerdown',e=>{ const k=document.elementFromPoint(e.clientX,e.clientY); const el=k&&k.closest&&k.closest('#tnroll [data-m]'); if(!el)return;
+    const m=+el.dataset.m; tnSetTarget(TN.target===m?null:m,TN.target!==m); });
+  $('tnhome').onclick=()=>{ if(history.state&&history.state.v)history.back(); else goHome(); };
+  $('tnrefd').addEventListener('click',()=>{}); tnScrollTo(60,false); tnStrings();
+  /* 메트로놈 */
+  $('mtbeats').innerHTML=[2,3,4,5,6,7].map(n=>'<option value="'+n+'"'+(n===4?' selected':'')+'>'+n+'박</option>').join('');
+  $('mtsub').innerHTML='<option value="1">그대로 (♩)</option><option value="2">2쪼개기 (♪♪)</option><option value="3">3쪼개기</option><option value="4">4쪼개기 (16분)</option>';
+  mtDots(); mtSetBpm(90);
+  $('mthome').onclick=()=>{ if(history.state&&history.state.v)history.back(); else goHome(); };
+  $('mtgo').onclick=()=>{ if(MT.on)mtStop(); else mtStart(); };
+  $('mtd').onclick=()=>mtSetBpm(MT.bpm-1,true); $('mtu').onclick=()=>mtSetBpm(MT.bpm+1,true);
+  $('mtbpm').onchange=e=>mtSetBpm(+e.target.value,true); $('mtslide').oninput=e=>mtSetBpm(+e.target.value,true);
+  $('mtbeats').onchange=e=>{ MT.beats=+e.target.value; mtDots(); if(MT.on)mtStart(); };
+  $('mtsub').onchange=e=>{ MT.sub=+e.target.value; if(MT.on)mtStart(); };
+  $('mtacc').onclick=()=>{ MT.acc=!MT.acc; $('mtacc').classList.toggle('on',MT.acc); mtDots(); };
+  $('mtvol').oninput=e=>{ MT.vol=e.target.value/100; };
+  $('mttap').onclick=()=>{ const t=performance.now(); MT.taps=MT.taps.filter(x=>t-x<2500); MT.taps.push(t);
+    if(MT.taps.length>=3){ const g=[]; for(let i=1;i<MT.taps.length;i++)g.push(MT.taps[i]-MT.taps[i-1]); mtSetBpm(60000/(g.reduce((a,b)=>a+b,0)/g.length),true); } };
+  addEventListener('keydown',e=>{ if(KB.shown==='mt'&&e.code==='Space'&&e.target.tagName!=='INPUT'&&e.target.tagName!=='SELECT'){ e.preventDefault(); if(MT.on)mtStop(); else mtStart(); } });
+  window.addEventListener('resize',()=>{ if(KB.shown==='tn')tnGraph(performance.now()); });
+  $('h-tn').onclick=()=>{ showScreen('tn'); try{ history.pushState({v:'tn'},''); }catch(e){} };
+  $('h-mt').onclick=()=>{ showScreen('mt'); try{ history.pushState({v:'mt'},''); }catch(e){} };
 })();
 </script>
 </body>
