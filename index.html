@@ -479,15 +479,22 @@ html.hm body>:not(#home):not(#kb):not(#tn):not(#mt):not(#toast):not(#errbar):not
 #tngtr .peg b em{font-size:.62em;font-style:normal;color:var(--dim);font-weight:700}
 #tngtr .peg.det b em{color:#3a2a08}
 #tnroll .wk{font-size:10px;text-align:center;line-height:1.15;white-space:pre-line;word-break:keep-all}
+/* 네 기능 어디서나 「⌂ 처음」은 왼쪽 맨 위, 같은 모양 (v98) */
+.homebtn{min-height:42px;padding:8px 14px;font-weight:700;white-space:nowrap;flex:none;background:var(--raise);border-color:var(--brass);color:var(--paper)}
+header{padding-top:8px!important;padding-left:10px!important}
+#kb .homebtn{min-height:42px}
+#kb.short .homebtn{min-height:34px;padding:5px 10px}
+.tnrow,#kb .kbtop{min-height:56px}
+.livedot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#7be0a8;margin-right:6px;animation:kbpulse 1.1s infinite;vertical-align:middle}
 </style>
 </head>
 <body>
 
 <header class="noprint">
   <div class="row" style="align-items:baseline;margin-bottom:9px">
+    <button class="btn homebtn" id="gohome" type="button" aria-label="첫 화면으로">⌂ 처음</button>
     <span class="eyebrow" style="color:var(--ribbon)">콘티 v<span id="ver">?</span></span>
     <input id="title" value="예시 곡" aria-label="곡 제목">
-    <button class="btn" id="gohome" type="button" aria-label="첫 화면으로">⌂</button>
     <button class="btn" id="theme">밝게</button>
   </div>
   <div class="row">
@@ -538,7 +545,7 @@ html.hm body>:not(#home):not(#kb):not(#tn):not(#mt):not(#toast):not(#errbar):not
 </div>
 <div id="kb" hidden>
   <div class="kbrow kbtop">
-    <button class="btn" id="kbhome" type="button">⌂ 처음</button>
+    <button class="btn homebtn" id="kbhome" type="button">⌂ 처음</button>
     <button class="btn kbinstbtn" id="kbinstbtn" type="button" aria-haspopup="dialog">악기: <b id="kbinstname">피아노</b> ▾</button>
     <button class="btn sq" id="kbprev" type="button" aria-label="이전 악기">◀</button><button class="btn sq" id="kbnext" type="button" aria-label="다음 악기">▶</button>
     <span class="grow"></span>
@@ -574,7 +581,7 @@ html.hm body>:not(#home):not(#kb):not(#tn):not(#mt):not(#toast):not(#errbar):not
 </div>
 <div id="tn" hidden>
   <div class="tnrow">
-    <button class="btn" id="tnhome" type="button">⌂ 처음</button>
+    <button class="btn homebtn" id="tnhome" type="button">⌂ 처음</button>
     <b class="tnttl">🎤 튜너 · 음 찾기</b>
     <span class="grow"></span>
     <button class="btn rec" id="tnmic" type="button">🎤 시작</button>
@@ -598,12 +605,12 @@ html.hm body>:not(#home):not(#kb):not(#tn):not(#mt):not(#toast):not(#errbar):not
       <button class="btn cta" id="tnlisten" type="button">🔊 목표음 듣기</button>
     </div>
     <div id="tnlevel"><i id="tnlevelbar"></i></div>
-    <div id="tnhint">건반을 누르면 그 음이 목표가 돼요(소리도 나요). 목표를 정하면 그 음에 얼마나 맞는지 보여 줘요.</div>
+    <div id="tnhint">건반을 누르면 그 음이 목표가 돼요(소리도 나요). 목표를 정하면 그 음에 얼마나 맞는지 보여 줘요.<br>민감도가 높을수록 작은 소리도 듣지만 주변 소리도 잘 주워요 — 조용한 곳은 「높음」, 시끄러우면 「보통」.</div>
   </div>
 </div>
 <div id="mt" hidden>
   <div class="tnrow">
-    <button class="btn" id="mthome" type="button">⌂ 처음</button>
+    <button class="btn homebtn" id="mthome" type="button">⌂ 처음</button>
     <b class="tnttl">⏱ 메트로놈</b>
   </div>
   <div id="mtbody">
@@ -10347,7 +10354,11 @@ function kbSetInst(k){
   if(wasDrums||k==='drums')kbBuild(); else kbWarmVisible();
   kbLayout(); try{localStorage.setItem('konti:kbinst',k);}catch(e){}
 }
+let WAKE=null;
+async function wakeSet(on){ try{ if(on&&!WAKE&&navigator.wakeLock){ WAKE=await navigator.wakeLock.request('screen'); WAKE.addEventListener('release',()=>{ WAKE=null; }); } else if(!on&&WAKE){ await WAKE.release(); WAKE=null; } }catch(e){} }
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&['kb','tn','mt'].includes(KB.shown))wakeSet(true); });
 function showScreen(which){
+  wakeSet(['kb','tn','mt'].includes(which));   // 연주·튜닝·박자 연습 중에는 화면이 꺼지지 않게
   document.documentElement.classList.toggle('hm',which!=='score'); KB.shown=which; $('home').hidden=which!=='home'; $('kb').hidden=which!=='kb'; $('tn').hidden=which!=='tn'; $('mt').hidden=which!=='mt';
   if(which!=='kb')kbAllOff();
   if(which!=='tn'&&typeof tnStop==='function')tnStop();
@@ -10781,7 +10792,7 @@ async function tnStart(){
   TN.ctx=ctx0; if(TN.ctx.state==='suspended')TN.ctx.resume();
   TN.src=TN.ctx.createMediaStreamSource(TN.stream); TN.an=TN.ctx.createAnalyser(); TN.an.fftSize=8192; TN.an.smoothingTimeConstant=0;
   TN.gain=TN.ctx.createGain(); TN.gain.gain.value=TN_GAIN[TN.sens]; TN.floor=null; TN.src.connect(TN.gain); TN.gain.connect(TN.an); TN.buf=new Float32Array(TN.an.fftSize); TN.on=true; TN.hist=[]; TN.trace=[];
-  const b=$('tnmic'); b.textContent='■ 정지'; b.classList.add('live'); $('tnsub').textContent='소리를 내 보세요 (악기를 한 음씩 길게)';
+  const b=$('tnmic'); b.innerHTML='<span class="livedot"></span>■ 정지'; b.classList.add('live'); $('tnsub').textContent='소리를 내 보세요 (악기를 한 음씩 길게)';
   TN.timer=setInterval(tnTick,50);
 }
 function tnStop(){
@@ -10918,7 +10929,7 @@ function mtSetBpm(v,restart){ v=Math.max(30,Math.min(300,Math.round(v||90))); MT
     if(MT.taps.length>=3){ const g=[]; for(let i=1;i<MT.taps.length;i++)g.push(MT.taps[i]-MT.taps[i-1]); mtSetBpm(60000/(g.reduce((a,b)=>a+b,0)/g.length),true); } };
   addEventListener('keydown',e=>{ if(KB.shown==='mt'&&e.code==='Space'&&e.target.tagName!=='INPUT'&&e.target.tagName!=='SELECT'){ e.preventDefault(); if(MT.on)mtStop(); else mtStart(); } });
   window.addEventListener('resize',()=>{ if(KB.shown==='tn')tnGraph(performance.now()); });
-  $('h-tn').onclick=()=>{ showScreen('tn'); try{ history.pushState({v:'tn'},''); }catch(e){} };
+  $('h-tn').onclick=()=>{ showScreen('tn'); try{ history.pushState({v:'tn'},''); }catch(e){} tnStart(); };   // 들어가면 바로 듣기 시작(정지·다시 시작 단추는 그대로)
   $('h-mt').onclick=()=>{ showScreen('mt'); try{ history.pushState({v:'mt'},''); }catch(e){} };
 })();
 </script>
