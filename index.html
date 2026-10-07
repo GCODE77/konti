@@ -474,6 +474,11 @@ html.hm body>:not(#home):not(#kb):not(#tn):not(#mt):not(#toast):not(#errbar):not
 #tngtr>.btn{grid-column:1/-1;justify-self:center}
 #tngtr>#tngauto{grid-column:1/2}#tngtr>#tngreset{grid-column:3/4}
 @media (orientation:landscape) and (max-height:520px){#tngtr .peg{min-height:44px}#tngtr .peg b{font-size:18px}#tngtr .gh{min-height:110px}}
+#tnnote .en{font-size:.46em;color:var(--dim);font-weight:700;margin-left:.18em;vertical-align:.45em}
+#tnnote.ok .en{color:var(--mint)}
+#tngtr .peg b em{font-size:.62em;font-style:normal;color:var(--dim);font-weight:700}
+#tngtr .peg.det b em{color:#3a2a08}
+#tnroll .wk{font-size:10px;text-align:center;line-height:1.15;white-space:pre-line;word-break:keep-all}
 </style>
 </head>
 <body>
@@ -10720,7 +10725,7 @@ function tnBuildKeys(){
   for(let m=24;m<=96;m++){   // C1 ~ C7
     const pc=m%12;
     if([1,3,6,8,10].includes(pc)){ html+='<div class="bk" data-m="'+m+'" style="left:'+(x-BW/2)+'px;width:'+BW+'px"></div>'; continue; }
-    html+='<div class="wk" data-m="'+m+'" style="left:'+x+'px;width:'+KW+'px">'+(pc===0?'C'+(Math.floor(m/12)-1):'')+'</div>'; x+=KW;
+    html+='<div class="wk" data-m="'+m+'" style="left:'+x+'px;width:'+KW+'px">'+(pc===0?'도 C'+(Math.floor(m/12)-1):TN_DOS[pc]+' '+TN_SH[pc])+'</div>'; x+=KW;
   }
   roll.style.width=x+'px'; roll.innerHTML=html; TN.rollW=x; TN.KW=KW;
 }
@@ -10738,7 +10743,7 @@ function tnMark(){
 }
 /* 기타 모드: 헤드스톡 모양으로 6개의 줄감개(페그)를 늘어놓는다 — 4·5·6번줄은 왼쪽, 3·2·1번줄은 오른쪽(실제 기타와 같다) */
 function tnGuitar(arr){
-  const peg=i=>{ const m=arr[i], n=tnNames2(m); return '<button class="peg'+(TN.done[TN.pre+':'+i]?' done':'')+(m===TN.target?' tg':'')+'" data-m="'+m+'" data-i="'+i+'" type="button"><b>'+(TN.nameMode?n.en.replace(/\d/g,''):n.kr)+'</b><small>'+(6-i)+'번줄 '+n.en+'</small><i>✓</i></button>'; };
+  const peg=i=>{ const m=arr[i], n=tnNames2(m); return '<button class="peg'+(TN.done[TN.pre+':'+i]?' done':'')+(m===TN.target?' tg':'')+'" data-m="'+m+'" data-i="'+i+'" type="button"><b>'+(TN.nameMode?n.en.replace(/\d/g,'')+' <em>'+n.kr+'</em>':n.kr+' <em>'+n.en.replace(/\d/g,'')+'</em>')+'</b><small>'+(6-i)+'번줄 '+n.en+'</small><i>✓</i></button>'; };
   $('tngtr').innerHTML='<div class="gl">'+[2,1,0].map(peg).join('')+'</div><div class="gh" aria-hidden="true"><s></s><s></s><s></s><s></s><s></s><s></s></div><div class="gr">'+[3,4,5].map(peg).join('')+'</div>'
     +'<button class="btn" id="tngauto" type="button">자동으로 줄 찾기</button><button class="btn" id="tngreset" type="button">처음부터 다시</button>';
 }
@@ -10812,9 +10817,9 @@ function tnRender(m,now){
   if(tgt==null&&pre.length){ tgt=pre.reduce((a,b)=>Math.abs(b-m)<Math.abs(a-m)?b:a); }
   const nearest=Math.round(m), ref=tgt!=null?tgt:nearest, cents=(m-ref)*100;
   TN.last=m; TN.holdUntil=now+450;
-  const shown=Math.round(m)+shift, n2=tnNames2(shown), big=TN.nameMode===0?n2.kr:n2.en.replace(/\d/g,'');
+  const shown=Math.round(m)+shift, n2=tnNames2(shown), L=n2.en.replace(/\d/g,''), big=TN.nameMode===0?n2.kr+'<span class="en">'+L+'</span>':L+'<span class="en">'+n2.kr+'</span>';
   note.innerHTML=big+'<small>'+(TN.nameMode===0?n2.en:n2.kr+' · ')+' · '+tnHz(m).toFixed(1)+' Hz</small>'.replace(/^ · /,'');
-  note.innerHTML=big+'<small>'+(TN.nameMode===0?n2.en:n2.kr+n2.en.replace(/\D/g,''))+' · '+(tnHz(m)).toFixed(1)+' Hz</small>';
+  note.innerHTML=big+'<small>'+n2.kr+' · '+n2.en+' · '+(tnHz(m)).toFixed(1)+' Hz</small>';
   const ac=Math.abs(cents), ok=ac<=6;
   nd.classList.add('on'); nd.classList.toggle('ok',ok); nd.style.left=(50+Math.max(-50,Math.min(50,cents)))+'%';
   note.classList.toggle('ok',ok);
@@ -10834,10 +10839,10 @@ function tnGraph(now){
   const pts=TN.trace.filter(p=>p.m!=null); const cen=pts.length?pts[pts.length-1].m:(TN.last==null?60:TN.last);
   const lo=Math.round(cen)-6.5, hi=Math.round(cen)+6.5, y=m=>H-(m-lo)/(hi-lo)*H;
   g.font='10px sans-serif'; g.textBaseline='middle';
-  for(let k=Math.ceil(lo);k<=hi;k++){ const nat=![1,3,6,8,10].includes(mod(k)); g.strokeStyle=nat?'rgba(255,255,255,.22)':'rgba(255,255,255,.07)'; g.beginPath(); g.moveTo(22,y(k)); g.lineTo(W,y(k)); g.stroke();
-    if(nat){ g.fillStyle='rgba(255,255,255,.55)'; g.fillText(TN_DOS[mod(k)],2,y(k)); } }
-  if(TN.target!=null&&TN.target>=lo&&TN.target<=hi){ g.strokeStyle='#7FC8A9'; g.lineWidth=2; g.beginPath(); g.moveTo(22,y(TN.target)); g.lineTo(W,y(TN.target)); g.stroke(); g.lineWidth=1; }
-  for(const p of TN.trace){ if(p.m==null)continue; const x=22+(W-22)*(1-(now-p.t)/6000), c=Math.abs(p.m-Math.round(p.m))*100;
+  for(let k=Math.ceil(lo);k<=hi;k++){ const nat=![1,3,6,8,10].includes(mod(k)); g.strokeStyle=nat?'rgba(255,255,255,.22)':'rgba(255,255,255,.07)'; g.beginPath(); g.moveTo(34,y(k)); g.lineTo(W,y(k)); g.stroke();
+    if(nat){ g.fillStyle='rgba(255,255,255,.6)'; g.fillText(TN_DOS[mod(k)]+' '+TN_SH[mod(k)],2,y(k)); } }
+  if(TN.target!=null&&TN.target>=lo&&TN.target<=hi){ g.strokeStyle='#7FC8A9'; g.lineWidth=2; g.beginPath(); g.moveTo(34,y(TN.target)); g.lineTo(W,y(TN.target)); g.stroke(); g.lineWidth=1; }
+  for(const p of TN.trace){ if(p.m==null)continue; const x=34+(W-34)*(1-(now-p.t)/6000), c=Math.abs(p.m-Math.round(p.m))*100;
     g.fillStyle=c<=8?'#7FC8A9':(c<=20?'#F0B95E':'#d9674f'); g.beginPath(); g.arc(x,y(p.m),2.6,0,6.3); g.fill(); }
 }
 /* ---------------- 메트로놈 ---------------- */
