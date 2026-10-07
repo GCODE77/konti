@@ -80,6 +80,10 @@ main{flex:1;padding:16px 8px;padding-bottom:calc(var(--footh,182px) + 18px);
 .origline{position:absolute;top:0;bottom:0;width:3px;background:var(--ribbon);
   box-shadow:0 0 7px var(--ribbon);display:none;pointer-events:none}
 .origsys.on .origline{display:block}
+.songhead{column-span:all;margin:0 0 12px;padding:2px 4px 10px;border-bottom:1px solid var(--line)}
+.songhead .sh-t{font-size:22px;font-weight:800;line-height:1.3;color:var(--paper);word-break:keep-all;overflow-wrap:anywhere}
+.songhead .sh-t.ph{font-size:15px;font-weight:600;color:var(--dim)}
+.songhead .sh-s{font-size:12px;color:var(--dim);margin-top:2px}
 .orignote{font-size:13px;line-height:1.55;color:var(--dim);margin:0 0 12px;padding:0 2px}
 /* 음표 고치기 — 고치는 단추를 위에 붙여 두고(sticky), 오선보는 확대하지 않는다 */
 .noteedit{position:sticky;top:0;z-index:2;background:var(--raise);padding-bottom:6px;
@@ -648,7 +652,7 @@ window.onerror=function(msg,src,ln){
    예) const SCAN_ENDPOINT = "https://konti-scan.내계정.workers.dev";
 */
 const SCAN_ENDPOINT = "";
-const APP_VER = "91";
+const APP_VER = "99";
 /* file:// 나 content:// 로 열면 브라우저가 외부 호출을 막는다(CORS). 미리 알려준다. */
 const LOCAL_FILE = !/^https?:$/.test(location.protocol);
 /* Claude 앱처럼 iframe 안에서 실행 중이면 키 없이도 인식이 통한다. */
@@ -2400,13 +2404,14 @@ function applyGenre(k){
 }
 
 /* ---- 시퀀서 ---- */
-const P={playing:false,bpm:84,genre:'',insts:['piano'],melInst:'ep',pattern:'block',beats:4,loop:true,click:false,melody:true,accomp:true,readMel:true,bySystem:true,ocrBoost:true,geomPitch:true,realInst:true,melOct:0,melFit:true,playBass:false,
+const P={syncOff:0,playing:false,bpm:84,genre:'',insts:['piano'],melInst:'ep',pattern:'block',beats:4,loop:true,click:false,melody:true,accomp:true,readMel:true,bySystem:true,ocrBoost:true,geomPitch:true,realInst:true,melOct:0,melFit:true,playBass:false,
          evs:[],total:0,k:0,cursorT:0,lastAt:0,t0:0,timer:null,uiTimer:null,marks:[],vmarks:[],vnext:1,cur:-1,
          sound:[],piano:true,nmarks:[],curNote:null,
          /* ★ 멜로디·반주 소리 크기를 따로 조절한다(v65, 사용자 요청).
             *"멜로디와 반주음악 경우 멜로디가 반주에 묻힌다"* — 악기를 여럿 겹치면
             반주가 두꺼워져 멜로디 한 줄이 상대적으로 작게 들린다. 0.4~2.0 배로 조절한다. */
          melVol:1,accVol:1};
+try{ const so=parseInt(localStorage.getItem('konti:syncoff'),10); if(so>=-300&&so<=400)P.syncOff=so; }catch(e){}
 
 /* ★ 코드 없는 첫 조각(v88). 인쇄 악보는 단 첫머리의 짧은 조각(곡 첫 못갖춘마디 · 앞 단에서 이어진 마디)에
    코드를 적지 않는다. 그래서 코드 줄이 "| A E/G# | …" 처럼 첫 마디선 앞이 비어 있고, 멜로디는 그 자리에
@@ -2593,9 +2598,11 @@ function schedule(){
         return;
       }
       P.cursorT=wrapT; P.lastAt=0; P.k=0;
+      P.bmarks.push({t:wrapT,at:0});
     }
     const ev=P.evs[P.k], t=P.cursorT+(ev.at-P.lastAt)*spb;
     if(t>now+.25)return;
+    P.bmarks.push({t,at:ev.at});   // 재생선이 읽는 '지금 몇 박째' — 소리를 예약한 바로 그 시각이다(v99)
     /* ★ 건반에 켜 둘 음(P.sound)은 **실제로 울린 것만** 적는다(v63). 예전에는 소리는
        끄고도 건반은 늘 켜서, '멜로디만'인데 반주 코드가 건반에 켜졌다. 화면이 거짓말을
        하면 건반을 보고 따라 치는 사람이 틀린다 — 이 앱에서 가장 하면 안 되는 일이다. */
@@ -2639,6 +2646,7 @@ function tickUI(){
   if(!P.playing)return;
   const ctx=actx; if(!ctx)return;
   const now=ctx.currentTime;
+  const vnow=now-outLat();     // 귀에 들리는 시각 — 화면 표시는 이걸 따른다
   if(now-(P.lastT||0)>0.16){
     P.lastT=now;
     const total=songSeconds();
@@ -2646,16 +2654,17 @@ function tickUI(){
     if(P.loop&&total>0&&el>total)el=el%total;
     renderTime(el);
   }
-  while(P.vmarks.length&&P.vmarks[0].t<=now){
+  while(P.vmarks.length&&P.vmarks[0].t<=vnow){
     const v=P.vmarks.shift().v;
     if(S.verse!==v){S.verse=v;renderChart();renderToolbar();}
   }
-  while(P.marks.length>1&&P.marks[1].t<=now)P.marks.shift();
-  if(P.marks.length&&P.marks[0].t<=now&&P.marks[0].idx!==P.cur)mark(P.marks[0].idx);
-  while(P.nmarks.length>1&&P.nmarks[1].t<=now)P.nmarks.shift();
-  if(P.nmarks.length&&P.nmarks[0].t<=now&&P.nmarks[0]!==P.curNote){ P.curNote=P.nmarks[0]; markNote(P.curNote); }
-  while(P.sound.length&&P.sound[0].e<now-0.25)P.sound.shift();
-  paintPiano(now);
+  while(P.marks.length>1&&P.marks[1].t<=vnow)P.marks.shift();
+  if(P.marks.length&&P.marks[0].t<=vnow&&P.marks[0].idx!==P.cur)mark(P.marks[0].idx);
+  while(P.nmarks.length>1&&P.nmarks[1].t<=vnow)P.nmarks.shift();
+  if(P.nmarks.length&&P.nmarks[0].t<=vnow&&P.nmarks[0]!==P.curNote){ P.curNote=P.nmarks[0]; markNote(P.curNote); }
+  while(P.sound.length&&P.sound[0].e<vnow-0.25)P.sound.shift();
+  while(P.bmarks&&P.bmarks.length>1&&P.bmarks[1].t<=vnow)P.bmarks.shift();
+  paintPiano(vnow);
   if(S.mode==='sheet')paintSheet(sheetProgress());
 }
 function frame(){
@@ -2739,7 +2748,7 @@ function startPlay(){
   prewarmSong(tl.evs);
   P.evs=tl.evs; P.total=tl.total;
   P.playing=true; P.k=0; P.lastAt=0; P.marks=[]; P.vmarks=[]; P.vnext=S.verse; P.cur=-1; P.sound=[];
-  P.nmarks=[]; P.curNote=null;
+  P.nmarks=[]; P.curNote=null; P.bmarks=[];
   syncPiano(true); renderPiano(); measureFoot();   // 먼저 보이게 해야 폭을 잴 수 있다
   P.t0=ctx.currentTime+.25;
   P.cursorT=ctx.currentTime+.25;
@@ -2754,7 +2763,7 @@ function startPlay(){
 function stopPlay(){
   P.playing=false; clearInterval(P.timer); P.timer=null;
   clearInterval(P.uiTimer); P.uiTimer=null;
-  P.marks=[]; P.vmarks=[]; P.cur=-1; P.sound=[]; P.nmarks=[]; P.curNote=null;
+  P.marks=[]; P.vmarks=[]; P.cur=-1; P.sound=[]; P.nmarks=[]; P.curNote=null; P.bmarks=[];
   paintPiano(0); syncPiano(false); MEASURE.txt=''; measureFoot();
   clearStaffNow();
   document.querySelectorAll('.ch.now').forEach(e=>e.classList.remove('now'));
@@ -2781,6 +2790,7 @@ const SAMPLE=`[Verse 1]
 const S={raw:SAMPLE,semis:0,flat:null,num:false,capo:false,font:20,staffScale:1,col:false,photos:[],verse:1,mode:'auto',orig:null,sheetZoom:1};
 let blocks=[], origKey={pc:0,minor:false};
 function reparse(){
+  if(DUR)DUR.key='';   // 곡 길이 캐시를 버린다 — 글자 수가 같은 채로 박자·음표가 바뀌면 길이가 틀린 채 남아 재생선이 어긋났다(v99)
   blocks=parseChart(S.raw); origKey=detectKey(blocks);
   const empty=!blocks.some(b=>b.k==='pairs'&&b.pairs.some(p=>p.chord||(p.text||'').trim()));
   if(empty&&S.raw.trim()){
@@ -2965,6 +2975,49 @@ function renderMeta(){
     b.onclick=()=>{S.semis=0;renderAll()};m.appendChild(b);
   }
 }
+/* ★ 악보 맨 위에 곡 제목을 크게 보인다 (v99, 사용자 요청: "악보 제목을 스캔해서 자동으로 악보 위에 표시").
+   제목은 가져오기 때 사진 맨 위 띠에서 이미 읽어 `#title` 칸에 넣어 둔다(ocrTitle). 여기서는 그걸 악보 위에
+   보여 주고, 제목이 비어 있는 곡(옛 저장본·읽기 실패)은 사진에서 한 번 더 읽어 채운다(autoTitle).
+   예시 곡에는 보이지 않는다(제목이 '예시 곡' 뿐이라 군더더기). */
+const TITLE_PH=t=>!t||t==='제목 없음'||t==='예시 곡';
+function songHead(){
+  if(S.raw===SAMPLE&&!S.photos.length&&!S.orig)return null;
+  const d=document.createElement('div'); d.className='songhead';
+  d.innerHTML='<div class="sh-t"></div><div class="sh-s"></div>';
+  setTimeout(()=>{ paintTitle(); autoTitle(); },0);
+  return d;
+}
+function paintTitle(){
+  const t=($('title').value||'').trim(), ph=TITLE_PH(t);
+  const busy=ph&&AUTOTITLE.busy;
+  document.querySelectorAll('#chart .songhead').forEach(h=>{
+    const a=h.querySelector('.sh-t'), b=h.querySelector('.sh-s');
+    a.textContent=ph?(busy?'제목을 읽는 중…':'제목 없음 — 위 제목 칸에서 적어 주세요'):t;
+    a.classList.toggle('ph',ph);
+    let sub=''; try{ sub=subtitle(); }catch(e){}
+    b.textContent=sub;
+  });
+}
+const AUTOTITLE={key:'',busy:false};
+document.getElementById('title').addEventListener('input',()=>{ try{ paintTitle(); }catch(e){} });
+async function autoTitle(){
+  const t=($('title').value||'').trim();
+  if(!TITLE_PH(t)||AUTOTITLE.busy)return;
+  const pg=S.orig&&S.orig.pages&&S.orig.pages[0];
+  const ph0=S.photos[0];
+  const url=(ph0&&(ph0.showUrl||ph0.url))||(pg&&pg.url);
+  if(!url)return;
+  const key=url.length+'|'+url.slice(-48);
+  if(AUTOTITLE.key===key)return;               // 같은 사진은 한 번만 시도한다
+  AUTOTITLE.key=key; AUTOTITLE.busy=true; paintTitle();
+  try{
+    if(!wLyric)await ensureOcrWorkers();
+    const s0=pg&&pg.sys&&pg.sys[0];
+    const got=await ocrTitle(url,Math.max(0.12,s0?s0.t0:0.2));
+    if(got&&TITLE_PH(($('title').value||'').trim())){ $('title').value=got; scheduleSave(); }
+  }catch(e){}
+  AUTOTITLE.busy=false; paintTitle();
+}
 function renderChart(){
   if(S.mode==='sheet')return renderSheet();
   if(S.mode!=='text'&&hasMelody())return renderChartStaff();
@@ -3006,6 +3059,7 @@ function renderChartStaff(){
   const el=$('chart');
   el.style.fontSize=S.font+'px'; el.style.columnCount=1;
   el.innerHTML='';
+  { const h=songHead(); if(h)el.appendChild(h); }
   const ci=capoInfo();
   if(S.capo&&ci){
     const d=document.createElement('div');d.className='capo';
@@ -3113,6 +3167,7 @@ function renderSheet(){
     MEASURE.txt=''; MEASURE.total=0;
     return;
   }
+  { const h=songHead(); if(h)el.appendChild(h); }
   /* 마디 번호는 단을 넘어가며 계속 센다 — 사진 위 번호와 아래 '12/34마디' 가 같은 수다 */
   let mn=0;
   o.pages.forEach(pg=>(pg.sys||[]).forEach(sy=>{ mn+=(sy.seg?sy.seg.length:0); }));
@@ -3219,8 +3274,29 @@ function sheetProgressAt(el){
   if(el<0)return 0;                       // 시작 직전 준비 구간(0.25초)
   return Math.max(0,Math.min(1,(el%pass)/pass));
 }
+/* ★★ 재생선이 소리와 어긋나던 두 가지 원인 (v99, 사용자 신고: "실제는 뒤부분을 연주하는데 가리키는 건 살짝 앞").
+   ① 곡 길이(`songSeconds`) 캐시가 글자 수만 보고 있어서, 박자·음표만 바뀌면 옛 길이가 남았다.
+      재생선은 "경과 시간 ÷ 곡 길이" 로 위치를 구하니 길이가 조금만 틀려도 **뒤로 갈수록 커지게** 어긋난다.
+      (헤드리스 실측: 「하나님의 부르심」 한 절이 47.5초인데 15.2초로 캐시돼 재생선이 3배 빨리 갔다.)
+   ② 위치를 시간 비율로 **어림**하지 않고, 스케줄러가 소리를 예약할 때 적어 둔 (시각, 박) 표(`P.bmarks`)에서
+      읽는다 — 소리와 같은 숫자를 쓰므로 박자·템포가 바뀌어도 어긋날 수 없다.
+   ③ 스피커로 소리가 나오기까지의 지연(블루투스는 0.1~0.3초)만큼 화면을 늦춘다 — 귀에 들리는 순간에 맞춘다. */
+function outLat(){
+  let l=0;
+  try{ l=(actx&&(actx.outputLatency||actx.baseLatency))||0; }catch(e){}
+  l=Math.max(0,Math.min(.35,l))+(P.syncOff||0)/1000;
+  return Math.max(-.4,Math.min(.6,l));
+}
 function sheetProgress(){
-  return actx?sheetProgressAt(actx.currentTime-P.t0):-1;
+  if(!actx)return -1;
+  const now=actx.currentTime-outLat();
+  const M=P.bmarks, tot=P.total;
+  if(!M||!M.length||!(tot>0))return sheetProgressAt(now-P.t0);
+  while(M.length>1&&M[1].t<=now)M.shift();       // 지나간 표는 버린다(가장 최근 지난 표 하나는 남겨 둔다)
+  const spb=60/P.bpm;
+  let at=M[0].at+(now-M[0].t)/spb;               // 첫 표보다 앞이면 거꾸로 짚는다(처음·되감기 직후의 준비 구간)
+  if(M.length>1&&M[1].t>now&&M[1].at>M[0].at)at=Math.min(at,M[1].at);   // 다음 음이 아직 안 왔으면 그 앞에서 멈춘다
+  return Math.max(0,Math.min(0.99999,at/tot));
 }
 /* 단 안에서의 진행도(f, 0~1) → 사진 가로 자리(0~1).
    ★ 고르게 나누지 않는다. staffGeom 이 음표마다 **잰 x 자리**와 **잰 길이**를 갖고 있으니
@@ -3452,6 +3528,7 @@ function renderChartText(){
   el.style.fontSize=S.font+'px';
   el.style.columnCount=S.col?2:1; el.style.columnGap='28px';
   el.innerHTML='';
+  { const h=songHead(); if(h)el.appendChild(h); }
   if(S.capo&&ci){
     const d=document.createElement('div');d.className='capo';
     d.innerHTML='카포 <b>'+ci.fret+'</b>프렛 · '+nm(ci.shape,PREF[ci.shape])+' 폼으로 잡으면 실제로는 '+esc(targetLabel())+'로 들립니다';
@@ -3490,9 +3567,9 @@ function renderChartText(){
   }
 }
 const fmt=s=>{s=Math.max(0,Math.round(s));return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')};
-let DUR={key:'',sec:0};
+var DUR={key:'',sec:0};   // var: reparse() 가 이 줄보다 먼저 불릴 수 있다
 function songSeconds(){
-  const key=S.raw.length+'|'+P.bpm+'|'+P.beats+'|'+S.verse;
+  const key=S.raw.length+'|'+P.bpm+'|'+P.beats+'|'+S.verse+'|'+maxVerse()+'|'+(blocks.length);
   if(DUR.key===key)return DUR.sec;
   const tl=buildTimeline();
   DUR={key,sec:tl.total*(60/P.bpm)*Math.max(1,maxVerse())};
@@ -3520,7 +3597,7 @@ function seekTo(sec){
   P.k=k; P.lastAt=inPass; P.vnext=vi+1;
   P.cursorT=ctx.currentTime+0.08;
   P.t0=P.cursorT-sec;
-  P.marks=[]; P.vmarks=[]; P.cur=-1; P.sound=[];
+  P.marks=[]; P.vmarks=[]; P.cur=-1; P.sound=[]; P.bmarks=[];
   if(S.verse!==vi+1){S.verse=vi+1;renderChart();renderToolbar();}
   renderTime(sec);
 }
@@ -9958,6 +10035,12 @@ function openPanel(name){
          멜로디 한 줄이 상대적으로 묻힌다. */
       +volRow('melvol','멜로디 크기',P.melVol)
       +volRow('accvol','반주 크기',P.accVol)
+      /* 화면 표시 타이밍 — 기기마다 소리가 나오기까지의 지연이 달라(블루투스·안드로이드는 크다) 손으로도 맞출 수 있게 한다 */
+      +'<span class="lbl">악보 표시 타이밍</span>'
+      +'<div style="display:flex;align-items:center;gap:12px">'
+      +'<input class="field" id="syncoff" type="range" min="-300" max="400" step="10" value="'+(P.syncOff||0)+'" style="flex:1">'
+      +'<span id="syncoffnum" style="font-family:var(--mono);font-size:15px;font-weight:800;color:var(--brass);min-width:64px;text-align:right">'+((P.syncOff||0)>0?'+':'')+(P.syncOff||0)+'ms</span>'
+      +'</div><p class="note" style="margin:2px 0 14px">악보 위 표시가 <b>소리보다 늦으면 ◀(−)</b>, <b>빠르면 ▶(+)</b>로 옮기세요. 이 기기에 기억됩니다. 자동 보정 지연: <b>'+Math.round(Math.max(0,Math.min(.35,(actx&&(actx.outputLatency||actx.baseLatency))||0))*1000)+'ms</b></p>'
       +'<span class="lbl">장르</span><div class="opts">'
       +opt('genre',P.genre,Object.keys(GENRES).map(k=>[k,GENRES[k].label]))+'</div>'
       +'<span class="lbl">악기</span><div class="opts" id="insts">'
@@ -10052,6 +10135,7 @@ function openPanel(name){
     $('bpmnum').onchange=e=>setBpm(e.target.value);
     $('bpmnum').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();setBpm(e.target.value);e.target.blur();}};
     $('melvol').oninput=e=>{P.melVol=parseFloat(e.target.value);if($('melvolnum'))$('melvolnum').textContent=Math.round(P.melVol*100)+'%';scheduleSave();};
+    $('syncoff').oninput=e=>{P.syncOff=parseInt(e.target.value,10)||0;if($('syncoffnum'))$('syncoffnum').textContent=(P.syncOff>0?'+':'')+P.syncOff+'ms';try{localStorage.setItem('konti:syncoff',String(P.syncOff));}catch(x){}};
     $('accvol').oninput=e=>{P.accVol=parseFloat(e.target.value);if($('accvolnum'))$('accvolnum').textContent=Math.round(P.accVol*100)+'%';scheduleSave();};
     $('clk').onclick=()=>{P.click=!P.click;openPanel('play')};
     $('lp').onclick=()=>{P.loop=!P.loop;$('loopbtn').classList.toggle('on',P.loop);openPanel('play')};

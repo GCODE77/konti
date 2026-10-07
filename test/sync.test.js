@@ -198,6 +198,30 @@ export default async function syncTest(){
     clearStaffNow();
     ok('멈추면 표시가 전부 꺼진다',
        document.querySelectorAll('#chart .nowbox.on,#chart .mbox.on').length===0);
+
+    /* 9) 재생선 위치 (v99) — 곡 길이 캐시가 글자 수만 보면 박자만 바뀐 곡에서 옛 길이가 남는다 */
+    P.bpm=84; S.verse=1; S.mode='staff';
+    S.raw=['♪ C4:1 D4:1 E4:1 F4:1 | G4:4','|[C]도레미파 |[G]솔'].join('\n');
+    reparse(); const secA=songSeconds();
+    /* 글자 수는 그대로, 마디 하나가 늘어난 곡 — 예전에는 캐시 열쇠(글자 수)가 같아 옛 길이가 남았다 */
+    S.raw=['♪ C4:1 D4:1 E4:1 F4:1 | G4:4 | G4:4','|[C]도레미파 |[G]솔 |[F]파'].join('\n');
+    reparse(); const secB=songSeconds();
+    ok('곡 길이 캐시는 reparse 때 버려진다 ('+secA.toFixed(2)+'→'+secB.toFixed(2)+'초)', secB>secA+1);
+    window.DUR.key='옛 열쇠'; window.DUR.sec=999; reparse();
+    ok('reparse 가 곡 길이 캐시를 비운다(글자 수가 같아도 옛 길이가 남지 않는다)', window.DUR.key==='', window.DUR.key);
+    /* 스케줄러 표에서 읽는 위치 — 시각표가 곧 위치다 */
+    const ctxx=AC();
+    const keepM=P.bmarks, keepT=P.total, keepT0=P.t0, savedOff=P.syncOff;
+    const base=ctxx.currentTime;
+    P.total=8; P.t0=base; P.syncOff=-(outLat()*1000);   // 출력 지연 보정은 끈다
+    P.bmarks=[{t:base-5,at:0},{t:base-2,at:3},{t:base-1,at:5}];
+    const spb9=60/P.bpm;
+    let p9=sheetProgress();
+    ok('위치 = 가장 최근 표(5박) + 경과/박 길이 ('+(p9*8).toFixed(2)+'박)', Math.abs(p9*8-(5+1/spb9))<0.35, p9);
+    P.bmarks=[{t:base-1,at:5},{t:base+30,at:7}];
+    p9=sheetProgress();
+    ok('다음 음이 아직 안 왔으면 그 앞에서 멈춘다 ('+(p9*8).toFixed(2)+'박)', p9*8<=7+1e-6, p9);
+    P.bmarks=keepM; P.total=keepT; P.t0=keepT0; P.syncOff=savedOff;
   }finally{
     S.raw=keep.raw; S.orig=keep.orig; S.mode=keep.mode; S.verse=keep.verse; S.semis=keep.semis;
     P.beats=keep.beats; P.bpm=keep.bpm;

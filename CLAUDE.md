@@ -1,6 +1,6 @@
 # 콘티 — 교회 찬양팀 악보 앱
 
-**현재 상태:** `index.html` 하나. v98 (악보 연주·건반 연주·튜너·메트로놈 4기능, 104~112번). `https://gcode77.github.io/konti/` 에 배포됨.
+**현재 상태:** `index.html` 하나. v99 (재생선 정확도·제목 배너, 113번). v98 (악보 연주·건반 연주·튜너·메트로놈 4기능, 104~112번). `https://gcode77.github.io/konti/` 에 배포됨.
 **데스크톱판(v78):** `desktop/` — 인터넷 없이 도는 윈도 실행 파일(`KontiSetup.exe`). 아래 83번 항목.
 **저장소:** `github.com/GCODE77/konti` (public), 브랜치 `main`, 파일명 반드시 `index.html`.
 
@@ -2541,6 +2541,13 @@
    ② **「⌂ 처음」을 네 화면 모두 왼쪽 맨 위, 같은 모양·같은 자리**(악보 화면 머리줄은 맨 앞으로 옮김, `.homebtn`, 헤드리스로 네 화면 모두 x=10·y≈8·72×42 확인).
    ③ 건반·튜너·메트로놈 화면에서 **화면이 꺼지지 않게** Screen Wake Lock 을 건다(`wakeSet`, 지원하는 브라우저만). ④ 튜너 안내에 민감도 설명("높을수록 작은 소리도 듣지만 주변 소리도 주워요").
    글자 크기는 안 바꿨다(사용자 지시).
+
+113. **재생선이 소리와 어긋나던 두 원인 + 출력 지연 보정 + 악보 위 제목 (v99, 사용자 신고: "하나님의 부르심 테스트할 때 실제는 뒤부분을 연주하는데 가리키는 건 살짝 앞" / "악보 제목을 스캔해서 자동으로 악보 위에 표시").**
+   ① `songSeconds()` 캐시 열쇠가 `S.raw.length|bpm|beats|verse` 뿐이라 글자 수가 같은 채로 박자·음표·절이 바뀌면 옛 길이가 남았다. 재생선은 `경과/곡 길이` 라 길이가 틀리면 **뒤로 갈수록** 커지게 어긋난다(헤드리스 실측: 한 절 47.5초가 15.2초로 캐시돼 3배 빠름). → `reparse()` 가 `DUR.key=''`, 열쇠에 `maxVerse()`·`blocks.length` 추가. ★ `DUR` 는 `var` 여야 한다 — 시작 때 reparse 가 `let DUR` 줄보다 먼저 불려 TDZ 오류로 앱 전체가 안 떴다.
+   ② `sheetProgress()` 는 이제 시간 비율이 아니라 `P.bmarks`(schedule 이 이벤트를 예약할 때마다 `{t,at}` 를 적음, 절 끝에서 `{wrapT,0}`)에서 위치를 읽는다: 가장 최근 지난 표의 박 + (지금−t)/박 길이, 다음 표가 아직 안 왔으면 그 앞에서 멈춤, 첫 표 앞이면 거꾸로 짚음. 표가 없으면 예전 식으로 되돌아간다. startPlay/seekTo/stopPlay 가 비운다.
+   ③ `outLat()` = `AudioContext.outputLatency||baseLatency`(≤0.35초) + `P.syncOff`(ms, 슬라이더, `konti:syncoff`). 화면 표시(재생선·코드 표시·음표 표시·건반)는 `vnow=currentTime-outLat()`. 헤드리스 outputLatency 는 0.048초라 실제 기기 지연은 못 쟀다 — 슬라이더가 안전망.
+   ④ `songHead()`: 사진·오선보·가사 세 보기 맨 위에 제목(+원키→연주키 한 줄). `autoTitle()` 은 제목이 비었거나 '제목 없음'/'예시 곡' 일 때 `S.photos[0]` 또는 `S.orig.pages[0].url` 에서 `ocrTitle` 로 한 번 읽어 채운다(같은 사진 한 번만, `AUTOTITLE.key`). 제목 칸 `input` 이벤트로 배너가 따라 바뀐다.
+   회귀 테스트 `sync` 에 3개(32 → 36 중 이번 +4: 캐시 비움·위치 읽기·다음 음 앞 멈춤 …). 12개 중 8개(sync·live·mix·voicing·layout·nokey·chord·accid) 통과 확인.
 
 ## 실제로 겪은 버그들 (재발 방지용 메모)
 
