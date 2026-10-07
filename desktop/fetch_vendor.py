@@ -43,7 +43,9 @@ NPM = [
 # index.html 의 SAMPLE_MAP 과 같아야 한다.
 INSTRUMENTS = ['acoustic_grand_piano', 'electric_piano_1', 'drawbar_organ', 'string_ensemble_1',
                'cello', 'trumpet', 'flute', 'choir_aahs', 'pad_2_warm', 'acoustic_guitar_nylon',
-               'acoustic_bass']
+               'acoustic_bass',
+               # 건반 연주 전용(v93)
+               'violin', 'trombone', 'clarinet', 'alto_sax', 'oboe', 'orchestra_harp', 'vibraphone', 'marimba']
 FLAT_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B']
 SF_BASE = 'https://raw.githubusercontent.com/gleitz/midi-js-soundfonts/gh-pages/FluidR3_GM/'
 
