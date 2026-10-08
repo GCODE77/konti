@@ -8,6 +8,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#131A23">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <title>콘티 — 코드 차트 이조기</title>
 <style>
 :root{
@@ -326,6 +328,9 @@ html.hm body>:not(#home):not(#kb):not(#tn):not(#mt):not(#toast):not(#errbar):not
 #home{position:fixed;inset:0;height:100vh;height:100dvh;overscroll-behavior:none;touch-action:none;z-index:80;background:var(--ink);display:flex;align-items:center;justify-content:center;padding:calc(18px + env(safe-area-inset-top)) 18px calc(18px + env(safe-area-inset-bottom));overflow:hidden}
 #home[hidden],#kb[hidden]{display:none}
 #home .hbox{width:min(760px,100%);text-align:center}
+#home .hicon{display:block;margin:0 auto 10px;border-radius:20px;box-shadow:0 6px 22px rgba(0,0,0,.45)}
+#home .hcopy{position:absolute;left:0;right:0;bottom:calc(10px + env(safe-area-inset-bottom));text-align:center;font-size:11px;letter-spacing:.14em;color:var(--dim);opacity:.55;pointer-events:none}
+@media (max-height:700px){#home .hicon{width:52px;height:52px;margin-bottom:6px;border-radius:13px}#home .hlogo{font-size:28px}#home p{margin-bottom:12px}#home .hcopy{position:static;margin-top:10px}#home{flex-direction:column}#home .hcard{min-height:170px}}
 #home .hlogo{font-size:34px;font-weight:800;letter-spacing:.02em;color:var(--brass)}
 #home p{margin:6px 0 22px;color:var(--dim);font-size:15px}
 #home .hcards{display:grid;grid-template-columns:1fr 1fr;gap:16px}
@@ -540,6 +545,7 @@ header{padding-top:8px!important;padding-left:10px!important}
 <div id="scrim"><div id="sheet"></div></div>
 <div id="home">
   <div class="hbox">
+    <img class="hicon" src="icon-192.png" alt="" width="84" height="84">
     <div class="hlogo">콘티</div>
     <p>무엇을 하시겠어요?</p>
     <div class="hcards">
@@ -549,6 +555,7 @@ header{padding-top:8px!important;padding-left:10px!important}
       <button class="hcard" id="h-mt" type="button"><span class="hi">⏱</span><span><b>메트로놈</b><br><small>박자·쪼개기·탭 템포로<br>연습 박자를 맞춰요</small></span></button>
     </div>
   </div>
+  <div class="hcopy">© GLORY &nbsp;·&nbsp; All rights reserved</div>
 </div>
 <div id="kb" hidden>
   <div class="kbrow kbtop">
