@@ -10,7 +10,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<title>콘티 — 코드 차트 이조기</title>
+<link rel="manifest" href="manifest.json">
+<meta name="apple-mobile-web-app-title" content="하모닉스">
+<title>하모닉스 — 악보·건반·튜너·메트로놈</title>
 <style>
 :root{
   --ink:#10161E; --raise:#1B242F; --line:#3A4858; --paper:#F2EEE6;
@@ -505,7 +507,7 @@ header{padding-top:8px!important;padding-left:10px!important}
 <header class="noprint">
   <div class="row" style="align-items:baseline;margin-bottom:9px">
     <button class="btn homebtn" id="gohome" type="button" aria-label="첫 화면으로">⌂ 처음</button>
-    <span class="eyebrow" style="color:var(--ribbon)">콘티 v<span id="ver">?</span></span>
+    <span class="eyebrow" style="color:var(--ribbon)">하모닉스 v<span id="ver">?</span></span>
     <input id="title" value="예시 곡" aria-label="곡 제목">
     <button class="btn" id="theme">밝게</button>
   </div>
@@ -546,7 +548,7 @@ header{padding-top:8px!important;padding-left:10px!important}
 <div id="home">
   <div class="hbox">
     <img class="hicon" src="icon-192.png" alt="" width="84" height="84">
-    <div class="hlogo">콘티</div>
+    <div class="hlogo">하모닉스</div>
     <p>무엇을 하시겠어요?</p>
     <div class="hcards">
       <button class="hcard" id="h-score" type="button"><span class="hi">🎼</span><span><b>악보 연주</b><br><small>악보 사진을 악보로 바꾸고<br>반주와 함께 연주해요</small></span></button>
@@ -662,7 +664,7 @@ window.onerror=function(msg,src,ln){
    예) const SCAN_ENDPOINT = "https://konti-scan.내계정.workers.dev";
 */
 const SCAN_ENDPOINT = "";
-const APP_VER = "101";
+const APP_VER = "102";
 /* file:// 나 content:// 로 열면 브라우저가 외부 호출을 막는다(CORS). 미리 알려준다. */
 const LOCAL_FILE = !/^https?:$/.test(location.protocol);
 /* Claude 앱처럼 iframe 안에서 실행 중이면 키 없이도 인식이 통한다. */
@@ -10253,7 +10255,7 @@ function saveSong(ask){
   const okPic=saveOrig(id,S.orig);
   toast(!okList?'저장에 실패했어요.'
     :(S.orig&&!okPic)?'“'+t+'” 저장 — 다만 저장 공간이 모자라 사진은 못 넣었습니다'
-    :'콘티에 “'+t+'” 저장했습니다');
+    :'하모닉스에 “'+t+'” 저장했습니다');
 }
 $('theme').onclick=()=>{
   const d=document.documentElement.getAttribute('data-theme')==='dark';

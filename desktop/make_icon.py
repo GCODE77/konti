@@ -48,7 +48,7 @@ def splash():
     d = ImageDraw.Draw(im)
     fonts = os.path.join(os.environ.get('WINDIR', 'C:/Windows'), 'Fonts')
     im.paste(draw(120), (36, 40), draw(120))
-    d.text((180, 62), '콘티', font=ImageFont.truetype(os.path.join(fonts, 'malgunbd.ttf'), 40), fill=(255, 255, 255))
+    d.text((180, 62), '하모닉스', font=ImageFont.truetype(os.path.join(fonts, 'malgunbd.ttf'), 40), fill=(255, 255, 255))
     d.text((182, 122), '설치를 준비하는 중입니다… 잠시만 기다려 주세요', font=ImageFont.truetype(os.path.join(fonts, 'malgun.ttf'), 15), fill=(170, 185, 205))
     return im
 

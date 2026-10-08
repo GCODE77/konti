@@ -144,8 +144,8 @@ def wait_forever_with_notice(url):
     try:
         import tkinter as tk
         root = tk.Tk()
-        root.title('콘티')
-        tk.Label(root, text=f'콘티가 실행 중입니다.\n{url}\n\n이 창을 닫으면 종료됩니다.',
+        root.title('하모닉스')
+        tk.Label(root, text=f'하모닉스가 실행 중입니다.\n{url}\n\n이 창을 닫으면 종료됩니다.',
                  padx=24, pady=18, font=('Malgun Gothic', 11)).pack()
         root.mainloop()
     except Exception:
@@ -165,7 +165,7 @@ def main():
         # 포트를 다른 프로그램이 쓰고 있다 — 포트를 바꾸면 저장한 곡이 안 보이므로 알리고 끝낸다.
         try:
             import tkinter.messagebox as mb
-            mb.showerror('콘티', f'포트 {PORT} 를 다른 프로그램이 쓰고 있어 시작할 수 없습니다.')
+            mb.showerror('하모닉스', f'포트 {PORT} 를 다른 프로그램이 쓰고 있어 시작할 수 없습니다.')
         except Exception:
             pass
         return

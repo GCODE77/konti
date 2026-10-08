@@ -1,6 +1,9 @@
 # session-handoff.md — 콘티(konti) v81 인계 문서
 
-## ★★ 지금 상태 (2026-10-08, v101) — 다음 세션은 여기부터
+## ★★ 지금 상태 (2026-10-08, v102) — 다음 세션은 여기부터
+**v102:** 앱 이름 **하모닉스**·새 아이콘·홈 화면 © GLORY (CLAUDE.md 116번). 내부 폴더·exe 이름은 Konti 그대로(저장 곡 보존). EXE 재빌드 전: `python desktop/fetch_vendor.py`(새 샘플) → `python desktop/build.py`.
+
+## (이전) v101 상태
 **v101 (커밋만):** 악기 샘플 MusyngKite 로(FluidR3 는 대체용) + 하프 오타. CLAUDE.md 115번. 귀로 비교는 사용자가 해 볼 것 — 거슬리는 악기가 있으면 알려 달라고 할 것. EXE 재빌드 전 `python desktop/fetch_vendor.py` 먼저.
 
 ## (이전) v100 상태

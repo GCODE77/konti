@@ -54,6 +54,8 @@ def main():
     pyinstaller('--onedir', '--name', 'Konti', '--icon', icon, '--distpath', DIST,
                 '--add-data', f'{os.path.join(ROOT, "index.html")}{SEP}.',
                 '--add-data', f'{vz}{SEP}.',
+                *[x for n in ('icon-192.png', 'icon-512.png', 'apple-touch-icon.png', 'favicon.png', 'manifest.json')
+                  for x in ('--add-data', f'{os.path.join(ROOT, n)}{SEP}.')],   # 아이콘·매니페스트(v102)
                 os.path.join(HERE, 'konti_desktop.py'))
 
     app_zip = os.path.join(BUILD, 'Konti_app.zip')

@@ -1,6 +1,6 @@
 # 콘티 — 교회 찬양팀 악보 앱
 
-**현재 상태:** `index.html` 하나. v101 (악기 샘플 MusyngKite, 115번). v100 (전체 점검·인식 속도 30~45%↑, 114번). v99 (재생선 정확도·제목 배너, 113번). v98 (악보 연주·건반 연주·튜너·메트로놈 4기능, 104~112번). `https://gcode77.github.io/konti/` 에 배포됨.
+**현재 상태:** `index.html` 하나. v102 (이름 「하모닉스」·새 아이콘·© GLORY, 116번). v101 (악기 샘플 MusyngKite, 115번). v100 (전체 점검·인식 속도 30~45%↑, 114번). v99 (재생선 정확도·제목 배너, 113번). v98 (악보 연주·건반 연주·튜너·메트로놈 4기능, 104~112번). `https://gcode77.github.io/konti/` 에 배포됨.
 **데스크톱판(v78):** `desktop/` — 인터넷 없이 도는 윈도 실행 파일(`KontiSetup.exe`). 아래 83번 항목.
 **저장소:** `github.com/GCODE77/konti` (public), 브랜치 `main`, 파일명 반드시 `index.html`.
 
@@ -2563,6 +2563,9 @@
    · 웹판 실측(vendor 끄고): 곡 하나 재생에 샘플 60개 전부 MusyngKite 에서 받아짐·실패 0·오류 0. 회귀 5개 파일 통과.
    · **데스크톱판(EXE)**: `desktop/fetch_vendor.py` 가 `vendor/soundfonts-mk/`(MusyngKite) 와 `vendor/soundfonts/`(FluidR3)를 둘 다 받게 바꿨다(index.html 이 mk 먼저). ★ 지금 있는 `vendor/` 에는 mk 폴더가 아직 없다 → **EXE 를 다시 만들기 전에 `python desktop/fetch_vendor.py` 를 돌릴 것**(약 40MB 추가). 안 돌려도 예전 샘플로 정상 동작한다.
    ★ 정직하게: 귀로 직접 비교는 못 했다(헤드리스). 크기 균형·받기·재생 경로만 확인했다. 어떤 악기가 오히려 거슬리면 `SAMPLE_MAP` 에서 그 악기만 FluidR3 로 되돌릴 수 있게 하려면 악기별 세트 지정이 필요하다 — 사용자 피드백을 받고 할 것.
+
+116. **앱 이름 「하모닉스」 · 새 아이콘 · © GLORY (v102, 사용자 결정).** 이름 콘티 → **하모닉스**(화면에 보이는 곳만): 제목·홈 화면·머리줄·저장 안내·`manifest.json`(홈 화면에 추가할 때 이름)·EXE 설치 창/바로가기/스플래시. ★ 폴더·exe·localStorage·`%LOCALAPPDATA%\Konti` 는 **옛 이름 그대로** — 바꾸면 저장한 곡이 사라진다. 설치기는 옛 「콘티」 바탕화면·시작 메뉴 바로가기를 지우고 새 이름으로 만든다.
+   아이콘 = 4기능 모음(음표 · 건반 · 소리 파동 · 메트로놈), `desktop/make_icon.py` 가 그린다 → `konti.ico`·`splash.png`·웹용 `icon-192/512.png`·`apple-touch-icon.png`·`favicon.png`(저장소 루트, `build.py` 가 EXE 에도 넣는다). 홈 화면 맨 위에 아이콘, 맨 아래 흐린 `© GLORY · All rights reserved`(낮은 화면은 줄 아래로).
 
 ## 실제로 겪은 버그들 (재발 방지용 메모)
 

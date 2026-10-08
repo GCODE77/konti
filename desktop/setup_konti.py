@@ -20,7 +20,7 @@ import threading
 import zipfile
 
 APP = 'Konti'
-TITLE = '콘티'
+TITLE = '하모닉스'   # 화면에 보이는 이름(v103). 폴더·exe·저장 위치는 옛 이름 Konti 를 그대로 둔다 — 저장한 곡이 안 사라지게
 LOCAL = os.environ.get('LOCALAPPDATA', os.path.expanduser('~'))
 TARGET = os.path.join(LOCAL, 'Programs', APP)
 
@@ -39,19 +39,20 @@ def make_shortcuts():
     exe = os.path.join(TARGET, 'Konti.exe')
     unin = os.path.join(TARGET, 'uninstall.ps1')
     with open(unin, 'w', encoding='utf-8-sig') as f:
-        f.write(f"""# 콘티 제거 — 프로그램 폴더와 바로가기만 지운다. 저장한 곡(%LOCALAPPDATA%\\Konti)은 남긴다.
+        f.write(f"""# 하모닉스 제거 — 프로그램 폴더와 바로가기만 지운다. 저장한 곡(%LOCALAPPDATA%\\Konti)은 남긴다.
 Get-Process -Name Konti -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep -Seconds 1
 $d=[Environment]::GetFolderPath('Desktop'); $s=[Environment]::GetFolderPath('Programs')
-Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $d '{TITLE}.lnk'), (Join-Path $s '{TITLE}.lnk'), (Join-Path $s '{TITLE} 제거.lnk')
+Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $d '{TITLE}.lnk'), (Join-Path $s '{TITLE}.lnk'), (Join-Path $s '{TITLE} 제거.lnk'), (Join-Path $d '콘티.lnk'), (Join-Path $s '콘티.lnk'), (Join-Path $s '콘티 제거.lnk')
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue '{TARGET}'
 """)
     ps(f"""
 $w=New-Object -ComObject WScript.Shell
 $d=[Environment]::GetFolderPath('Desktop'); $s=[Environment]::GetFolderPath('Programs')
+Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $d '콘티.lnk'), (Join-Path $s '콘티.lnk'), (Join-Path $s '콘티 제거.lnk')   # 옛 이름 바로가기 정리
 foreach($p in @((Join-Path $d '{TITLE}.lnk'),(Join-Path $s '{TITLE}.lnk'))){{
   $l=$w.CreateShortcut($p); $l.TargetPath='{exe}'; $l.WorkingDirectory='{TARGET}'
-  $l.IconLocation='{exe},0'; $l.Description='콘티 — 찬양 악보 인식·반주'; $l.Save() }}
+  $l.IconLocation='{exe},0'; $l.Description='하모닉스 — 악보·건반·튜너·메트로놈'; $l.Save() }}
 $u=$w.CreateShortcut((Join-Path $s '{TITLE} 제거.lnk')); $u.TargetPath='powershell.exe'
 $u.Arguments='-NoProfile -ExecutionPolicy Bypass -File "{unin}"'; $u.Save()
 """)
@@ -60,7 +61,7 @@ $u.Arguments='-NoProfile -ExecutionPolicy Bypass -File "{unin}"'; $u.Save()
 def install(say):
     if not os.path.exists(payload()):
         raise RuntimeError('설치 파일이 손상되었습니다(Konti_app.zip 없음).')
-    say('실행 중인 콘티를 닫는 중…')
+    say('실행 중인 하모닉스를 닫는 중…')
     subprocess.run(['taskkill', '/IM', 'Konti.exe', '/F'], capture_output=True, creationflags=0x08000000)
     say('파일을 푸는 중…')
     tmp = TARGET + '.new'
@@ -73,7 +74,7 @@ def install(say):
         try:
             os.replace(TARGET, old)
         except OSError:
-            raise RuntimeError('콘티가 아직 켜져 있어 바꿀 수 없습니다. 콘티 창을 모두 닫고 다시 실행해 주세요.')
+            raise RuntimeError('하모닉스가 아직 켜져 있어 바꿀 수 없습니다. 하모닉스 창을 모두 닫고 다시 실행해 주세요.')
         shutil.rmtree(old, ignore_errors=True)
     os.makedirs(os.path.dirname(TARGET), exist_ok=True)
     os.replace(tmp, TARGET)
@@ -115,7 +116,7 @@ def main():
         if 'err' in result:
             messagebox.showerror(f'{TITLE} 설치', result['err'])
         else:
-            messagebox.showinfo(f'{TITLE} 설치', '설치를 마쳤습니다.\n바탕화면의 「콘티」 아이콘으로 켜면 됩니다.\n\n지금 콘티를 켭니다.')
+            messagebox.showinfo(f'{TITLE} 설치', '설치를 마쳤습니다.\n바탕화면의 「하모닉스」 아이콘으로 켜면 됩니다.\n\n지금 콘티를 켭니다.')
             subprocess.Popen([os.path.join(TARGET, 'Konti.exe')], cwd=TARGET)
         root.destroy()
 
