@@ -436,7 +436,7 @@ html.hm body>:not(#home):not(#kb):not(#tn):not(#mt):not(#toast):not(#errbar):not
 #tnstrings{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;min-height:0}
 #tnstrings .btn{min-width:64px;font-size:15px}
 #tnstrings .btn.tg{background:var(--mint);color:#10161E;border-color:var(--mint);font-weight:700}
-#tngraph{width:min(560px,100%);height:96px;border-radius:12px;background:var(--raise);border:1px solid var(--line);flex:none}
+#tngraph{width:min(560px,100%);height:172px;border-radius:12px;background:var(--raise);border:1px solid var(--line);flex:none}
 #tnkeys{position:relative;width:min(760px,100%);height:112px;border-radius:10px;overflow:hidden;flex:none;touch-action:none;background:#000}
 #tnroll{position:absolute;top:0;bottom:0;left:0}
 #tnroll .wk{position:absolute;top:0;bottom:0;background:#F7F4EC;border:1px solid #9a948a;border-top:0;border-radius:0 0 7px 7px;display:flex;align-items:flex-end;justify-content:center;padding-bottom:6px;font-size:11px;font-weight:600;color:#4a4740}
@@ -473,7 +473,7 @@ html.hm body>:not(#home):not(#kb):not(#tn):not(#mt):not(#toast):not(#errbar):not
 @media (orientation:landscape) and (max-height:520px){#home .hcards{grid-template-columns:repeat(4,1fr)}#home .hcard{min-height:130px}#home .hcard .hi{font-size:38px}}
 #tnmodes{display:flex;gap:8px;justify-content:center}
 #tnmodes .btn.on{background:var(--brass);color:#10161E;border-color:var(--brass);font-weight:700}
-#tngtr{display:grid;grid-template-columns:1fr 70px 1fr;gap:6px 8px;width:min(520px,100%);align-items:center}
+#tngtr{display:grid;grid-template-columns:1fr 118px 1fr;gap:6px 8px;width:min(520px,100%);align-items:center}
 #tngtr .gl,#tngtr .gr{display:flex;flex-direction:column;gap:8px}
 #tngtr .gh{height:100%;min-height:150px;border-radius:30px 30px 14px 14px;background:linear-gradient(180deg,#5a3a22,#3d2616);display:flex;justify-content:space-evenly;padding:12px 0;position:relative}
 #tngtr .gh s{display:block;width:3px;height:100%;background:linear-gradient(180deg,#cfcfcf,#8a8a8a);border-radius:2px}
@@ -487,6 +487,18 @@ html.hm body>:not(#home):not(#kb):not(#tn):not(#mt):not(#toast):not(#errbar):not
 #tngtr .peg.nxt:not(.done)::after{content:'다음';position:absolute;top:3px;left:8px;font-size:10px;font-weight:800;color:var(--brass)}
 #tngtr .gh s.ok{background:linear-gradient(180deg,#bff0d8,#7FC8A9);box-shadow:0 0 8px #7FC8A9}
 #tngtr .peg.redo{border-color:var(--ribbon)}
+#tngtr .peg .sn{position:absolute;left:8px;top:50%;transform:translateY(-50%);width:30px;height:30px;border-radius:50%;background:#2c3a4c;color:var(--paper);font-style:normal;font-weight:800;font-size:17px;display:flex;align-items:center;justify-content:center}
+#tngtr .peg.det .sn{background:#10161E;color:var(--brass)}#tngtr .peg.done .sn{background:var(--mint);color:#10161E}
+#tngtr .gh{padding-top:30px}
+#tngtr .gh s{position:relative}
+#tngtr .gh s u{position:absolute;top:-24px;left:50%;transform:translateX(-50%);text-decoration:none;font-size:12px;font-weight:800;color:#e9d7c2;width:19px;height:19px;border-radius:50%;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;font-size:12px}
+#tngtr .gh s.ok u{background:var(--mint);color:#10161E}
+#tngtr .gh s.hit{width:7px;margin:0 -2px;background:linear-gradient(180deg,#ffe6a8,#F0B95E);box-shadow:0 0 14px 3px rgba(240,185,94,.85);animation:tngshake .12s infinite alternate}
+#tngtr .gh s.hit u{background:var(--brass);color:#10161E;transform:translateX(-50%) scale(1.2)}
+@keyframes tngshake{from{transform:translateX(-1px)}to{transform:translateX(1px)}}
+#tngnow{grid-column:1/-1;text-align:center;font-size:16px;font-weight:700;color:var(--dim);padding:8px 10px;border-radius:12px;background:var(--raise);border:1px solid var(--line)}
+#tngnow b{color:var(--brass);font-size:20px}#tngnow.hit{border-color:var(--brass);color:var(--paper);background:rgba(240,185,94,.12)}#tngnow.far b{color:var(--ribbon)}#tngnow.good b{color:var(--mint)}
+#tngcap{grid-column:1/-1;text-align:center;font-size:12px;color:var(--dim);margin-top:-2px}
 #tngtr.allok .gh{box-shadow:0 0 22px rgba(127,200,169,.7)}
 #tngtr .peg.tg{box-shadow:0 0 0 2px var(--brass) inset}
 #tngtr .peg.det{background:var(--brass);color:#10161E;border-color:var(--brass);transform:scale(1.04)}
@@ -671,7 +683,7 @@ window.onerror=function(msg,src,ln){
    예) const SCAN_ENDPOINT = "https://konti-scan.내계정.workers.dev";
 */
 const SCAN_ENDPOINT = "";
-const APP_VER = "103";
+const APP_VER = "104";
 /* file:// 나 content:// 로 열면 브라우저가 외부 호출을 막는다(CORS). 미리 알려준다. */
 const LOCAL_FILE = !/^https?:$/.test(location.protocol);
 /* Claude 앱처럼 iframe 안에서 실행 중이면 키 없이도 인식이 통한다. */
@@ -10897,8 +10909,10 @@ function tnMark(){
 }
 /* 기타 모드: 헤드스톡 모양으로 6개의 줄감개(페그)를 늘어놓는다 — 4·5·6번줄은 왼쪽, 3·2·1번줄은 오른쪽(실제 기타와 같다) */
 function tnGuitar(arr){
-  const peg=i=>{ const m=arr[i], n=tnNames2(m); return '<button class="peg'+(TN.done[TN.pre+':'+i]?' done':'')+(m===TN.target?' tg':'')+'" data-m="'+m+'" data-i="'+i+'" type="button"><b>'+(TN.nameMode?n.en.replace(/\d/g,'')+' <em>'+n.kr+'</em>':n.kr+' <em>'+n.en.replace(/\d/g,'')+'</em>')+'</b><small>'+(6-i)+'번줄 '+n.en+'</small><i>✓</i></button>'; };
-  $('tngtr').innerHTML='<div class="gl">'+[2,1,0].map(peg).join('')+'</div><div class="gh" aria-hidden="true"><s></s><s></s><s></s><s></s><s></s><s></s></div><div class="gr">'+[3,4,5].map(peg).join('')+'</div>'
+  const peg=i=>{ const m=arr[i], n=tnNames2(m); return '<button class="peg'+(TN.done[TN.pre+':'+i]?' done':'')+(m===TN.target?' tg':'')+'" data-m="'+m+'" data-i="'+i+'" type="button"><b>'+(TN.nameMode?n.en.replace(/\d/g,'')+' <em>'+n.kr+'</em>':n.kr+' <em>'+n.en.replace(/\d/g,'')+'</em>')+'</b><small>'+(6-i)+'번줄 '+n.en+'</small><em class="sn">'+(6-i)+'</em><i>✓</i></button>'; };
+  $('tngtr').innerHTML='<div id="tngnow" aria-live="polite">줄을 하나 튕겨 보세요 — 어느 줄인지 알려 드려요</div>'
+    +'<div class="gl">'+[2,1,0].map(peg).join('')+'</div><div class="gh" aria-hidden="true">'+[6,5,4,3,2,1].map(n=>'<s><u>'+n+'</u></s>').join('')+'</div><div class="gr">'+[3,4,5].map(peg).join('')+'</div>'
+    +'<div id="tngcap">줄 번호: 6번줄이 가장 굵고(낮은 소리), 1번줄이 가장 가늘어요(높은 소리)</div>'
     +'<button class="btn" id="tngauto" type="button">자동으로 줄 찾기</button><button class="btn" id="tngreset" type="button">처음부터 다시</button>';
   tnGuitarPaint(arr.length);
 }
@@ -10922,8 +10936,17 @@ function tnChime(all){
     [[1,1],[2.76,.32],[5.4,.1]].forEach(([k,a])=>{ const o=ctx.createOscillator(), og=ctx.createGain(); o.type='sine'; o.frequency.value=f*k; og.gain.value=a; o.connect(og); og.connect(g); o.start(t); o.stop(t+dec+.05); }); });
   TN.playing=true; clearTimeout(TN.playT); TN.playT=setTimeout(()=>{ TN.playing=false; },(all?600+freqs.length*120:700)+500);
 }
-function tnGuitarDet(i,tuned,pre,ac){
+function tnGuitarDet(i,tuned,pre,ac,cents){
   const pegs=$('tngtr').querySelectorAll('.peg'); pegs.forEach(p=>p.classList.toggle('det',+p.dataset.i===i));
+  /* ★ 어느 줄을 튕기는지 크게 보여 준다(v104, 사용자 요청): 헤드스톡의 그 줄이 노랗게 떨리고, 위 안내 줄에 「지금 N번줄」 */
+  $('tngtr').querySelectorAll('.gh s').forEach((el,j)=>el.classList.toggle('hit',j===i));
+  const now=$('tngnow');
+  if(now){
+    if(i<0){ now.className=''; now.innerHTML='줄을 하나 튕겨 보세요 — 어느 줄인지 알려 드려요'; }
+    else{ const n=tnNames2(pre[i]), c=Math.round(cents||0), far=Math.abs(c)>150, good=!far&&Math.abs(c)<=6;
+      now.className=far?'hit far':(good?'hit good':'hit');
+      now.innerHTML=far?('소리가 가장 가까운 줄은 <b>'+(6-i)+'번줄</b> ('+n.kr+' '+n.en+') · 많이 벗어났어요')
+        :('지금 <b>'+(6-i)+'번줄</b> ('+n.kr+' '+n.en+') '+(good?'✓ 딱 맞아요':(c>0?'· 높아요 ▼ 풀어 주세요':'· 낮아요 ▲ 조여 주세요'))); } }
   if(i>=0&&tuned){ const k=TN.pre+':'+i;
     if(!TN.done[k]){ TN.done[k]=true;
       const all=pre.every((_,j)=>TN.done[TN.pre+':'+j]);
@@ -11017,7 +11040,7 @@ function tnRender(m,now){
   else{ TN.okSince=0; TN.okFired=false; cls='warn';
     msg=ac<=15?(cents>0?'거의 맞아요 · 조금 낮추세요 ▼':'거의 맞아요 · 조금 올리세요 ▲'):(cents>0?'높아요 · 낮추세요 ▼':'낮아요 · 올리세요 ▲'); }
   st.className=cls; st.textContent=msg+'  ('+(cents>0?'+':'')+cents.toFixed(0)+' 센트)';
-  if(tnIsGuitar(TN.pre)&&pre.length===6)tnGuitarDet(pre.indexOf(tgt),ok&&TN.okFired,pre,ac);
+  if(tnIsGuitar(TN.pre)&&pre.length===6)tnGuitarDet(pre.indexOf(tgt),ok&&TN.okFired,pre,ac,cents);
   sub.textContent=tgt!=null?((tnIsGuitar(TN.pre)&&pre.length===6?(6-pre.indexOf(tgt))+'번줄 · '+tnGuitarCount()+'/6줄 맞춤 · ':'')+'목표: '+tnNames2(tgt+shift).kr+' '+tnNames2(tgt+shift).en+(TN.target!=null?' (직접 고름)':'')):'가장 가까운 음 기준';
   tnMark(); tnScrollTo(Math.round(m),true); tnGraph(now);
 }
@@ -11027,10 +11050,10 @@ function tnGraph(now){
   const g=cv.getContext('2d'); g.setTransform(dpr,0,0,dpr,0,0); g.clearRect(0,0,W,H);
   const pts=TN.trace.filter(p=>p.m!=null); const cen=pts.length?pts[pts.length-1].m:(TN.last==null?60:TN.last);
   const lo=Math.round(cen)-6.5, hi=Math.round(cen)+6.5, y=m=>H-(m-lo)/(hi-lo)*H;
-  g.font='10px sans-serif'; g.textBaseline='middle';
+  g.font='bold 10.5px sans-serif'; g.textBaseline='middle';
   let lastLab=-1e9;   // 글자끼리 겹치지 않게(미·파, 시·도는 반음 차라 붙어 있다) — 11px 안이면 건너뛴다(v100)
   for(let k=Math.ceil(lo);k<=hi;k++){ const nat=![1,3,6,8,10].includes(mod(k)); g.strokeStyle=nat?'rgba(255,255,255,.22)':'rgba(255,255,255,.07)'; g.beginPath(); g.moveTo(34,y(k)); g.lineTo(W,y(k)); g.stroke();
-    if(nat&&Math.abs(y(k)-lastLab)>=11){ lastLab=y(k); g.fillStyle='rgba(255,255,255,.6)'; g.fillText(TN_DOS[mod(k)]+' '+TN_SH[mod(k)],2,y(k)); } }
+    if(nat&&Math.abs(y(k)-lastLab)>=8.5){ lastLab=y(k); g.fillStyle='rgba(255,255,255,.6)'; g.fillText(TN_DOS[mod(k)]+' '+TN_SH[mod(k)],2,y(k)); } }
   if(TN.target!=null&&TN.target>=lo&&TN.target<=hi){ g.strokeStyle='#7FC8A9'; g.lineWidth=2; g.beginPath(); g.moveTo(34,y(TN.target)); g.lineTo(W,y(TN.target)); g.stroke(); g.lineWidth=1; }
   for(const p of TN.trace){ if(p.m==null)continue; const x=34+(W-34)*(1-(now-p.t)/6000), c=Math.abs(p.m-Math.round(p.m))*100;
     g.fillStyle=c<=8?'#7FC8A9':(c<=20?'#F0B95E':'#d9674f'); g.beginPath(); g.arc(x,y(p.m),2.6,0,6.3); g.fill(); }
