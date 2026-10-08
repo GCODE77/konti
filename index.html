@@ -655,7 +655,7 @@ window.onerror=function(msg,src,ln){
    예) const SCAN_ENDPOINT = "https://konti-scan.내계정.workers.dev";
 */
 const SCAN_ENDPOINT = "";
-const APP_VER = "100";
+const APP_VER = "101";
 /* file:// 나 content:// 로 열면 브라우저가 외부 호출을 막는다(CORS). 미리 알려준다. */
 const LOCAL_FILE = !/^https?:$/.test(location.protocol);
 /* Claude 앱처럼 iframe 안에서 실행 중이면 키 없이도 인식이 통한다. */
@@ -1977,20 +1977,29 @@ const VENDOR=(()=>{
     return x.status===200?new URL('vendor/',location.href).href:null;
   }catch(e){return null;}
 })();
-const SAMPLE_BASE=VENDOR?VENDOR+'soundfonts/':'https://cdn.jsdelivr.net/gh/gleitz/midi-js-soundfonts@gh-pages/FluidR3_GM/';
+/* ★ 샘플 세트를 MusyngKite 로 올렸다(v101, 사용자: "악기마다 실제 소리처럼 · 음질 더 높게"). 같은 저장소의 더 큰 사운드폰트라
+   악기마다 실제 녹음 결이 낫다(피아노·바이올린·합창이 특히). 이름·음 구성·파일 크기(음당 약 20~25KB)가 같아서 그대로 바꿔 끼운다.
+   음 하나라도 없거나 못 받으면 예전 FluidR3 로 되돌아가고, 그것도 안 되면 합성음이다 — 소리가 비는 일은 없다. */
+const SAMPLE_BASES=VENDOR?[VENDOR+'soundfonts-mk/',VENDOR+'soundfonts/']
+  :['https://cdn.jsdelivr.net/gh/gleitz/midi-js-soundfonts@gh-pages/MusyngKite/','https://cdn.jsdelivr.net/gh/gleitz/midi-js-soundfonts@gh-pages/FluidR3_GM/'];
 const SAMPLE_MAP={piano:'acoustic_grand_piano',ep:'electric_piano_1',organ:'drawbar_organ',
   strings:'string_ensemble_1',cello:'cello',brass:'trumpet',flute:'flute',
   choir:'choir_aahs',pad:'pad_2_warm',guitar:'acoustic_guitar_nylon',bass:'acoustic_bass'};
-Object.assign(SAMPLE_MAP,{violin:'violin',trombone:'trombone',clarinet:'clarinet',sax:'alto_sax',oboe:'oboe',harp:'orchestra_harp',vibes:'vibraphone',marimba:'marimba'});
+Object.assign(SAMPLE_MAP,{violin:'violin',trombone:'trombone',clarinet:'clarinet',sax:'alto_sax',oboe:'oboe',harp:'orchestral_harp',vibes:'vibraphone',marimba:'marimba'});
 const FLAT_NAMES=['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
 const sampleCache=new Map();               // 'folder|pc|oct' -> AudioBuffer(성공) | null(실패) | Promise(진행중)
 const sampleKey=(folder,pc,oct)=>folder+'|'+pc+'|'+oct;
 async function fetchSample(folder,pc,oct){
-  const url=SAMPLE_BASE+folder+'-mp3/'+FLAT_NAMES[pc]+oct+'.mp3';
-  const r=await fetch(url); if(!r.ok)throw new Error('no sample');
-  const buf=await r.arrayBuffer();
   const ctx=AC(); if(!ctx)throw new Error('no audio context');
-  return normSample(await ctx.decodeAudioData(buf),folder);
+  let lastErr=null;
+  for(const base of SAMPLE_BASES){
+    try{
+      const r=await fetch(base+folder+'-mp3/'+FLAT_NAMES[pc]+oct+'.mp3'); if(!r.ok)throw new Error('no sample');
+      const buf=await r.arrayBuffer();
+      return normSample(await ctx.decodeAudioData(buf),folder);
+    }catch(e){ lastErr=e; }
+  }
+  throw lastErr||new Error('no sample');
 }
 /* ★ 샘플 크기 맞추기(v87). GM 샘플은 악기·음마다 녹음 크기가 제각각이다 — 오르간은 크게,
    플루트·첼로는 작게, 같은 피아노도 낮은 음과 높은 음이 2~3배 차이 났다. 그래서 악기를 섞으면
@@ -2004,7 +2013,7 @@ function normSample(ab,folder){
     const rms=Math.sqrt(sq/Math.max(1,n));
     if(rms>1e-5){
       const inst=Object.keys(SAMPLE_MAP).find(k=>SAMPLE_MAP[k]===folder);
-      let g=Math.max(.35,Math.min(16,.2/rms))*(SAMPLE_TRIM[inst]||1);
+      let g=Math.max(.35,Math.min(40,.2/rms))*(SAMPLE_TRIM[inst]||1);   // 상한 16→40: MusyngKite 피아노는 원본이 더 작게 녹음돼 있다(v101)
       if(pk*g>.98)g=.98/pk;                      // 샘플 자체가 찢어지지 않게
       for(let c=0;c<ab.numberOfChannels;c++){ const x=ab.getChannelData(c); for(let i=0;i<x.length;i++)x[i]*=g; }
     }

@@ -45,9 +45,11 @@ INSTRUMENTS = ['acoustic_grand_piano', 'electric_piano_1', 'drawbar_organ', 'str
                'cello', 'trumpet', 'flute', 'choir_aahs', 'pad_2_warm', 'acoustic_guitar_nylon',
                'acoustic_bass',
                # 건반 연주 전용(v93)
-               'violin', 'trombone', 'clarinet', 'alto_sax', 'oboe', 'orchestra_harp', 'vibraphone', 'marimba']
+               'violin', 'trombone', 'clarinet', 'alto_sax', 'oboe', 'orchestral_harp', 'vibraphone', 'marimba']
 FLAT_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B']
-SF_BASE = 'https://raw.githubusercontent.com/gleitz/midi-js-soundfonts/gh-pages/FluidR3_GM/'
+# v101: MusyngKite(더 실제 같은 소리)를 우선 받아 soundfonts-mk/ 에, 예전 FluidR3 는 soundfonts/ 에 그대로 둔다(index.html 이 mk → 예전 순으로 찾는다).
+SF_SETS = [('soundfonts-mk', 'https://raw.githubusercontent.com/gleitz/midi-js-soundfonts/gh-pages/MusyngKite/'),
+           ('soundfonts', 'https://raw.githubusercontent.com/gleitz/midi-js-soundfonts/gh-pages/FluidR3_GM/')]
 
 
 def get(url, tries=3):
@@ -83,11 +85,11 @@ def fetch_npm():
 
 
 def fetch_sample(job):
-    inst, name = job
-    out = os.path.join(VENDOR, 'soundfonts', f'{inst}-mp3', name)
+    folder, base, inst, name = job
+    out = os.path.join(VENDOR, folder, f'{inst}-mp3', name)
     if os.path.exists(out) or os.path.exists(out + '.none'):
         return 0
-    data = get(SF_BASE + f'{inst}-mp3/{name}')
+    data = get(base + f'{inst}-mp3/{name}')
     os.makedirs(os.path.dirname(out), exist_ok=True)
     if data is None:  # 그 악기에 없는 음 — 다음에 또 묻지 않도록 표시만 남긴다
         open(out + '.none', 'w').close()
@@ -98,7 +100,7 @@ def fetch_sample(job):
 
 
 def fetch_samples():
-    jobs = [(i, f'{n}{o}.mp3') for i in INSTRUMENTS for o in range(0, 9) for n in FLAT_NAMES]
+    jobs = [(f, b, i, f'{n}{o}.mp3') for f, b in SF_SETS for i in INSTRUMENTS for o in range(0, 9) for n in FLAT_NAMES]
     print(f'악기 샘플 {len(INSTRUMENTS)}종 확인 중…')
     with ThreadPoolExecutor(12) as ex:
         got = sum(ex.map(fetch_sample, jobs))
